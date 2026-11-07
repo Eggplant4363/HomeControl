@@ -5,6 +5,7 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.graphics.Color;
 import android.net.Uri;
+import android.net.http.SslError;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
@@ -17,6 +18,7 @@ import android.view.ViewGroup;
 import android.view.WindowManager;
 import android.webkit.ConsoleMessage;
 import android.webkit.JavascriptInterface;
+import android.webkit.SslErrorHandler;
 import android.webkit.WebChromeClient;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
@@ -167,6 +169,15 @@ public class MainActivity extends Activity {
             public void onReceivedError(WebView view, int errorCode, String description, String failingUrl) {
                 Log.w(TAG, "page error " + errorCode + " " + description + " " + failingUrl);
                 scheduleRetry(description);
+            }
+
+            @Override
+            public void onReceivedSslError(WebView view, SslErrorHandler handler, SslError error) {
+                // 这台平板的 WebView（Chromium 57 / Android 5.1）信任库里没有 Let's Encrypt 的 ISRG 根证书；
+                // 负一屏的音频流走 WebView 自己的网络栈（Java 桥的 trustAll() 管不到它），
+                // 不在这里放行就播不了歌。中控屏只连自己的服务器，所以直接 proceed。
+                Log.w(TAG, "ssl error proceed " + error.getPrimaryError() + " " + error.getUrl());
+                handler.proceed();
             }
         });
 
@@ -679,6 +690,93 @@ public class MainActivity extends Activity {
 
         private String httpGetText(String url) {
             return httpText(url, "GET", "{}", "");
+        }
+
+        /** 取二进制并转 base64（道理鱼的封面要 Authorization 头，<img> 加不了头，只能这样绕）。
+            结果异步回 window.__musicBinaryCb(cbId, {status|error, mime, b64})。上限 1.5MB。 */
+        @JavascriptInterface
+        public void httpBinary(final String cbId, final String method, final String url,
+                               final String headersJson) {
+            new Thread(new Runnable() {
+                public void run() {
+                    final String out = httpBytes(url, method, headersJson);
+                    ui.post(new Runnable() {
+                        public void run() {
+                            try {
+                                if (web != null) {
+                                    web.evaluateJavascript("window.__musicBinaryCb && window.__musicBinaryCb("
+                                            + org.json.JSONObject.quote(cbId) + ","
+                                            + org.json.JSONObject.quote(out) + ")", null);
+                                }
+                            } catch (Throwable t) { Log.w(TAG, "httpBinary cb failed: " + t); }
+                        }
+                    });
+                }
+            }).start();
+        }
+
+        private String httpBytes(String url, String method, String headersJson) {
+            HttpURLConnection c = null;
+            try {
+                URL u = new URL(url);
+                if ("https".equals(u.getProtocol())) {
+                    HttpsURLConnection h = (HttpsURLConnection) u.openConnection();
+                    h.setSSLSocketFactory(trustAll().getSocketFactory());
+                    h.setHostnameVerifier(new HostnameVerifier() {
+                        public boolean verify(String host, SSLSession s) { return true; }
+                    });
+                    c = h;
+                } else {
+                    c = (HttpURLConnection) u.openConnection();
+                }
+                c.setConnectTimeout(6000);
+                c.setReadTimeout(15000);
+                c.setRequestMethod(method == null || method.length() == 0 ? "GET" : method);
+                c.setRequestProperty("Accept", "*/*");
+                c.setRequestProperty("User-Agent", "HomeControl-Panel");
+                if (headersJson != null && headersJson.length() > 2) {
+                    try {
+                        org.json.JSONObject h = new org.json.JSONObject(headersJson);
+                        java.util.Iterator<?> it = h.keys();
+                        while (it.hasNext()) {
+                            String k = String.valueOf(it.next());
+                            c.setRequestProperty(k, h.optString(k, ""));
+                        }
+                    } catch (Throwable t) { Log.w(TAG, "httpBytes bad headers: " + t); }
+                }
+                int code = c.getResponseCode();
+                String mime = c.getContentType() == null ? "application/octet-stream" : c.getContentType();
+                String b64 = "";
+                int total = 0;
+                if (code >= 200 && code < 300) {
+                    InputStream is = c.getInputStream();
+                    ByteArrayOutputStream bo = new ByteArrayOutputStream();
+                    byte[] buf = new byte[8192];
+                    int n;
+                    while (is != null && (n = is.read(buf)) > 0) {
+                        total += n;
+                        if (total > 1500000) { bo.write(buf, 0, 0); break; }   /* 太大就不要了，封面用不到 */
+                        bo.write(buf, 0, n);
+                    }
+                    if (is != null) try { is.close(); } catch (Throwable t) { }
+                    b64 = android.util.Base64.encodeToString(bo.toByteArray(), android.util.Base64.NO_WRAP);
+                }
+                Log.i(TAG, "httpBinary " + url + " -> " + code + " (" + total + " bytes, " + b64.length() + " b64) " + mime);
+                org.json.JSONObject out = new org.json.JSONObject();
+                out.put("status", code);
+                out.put("mime", mime);
+                out.put("b64", b64);
+                return out.toString();
+            } catch (Throwable t) {
+                Log.w(TAG, "httpBinary failed " + url + " : " + t);
+                try {
+                    org.json.JSONObject out = new org.json.JSONObject();
+                    out.put("error", t.getClass().getSimpleName());
+                    return out.toString();
+                } catch (Throwable t2) { return "{\"error\":\"unknown\"}"; }
+            } finally {
+                if (c != null) try { c.disconnect(); } catch (Throwable t) { }
+            }
         }
 
         private String httpText(String url, String method, String headersJson, String body) {

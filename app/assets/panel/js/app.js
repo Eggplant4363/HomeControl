@@ -528,6 +528,15 @@ var COLOR_PRESETS = [
          那时还判断不出这盏灯能不能调，等状态到了再由 updateTile 决定显示/隐藏 */
       return '<div class="t-val" data-role="val"></div>' + barHtml();
     }
+    if (tile.type === 'sensor' && !binarySensor(tile)) {
+      /* 传感器卡片：左边数值，右边一条最近几小时的迷你曲线。
+         骨架无条件画出来（曲线容器先标 none），因为首帧渲染时属性往往还没到，
+         那时判断不出 device_class；等状态到了再由 updateTile 切显隐。 */
+      return '<div class="t-midrow">' +
+        '<div class="t-val" data-role="val"></div>' +
+        '<div class="t-spark none" data-spark="' + esc(tile.entity) + '"></div>' +
+        '</div>';
+    }
     return '<div class="t-val" data-role="val"></div>';
   }
 
@@ -595,6 +604,78 @@ var COLOR_PRESETS = [
         var src = camStamp(camSrc(id));
         if (src) node.src = src;
       }
+    }
+  }
+
+  /* 卡片右侧迷你历史曲线：每张卡只拉一次（5 分钟内复用缓存），
+     走 backend.restHistory（真机是 /api/history/period，模拟器造正弦波）。
+     用 innerHTML 拼 <svg> 而不是 SVG DOM API —— 这台 WebView 的 SVGElement
+     没有 matches/classList，走属性判断最稳。 */
+  var SPARK_HOURS = 6;          /* 卡片里只关心最近 6 小时 */
+  var SPARK_TTL = 5 * 60 * 1000;
+  var SPARK_W = 96;
+  var SPARK_H = 34;
+  var SPARK_PAD = 3;
+
+  function sparkSvg(list) {
+    var r = historyPoints(list, SPARK_W, SPARK_H, SPARK_PAD);
+    if (!r.points) return '';
+    var base = SPARK_H - SPARK_PAD;
+    var x0 = SPARK_PAD;
+    var x1 = SPARK_W - SPARK_PAD;
+    return '<svg class="t-spark-svg" viewBox="0 0 ' + SPARK_W + ' ' + SPARK_H + '" preserveAspectRatio="none">' +
+      '<polygon class="t-spark-area" points="' + r.points + ' ' + x1 + ',' + base + ' ' + x0 + ',' + base + '"/>' +
+      '<polyline class="t-spark-line" points="' + r.points + '"/>' +
+      '</svg>';
+  }
+
+  function sparkPaint() {
+    if (!el.grid || !el.grid.querySelectorAll) return;
+    S.sparkCache = S.sparkCache || {};
+    S.sparkBusy = S.sparkBusy || {};
+    var nodes = el.grid.querySelectorAll('.t-spark');
+    for (var i = 0; i < nodes.length; i++) {
+      var box = nodes[i];
+      var id = box.getAttribute('data-spark');
+      if (!id) continue;
+      /* 隐藏的（非数值型/不可用）不拉历史，省得给每张卡都发一次请求 */
+      if (box.className && box.className.indexOf('none') >= 0) continue;
+      var now = new Date().getTime();
+      var c = S.sparkCache[id];
+      if (c && now - c.at < SPARK_TTL) {
+        if (box.getAttribute('data-h') !== c.html) {
+          box.setAttribute('data-h', c.html);
+          box.innerHTML = c.html;
+          box.className = c.html ? 't-spark' : 't-spark none';
+        }
+        continue;
+      }
+      if (S.sparkBusy[id]) continue;
+      if (!S.backend || !S.backend.restHistory) continue;
+      S.sparkBusy[id] = 1;
+      (function (sid) {
+        S.backend.restHistory(sid, SPARK_HOURS, function (list) {
+          var html = sparkSvg(list);
+          S.sparkCache[sid] = { at: new Date().getTime(), html: html };
+          S.sparkBusy[sid] = 0;
+          sparkDraw(sid, html);
+        }, function () {
+          S.sparkBusy[sid] = 0;
+          S.sparkCache[sid] = { at: new Date().getTime(), html: '' };
+          sparkDraw(sid, '');
+        });
+      })(id);
+    }
+  }
+
+  function sparkDraw(id, html) {
+    if (!el.grid || !el.grid.querySelectorAll) return;
+    var nodes = el.grid.querySelectorAll('.t-spark');
+    for (var i = 0; i < nodes.length; i++) {
+      if (nodes[i].getAttribute('data-spark') !== id) continue;
+      nodes[i].setAttribute('data-h', html);
+      nodes[i].innerHTML = html;
+      nodes[i].className = html ? 't-spark' : 't-spark none';
     }
   }
 
@@ -698,6 +779,15 @@ var COLOR_PRESETS = [
         var holding = S.pctHold && S.pctHold.entity === tile.entity && Date.now() < S.pctHold.until;
         if (!dragNow && !holding) setBarPct(pbar, st === 'on' ? pm.pct : 0);
       }
+    }
+
+    /* 传感器曲线：只有数值型传感器才显示，第一次露出来时立刻补画 */
+    var spk = node.querySelector('.t-spark');
+    if (spk) {
+      var wantSpark = isNumberSensor(tile, attrs) && !isNa(st);
+      var scls = wantSpark ? 't-spark' : 't-spark none';
+      if (spk.className !== scls) spk.className = scls;
+      if (wantSpark && !spk.getAttribute('data-h')) setTimeout(sparkPaint, 30);
     }
 
     var sub = node.querySelector('[data-role="sub"]');
@@ -1003,6 +1093,7 @@ var COLOR_PRESETS = [
     }
     for (var m = 0; m < items.length; m++) updateTile(S.tileEls[m], items[m]);
     if (hasCamTile()) setTimeout(camPaint, 30);
+    setTimeout(sparkPaint, 60);
     renderEditBar();
     if (!S.editing) return;
     if (S.tileSelItem) {
@@ -2055,6 +2146,103 @@ var COLOR_PRESETS = [
     el.weather.innerHTML = svg(info[1]) + '<span>' + esc(info[0]) + '</span>' + temp;
   }
 
+  /* ---------------- 住户头像 + 在家/离家（HA 的 person.*） ---------------- */
+  var WHO_MAX = 3;
+
+  /** 从 states 里挑出 person.*（按 entity_id 排序，最多 3 个） */
+  function personList() {
+    var out = [];
+    for (var id in S.states) {
+      if (id.indexOf('person.') !== 0) continue;
+      var st = S.states[id];
+      if (st) out.push(st);
+    }
+    out.sort(function (a, b) { return String(a.entity_id) < String(b.entity_id) ? -1 : 1; });
+    return out.length > WHO_MAX ? out.slice(0, WHO_MAX) : out;
+  }
+
+  /** person 的 state 说人话：home/not_home 翻译，自定义区域名原样显示 */
+  function whoState(st) {
+    var s = String(((st && st.state) == null) ? '' : st.state);
+    if (s === 'home') return { text: '在家', home: true };
+    if (s === 'not_home') return { text: '离家', home: false };
+    if (!s || s === 'unknown' || s === 'unavailable') return { text: '状态未知', home: false };
+    return { text: s, home: false };
+  }
+
+  /** entity_picture 常是相对路径（/api/image/serve/…），拼成 WebView 能直接取的绝对地址 */
+  function avatarUrl(pic) {
+    var p = String((pic == null) ? '' : pic);
+    if (!p) return '';
+    if (/^(https?:|data:)/i.test(p)) return p;
+    var base = haHttpBase((S.ha && S.ha.url) || (cfg.ha && cfg.ha.url) || '');
+    if (!base) return '';
+    return base + (p.charAt(0) === '/' ? p : '/' + p);
+  }
+
+  /** 头像加载不出来时露出的首字母 */
+  function whoInitial(st) {
+    var n = String(((st && st.attributes) || {}).friendly_name || '');
+    return n ? n.charAt(0).toUpperCase() : '?';
+  }
+
+  function whoLabel(st) {
+    var a = (st && st.attributes) || {};
+    return String(a.friendly_name || st.entity_id);
+  }
+
+  function whoHtml(list) {
+    var html = '';
+    for (var i = 0; i < list.length; i++) {
+      var st = list[i], w = whoState(st), a = st.attributes || {};
+      var url = avatarUrl(a.entity_picture);
+      html += '<span class="who-av' + (w.home ? ' home' : '') + '" title="' +
+        esc(whoLabel(st)) + ' · ' + esc(w.text) + '">' +
+        '<b>' + esc(whoInitial(st)) + '</b>' +
+        (url ? '<img src="' + esc(url) + '" alt="" data-role="pic">' : '') +
+        '</span>';
+    }
+    return html;
+  }
+
+  /** 头像图挂了（HA 关了匿名访问/图被删）就退回首字母，别留一个碎图标 */
+  function bindWhoImgs() {
+    var imgs = el.who.querySelectorAll('img');
+    for (var i = 0; i < imgs.length; i++) {
+      imgs[i].onerror = function () { if (this.parentNode) this.parentNode.removeChild(this); };
+    }
+  }
+
+  function renderWho() {
+    if (!el.who) return;
+    var list = personList();
+    if (!list.length) {
+      S.whoSig = '';
+      el.who.className = 'who';
+      el.who.innerHTML = '';
+      el.who.style.display = 'none';
+      return;
+    }
+    var sig = [], i, home = 0;
+    for (i = 0; i < list.length; i++) {
+      var a = list[i].attributes || {};
+      sig.push(list[i].entity_id + '|' + list[i].state + '|' + String(a.entity_picture || '') + '|' + String(a.friendly_name || ''));
+      if (whoState(list[i]).home) home++;
+    }
+    var txt = (list.length === 1) ? whoState(list[0]).text : (home + '/' + list.length + ' 在家');
+    el.who.className = 'who' + (home && home === list.length ? ' home' : ' away');
+    el.who.style.display = '';
+    var s = sig.join(',');
+    var t = el.who.querySelector('.who-t');
+    if (s === S.whoSig && t) {                       /* 只更新文字，避免频繁重载头像图片 */
+      if (t.textContent !== txt) t.textContent = txt;
+      return;
+    }
+    S.whoSig = s;
+    el.who.innerHTML = whoHtml(list) + '<span class="who-t">' + esc(txt) + '</span>';
+    bindWhoImgs();
+  }
+
   function setStatus(st) {
     /* 未配置时后端会推「模拟数据」，这里保持「未配置」更符合事实 */
     if (S.unconfigured && st && !S.real) st = { connected: st.connected, text: '未配置 · 长按右上角' };
@@ -2118,6 +2306,7 @@ var COLOR_PRESETS = [
     }
     S.states = states;
     renderWeather();
+    renderWho();
     if (S.real && !S.layoutReady) { applyAutoLayout(); return; }
     renderGrid(false);
     refreshSheet();
@@ -3428,6 +3617,7 @@ function boot() {
     };
     el.time = $('time'); el.date = $('date'); el.weather = $('weather');
     el.status = $('status'); el.statusText = $('statusText');
+    el.who = $('who');
     el.gear = $('gear');
     el.editBtn = $('editBtn');
     el.editBar = $('editBar'); S.editBarEl = el.editBar;
@@ -3478,6 +3668,8 @@ function boot() {
       connected: false,
       text: S.real ? '连接 HA…' : (S.unconfigured ? '未配置 · 长按右上角' : '连接中…')
     });
+    S.whoSig = '';
+    renderWho();
     if (S.unconfigured) { firstRunHint(); maybeShowGuide(); }
 
     tick();
@@ -3501,6 +3693,8 @@ function boot() {
     }, 5000);
     setTimeout(camPaint, 600);
     setInterval(camPaint, 8000);
+    setTimeout(sparkPaint, 1200);
+    setInterval(sparkPaint, 20000);
 
     S.backend = S.real
       ? new window.HABackend({ url: ha.url, token: ha.token })
@@ -3529,6 +3723,8 @@ function boot() {
     climateTempCaps: climateTempCaps, dualTarget: dualTarget,
     valHtml: valHtml, subText: subText, midHtml: midHtml, tileHtml: tileHtml, iconFor: iconFor,
     pctMeta: pctMeta, pctFromX: pctFromX, barHtml: barHtml,
+    personList: personList, whoState: whoState, avatarUrl: avatarUrl, whoInitial: whoInitial,
+    whoHtml: whoHtml, renderWho: renderWho,
     setStates: function (o) { S.states = o || {}; },
     normalizeHa: normalizeHa, haHttpBase: haHttpBase, normalizeToken: normalizeToken,
     camLiveUrl: camLiveUrl, camSrc: camSrc, camStamp: camStamp, cfgRef: cfg,

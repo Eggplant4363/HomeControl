@@ -38,6 +38,8 @@
     el: {},
     cbSeq: 0,
     httpCbs: {},
+    binCbs: {},
+    coverPend: {},
     tone: null
   };
 
@@ -339,11 +341,13 @@
   };
 
   /* ---- 道理鱼（Daoliyu）原生 REST：不是 Subsonic，走 /api/* + Bearer ----
-     登录 POST /api/auth/login {email,username,password} -> {token}
+     登录 POST /api/auth/login {email,username,password} -> {token}（两个字段都要给同一个值）
      歌单 GET /api/playlists/web/mine -> 数组
      曲目 GET /api/playlists/{id}/tracks?skip=&take= -> {items:[{order,track}]}
-     封面 GET /api/cover?path=<coverArtPath>&size=300
-     音频 GET /api/tracks/{id}/stream?token=  （<audio> 直接当 src，不吃 CORS） */
+     封面 GET /api/cover?path=&size=  —— 这个也要 Authorization，<img> 加不了头，
+          所以走原生桥取字节转 base64（见 loadCover）
+     音频 GET /api/tracks/{id}/stream?token= ；FLAC 原文件一首 85MB，平板放不动，
+          非 mp3/aac/wav/ogg 一律走 GET /api/tracks/{id}/transcode?token=&format=mp3&bitrate=192 */
   function DaoliyuBackend(cfg) {
     this.kind = 'daoliyu';
     var base = String(cfg.baseUrl || '').replace(/\/+$/, '');
@@ -356,7 +360,7 @@
 
   DaoliyuBackend.prototype.login = function (cb) {
     var self = this;
-    var body = JSON.stringify({ email: this.user, username: this.user, password: this.pass });
+    var body = JSON.stringify({ email: this.user, username: this.user, password: this.pass, remember: true });
     httpReq('POST', this.base + '/api/auth/login', null, body, function (err, code, text) {
       if (err) { cb(err); return; }
       var o = null;
@@ -366,6 +370,7 @@
       cb(null);
     });
   };
+
 
   DaoliyuBackend.prototype.auth = function (cb) {
     if (this.token) { cb(null); return; }
@@ -404,13 +409,42 @@
     this.login(function (err) { cb(err || null); });
   };
 
-  DaoliyuBackend.prototype.coverUrl = function (track) {
+  DaoliyuBackend.prototype.origin = function () {
+    var m = /^https?:\/\/[^/]+/i.exec(this.base);
+    return m ? m[0] : this.base;
+  };
+
+  /* 封面：道理鱼的 /api/cover 也要 Authorization，<img> 加不了头 → 用原生桥取字节转 base64 */
+  DaoliyuBackend.prototype.coverReqUrl = function (track) {
     if (!track) return '';
-    if (track.coverArtUrl) return String(track.coverArtUrl);
+    var u = track.coverArtUrl;
+    if (u) {
+      if (/^https?:\/\//i.test(u)) return u;
+      if (u.charAt(0) === '/') return this.origin() + u;
+      return this.base + '/' + u;
+    }
     if (track.coverArtPath) {
       return this.base + '/api/cover?path=' + encodeURIComponent(String(track.coverArtPath)) + '&size=300';
     }
     return '';
+  };
+
+  DaoliyuBackend.prototype.coverUrl = function (track) {
+    /* 给别的后端用的签名；道理鱼的封面不能直接进 <img>（要鉴权头），走 loadCover */
+    return this.coverReqUrl(track);
+  };
+
+  DaoliyuBackend.prototype.loadCover = function (track, cb) {
+    var self = this;
+    var url = this.coverReqUrl(track);
+    if (!url) { cb(null, ''); return; }
+    this.auth(function (err) {
+      if (err) { cb(err); return; }
+      httpBin('GET', url, { 'Authorization': 'Bearer ' + self.token }, function (e2, mime, b64) {
+        if (e2 || !b64) { cb(e2 || '封面为空'); return; }
+        cb(null, 'data:' + (mime || 'image/jpeg').split(';')[0] + ';base64,' + b64);
+      });
+    });
   };
 
   DaoliyuBackend.prototype.playlists = function (cb) {
@@ -424,7 +458,7 @@
         var p = arr[i] || {};
         out.push({
           id: String(p.id), name: p.name || '未命名歌单', count: num(p.trackCount, 0),
-          cover: self.coverUrl({ coverArtUrl: p.coverArtUrl, coverArtPath: p.coverArtPath })
+          cover: '', coverReq: { coverArtUrl: p.coverArtUrl, coverArtPath: p.coverArtPath }
         });
       }
       cb(null, out);
@@ -442,7 +476,12 @@
         var t = items[i] && items[i].track ? items[i].track : items[i];
         if (!t || !t.id) continue;
         var artists = '';
-        if (t.artists && t.artists.length) {
+        /* 道理鱼已经拼好艺术家串（artistLabel 形如「杨坤 / 郭采洁」），优先用它 */
+        if (t.artistLabel) {
+          artists = String(t.artistLabel);
+        } else if (t.artistName) {
+          artists = String(t.artistName);
+        } else if (t.artists && t.artists.length) {
           var names = [];
           for (var k = 0; k < t.artists.length; k++) {
             var a = t.artists[k];
@@ -452,16 +491,18 @@
         } else if (t.artist) {
           artists = String(t.artist);
         }
-        /* 曲目本身常不带封面：退回专辑封面（道理鱼的封面路径一般挂在 album 上） */
+        /* 曲目封面常和专辑同一张：曲目没挂封面时退回专辑的封面路径 */
         var alb = t.album || {};
         out.push({
           id: String(t.id), title: t.title || '未命名', artist: artists,
           album: (alb.title || alb.name) || '',
           duration: num(t.durationSeconds, 0),
-          cover: self.coverUrl({
+          cover: '',
+          coverReq: {
             coverArtUrl: t.coverArtUrl || alb.coverArtUrl || '',
             coverArtPath: t.coverArtPath || alb.coverArtPath || alb.cover || ''
-          }),
+          },
+          format: String(t.fileFormat || '').toLowerCase(),
           rate: 1, raw: t
         });
       }
@@ -473,8 +514,26 @@
     var self = this;
     this.auth(function (err) {
       if (err) { cb(err); return; }
-      cb(null, self.base + '/api/tracks/' + encodeURIComponent(t.id) + '/stream?token=' +
-        encodeURIComponent(self.token), 1);
+      var q = '?token=' + encodeURIComponent(self.token);
+      var id = encodeURIComponent(t.id);
+      var fmt = String(t.format || (t.raw && t.raw.fileFormat) || '').toLowerCase();
+      var direct = fmt === 'mp3' || fmt === 'm4a' || fmt === 'aac' || fmt === 'wav' || fmt === 'ogg';
+      if (direct) {
+        cb(null, self.base + '/api/tracks/' + id + '/stream' + q, 1);
+        return;
+      }
+      /* FLAC/ape 一首几十 MB，平板既放不动也可能解不了码：让服务器转 mp3 */
+      cb(null, self.base + '/api/tracks/' + id + '/transcode' + q + '&format=mp3&bitrate=192', 1);
+    });
+  };
+
+  /* 原始流放不出时的兜底地址（平板缺解码器时用） */
+  DaoliyuBackend.prototype.transcodeUrl = function (t, cb) {
+    var self = this;
+    this.auth(function (err) {
+      if (err) { cb(err); return; }
+      cb(null, self.base + '/api/tracks/' + encodeURIComponent(t.id) + '/transcode?token=' +
+        encodeURIComponent(self.token) + '&format=mp3&bitrate=192', 1);
     });
   };
 
@@ -539,6 +598,48 @@
     httpReq('GET', url, null, '', cb);
   }
 
+  /* 取二进制转 base64（封面要鉴权头，<img> 加不了头）；cb(err, mime, b64) */
+  window.__musicBinaryCb = function (id, out) {
+    var cb = S.binCbs[id];
+    if (!cb) return;
+    delete S.binCbs[id];
+    var o;
+    try { o = JSON.parse(out || '{}'); } catch (e) { cb('返回解析失败'); return; }
+    if (o && o.error) { cb(String(o.error)); return; }
+    if (!o.b64) { cb('没有数据'); return; }
+    cb(null, String(o.mime || 'image/jpeg'), String(o.b64));
+  };
+
+  function httpBin(method, url, headers, cb) {
+    var b = bridge();
+    if (b && b.httpBinary) {
+      var id = 'b' + (++S.cbSeq);
+      S.binCbs[id] = cb;
+      try { b.httpBinary(id, method || 'GET', url, JSON.stringify(headers || {})); }
+      catch (e) { delete S.binCbs[id]; cb('桥接失败'); }
+      return;
+    }
+    /* 桌面浏览器调试兜底 */
+    try {
+      var x = new XMLHttpRequest();
+      x.open(method || 'GET', url, true);
+      x.responseType = 'arraybuffer';
+      x.timeout = 12000;
+      if (headers) { for (var k in headers) { if (headers.hasOwnProperty(k)) x.setRequestHeader(k, headers[k]); } }
+      x.onload = function () {
+        var bytes = new Uint8Array(x.response || new ArrayBuffer(0));
+        var bin = '', chunk = 8192;
+        for (var j = 0; j < bytes.length; j += chunk) {
+          bin += String.fromCharCode.apply(null, bytes.subarray(j, Math.min(j + chunk, bytes.length)));
+        }
+        cb(null, x.getResponseHeader('Content-Type') || 'image/jpeg', btoa(bin));
+      };
+      x.onerror = function () { cb('网络错误'); };
+      x.ontimeout = function () { cb('超时'); };
+      x.send(null);
+    } catch (e2) { cb('请求失败'); }
+  }
+
   /* method/headers/body 都可指定；WebView 里优先走原生桥（file:// 没有 CORS 问题） */
   function httpReq(method, url, headers, body, cb) {
     var b = bridge();
@@ -588,6 +689,24 @@
     });
     a.addEventListener('error', function () {
       S.playing = false; paintTransport();
+      /* 原始流放不出来（比如平板没有 FLAC 解码器）：让服务器转 mp3 再试一次 */
+      if (S.track && S.backend && S.backend.transcodeUrl && S.lastUrl &&
+          S.lastUrl.indexOf('/stream') >= 0 && !S.triedTranscode) {
+        S.triedTranscode = true;
+        act('stream failed, retry transcode');
+        S.backend.transcodeUrl(S.track, function (e2, url2) {
+          if (e2 || !url2) { setStatus('error', '播放失败（音频地址不可达）'); return; }
+          var a2 = ensureAudio();
+          S.lastUrl = url2;
+          try {
+            a2.src = url2; a2.currentTime = 0; a2.volume = S.vol;
+            var p2 = a2.play();
+            if (p2 && p2.then) p2.then(null, function () { setStatus('error', '播放失败（转码也放不出）'); });
+          } catch (e) { setStatus('error', '播放器出错'); }
+          paintTransport();
+        });
+        return;
+      }
       setStatus('error', '播放失败（音频地址不可达）');
     });
     S.audio = a;
@@ -617,6 +736,8 @@
     setStatus(S.status === 'error' ? 'error' : (S.status === 'mock' ? 'mock' : 'ok'), S.status === 'mock' ? '演示音源 · ' + (track.artist || '') : '正在播放');
     S.backend.streamUrl(track, function (err, url, rate) {
       if (err || !url) { setStatus('error', err || '拿不到音频地址'); return; }
+      S.lastUrl = url;
+      S.triedTranscode = false;
       var a = ensureAudio();
       try {
         a.pause();
@@ -730,6 +851,23 @@
     e.innerHTML = '<span class="dot"></span><span>' + esc(S.statusText || '') + '</span>';
   }
 
+  /* ---------------- 封面解析：道理鱼的封面要鉴权头，只能异步取字节 ---------------- */
+  function resolveCover(item) {
+    if (!item || item.cover || !item.coverReq) return;
+    var b = S.backend;
+    if (!b || !b.loadCover) return;
+    var key = String(item.coverReq.coverArtUrl || item.coverReq.coverArtPath || '');
+    if (!key || S.coverPend[key]) return;
+    S.coverPend[key] = true;
+    b.loadCover(item.coverReq, function (err, src) {
+      delete S.coverPend[key];
+      if (err || !src) { act('cover failed ' + err); return; }
+      item.cover = src;
+      paintNow();
+      paintList();
+    });
+  }
+
   function paintNow() {
     var e = S.el, t = S.track;
     if (!e.cover) return;
@@ -746,7 +884,10 @@
       return;
     }
     e.cover.className = 'm-cover';
-    e.cover.innerHTML = t.cover ? '<img src="' + esc(t.cover) + '" alt="">' : '';
+    /* 封面没解析出来之前先放音符占位（道理鱼的封面是异步取的） */
+    e.cover.innerHTML = t.cover ? '<img src="' + esc(t.cover) + '" alt="">'
+      : '<span class="m-cover-ph">' + (window.ICONS ? svg('music') : '') + '</span>';
+    resolveCover(t);
     e.song.textContent = t.title || '未命名';
     e.artist.textContent = t.artist || '未知艺术家';
     e.album.textContent = t.album || '';
@@ -837,6 +978,7 @@
         '<span class="m-pl-go">' + svg('chev') + '</span></button>';
     }
     e.list.innerHTML = out;
+    for (var q = 0; q < S.playlists.length; q++) resolveCover(S.playlists[q]);
   }
 
   /* ---------------- 手势：右滑拉出 / 左滑收起 ---------------- */

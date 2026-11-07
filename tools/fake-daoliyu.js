@@ -1,33 +1,35 @@
 // Fake Daoliyu (道理鱼) server for integration-testing the negative-screen music page
 // before the real server address is available. No dependencies.
 //   node tools/fake-daoliyu.js [port]
-// Endpoints mirror the real API family:
+// Endpoints mirror the real API family (verified against daoliyu.cchong.cc v1.0.5):
 //   POST /api/auth/login            {email,username,password} -> {token,user}
-//   GET  /api/playlists/web/mine    -> [ {id,name,trackCount,coverArtPath} ]
+//   GET  /api/playlists/web/mine    -> [ {id,name,trackCount,coverArtPath,coverArtUrl} ]
 //   GET  /api/playlists/{id}/tracks -> {items:[{order,track}],total}
-//   GET  /api/cover?path=&size=     -> SVG cover
-//   GET  /api/tracks/{id}/stream    -> WAV audio (checks ?token=)
+//   GET  /api/cover?path=&size=     -> SVG cover (needs Authorization, like the real server)
+//   GET  /api/tracks/{id}/stream    -> audio (checks ?token=)
+//   GET  /api/tracks/{id}/transcode -> audio (real server transcodes FLAC to mp3; here we have
+//           no encoder, so we hand back WAV — the player decodes it fine)
 const http = require('http');
 const PORT = Number(process.argv[2] || 8099);
 const TOKEN = 'tok-test-123';
 
 const PLAYLISTS = [
-  { id: 'pl-1', name: '夜里常放的几张', trackCount: 3, coverArtPath: '/covers/night' },
-  { id: 'pl-2', name: '客厅 · 轻爵士', trackCount: 2, coverArtPath: '/covers/jazz' }
+  { id: 'pl-1', name: '夜里常放的几张', trackCount: 3, coverArtPath: '/covers/night', coverArtUrl: '/api/cover?path=%2Fcovers%2Fnight&size=300' },
+  { id: 'pl-2', name: '客厅 · 轻爵士', trackCount: 2, coverArtPath: '/covers/jazz', coverArtUrl: '/api/cover?path=%2Fcovers%2Fjazz&size=300' }
 ];
 
-const ALBUM_NIGHT = { id: 'al1', title: '夜航', coverArtPath: '/covers/night' };
-const ALBUM_JAZZ = { id: 'al2', title: 'Living Room', coverArtPath: '/covers/jazz' };
+const ALBUM_NIGHT = { id: 'al1', title: '夜航', coverArtPath: '/covers/night', coverArtUrl: '/api/cover?path=%2Fcovers%2Fnight&size=300' };
+const ALBUM_JAZZ = { id: 'al2', title: 'Living Room', coverArtPath: '/covers/jazz', coverArtUrl: '/api/cover?path=%2Fcovers%2Fjazz&size=300' };
 
 const TRACKS = {
   'pl-1': [
-    { id: 'tr-1', title: '晚安，客厅', artists: [{ artist: { id: 'a1', name: 'Demo' } }], album: ALBUM_NIGHT, durationSeconds: 6 },
-    { id: 'tr-2', title: '暖光', artists: [{ artist: { id: 'a2', name: 'Demo Band' } }], album: ALBUM_NIGHT, durationSeconds: 5 },
-    { id: 'tr-3', title: '慢一点回家', artists: [{ artist: { id: 'a1', name: 'Demo' } }], album: ALBUM_NIGHT, durationSeconds: 7 }
+    { id: 'tr-1', title: '晚安，客厅', artistName: 'Demo', artistLabel: 'Demo', artists: [{ artist: { id: 'a1', name: 'Demo' } }], album: ALBUM_NIGHT, durationSeconds: 6, fileFormat: 'flac' },
+    { id: 'tr-2', title: '暖光', artistName: 'Demo Band', artistLabel: 'Demo Band', artists: [{ artist: { id: 'a2', name: 'Demo Band' } }], album: ALBUM_NIGHT, durationSeconds: 5, fileFormat: 'flac' },
+    { id: 'tr-3', title: '慢一点回家', artistName: 'Demo', artistLabel: 'Demo', artists: [{ artist: { id: 'a1', name: 'Demo' } }], album: ALBUM_NIGHT, durationSeconds: 7, fileFormat: 'flac' }
   ],
   'pl-2': [
-    { id: 'tr-4', title: 'Afternoon', artists: [{ artist: { id: 'a3', name: 'Trio' } }], album: ALBUM_JAZZ, durationSeconds: 6 },
-    { id: 'tr-5', title: 'Blue Chair', artists: [{ artist: { id: 'a3', name: 'Trio' } }], album: ALBUM_JAZZ, durationSeconds: 6 }
+    { id: 'tr-4', title: 'Afternoon', artistName: 'Trio', artistLabel: 'Trio', artists: [{ artist: { id: 'a3', name: 'Trio' } }], album: ALBUM_JAZZ, durationSeconds: 6, fileFormat: 'mp3' },
+    { id: 'tr-5', title: 'Blue Chair', artistName: 'Trio', artistLabel: 'Trio', artists: [{ artist: { id: 'a3', name: 'Trio' } }], album: ALBUM_JAZZ, durationSeconds: 6, fileFormat: 'mp3' }
   ]
 };
 
@@ -90,7 +92,7 @@ const server = http.createServer((req, res) => {
   }
 
   const auth = req.headers.authorization || '';
-  if (p.startsWith('/api/') && !p.includes('/stream') && !p.startsWith('/api/cover')) {
+  if (p.startsWith('/api/') && !p.includes('/stream') && !p.includes('/transcode') && p !== '/api/auth/login') {
     if (auth !== 'Bearer ' + TOKEN) return json(res, 401, { error: 'UNAUTHORIZED' });
   }
 
@@ -113,13 +115,13 @@ const server = http.createServer((req, res) => {
     return send(res, 200, 'image/svg+xml', COVER(hue, path.split('/').pop() || 'cover'));
   }
 
-  m = p.match(/^\/api\/tracks\/([^/]+)\/stream$/);
+  m = p.match(/^\/api\/tracks\/([^/]+)\/(stream|transcode)$/);
   if (m) {
     if (u.searchParams.get('token') !== TOKEN) return json(res, 401, { error: 'UNAUTHORIZED' });
     const id = m[1];
     const freq = 220 + (parseInt(id.replace(/\D/g, ''), 10) || 1) * 40;
     const buf = wav(6, freq);
-    console.log('stream', id, buf.length);
+    console.log(m[2], id, u.searchParams.get('format') || '', buf.length);
     res.writeHead(200, { 'Content-Type': 'audio/wav', 'Content-Length': buf.length, 'Accept-Ranges': 'bytes' });
     return res.end(buf);
   }

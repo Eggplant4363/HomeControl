@@ -54,6 +54,23 @@ body::before {
 
 .spacer { flex: 1; }
 
+/* 住户头像：紧挨「已连接」左边，环色+文字表示在家/离家 */
+.who { display: flex; align-items: center; margin-right: 14px; }
+.who-av {
+  position: relative; flex: 0 0 auto; width: 34px; height: 34px; border-radius: 50%;
+  background: rgba(255,255,255,.075); overflow: hidden;
+  box-shadow: 0 0 0 2px rgba(255,255,255,.16);
+  color: #dbe8fb; font-size: 15px; font-weight: 600;
+  display: flex; align-items: center; justify-content: center;
+  transition: box-shadow .2s;
+}
+.who-av + .who-av { margin-left: -9px; }
+.who-av.home { box-shadow: 0 0 0 2px rgba(61,220,132,.85), 0 0 10px rgba(61,220,132,.25); }
+.who-av img { position: absolute; left: 0; top: 0; width: 100%; height: 100%; object-fit: cover; }
+.who-av b { font-weight: 600; line-height: 1; }
+.who-t { margin-left: 9px; font-size: 13.5px; color: #cfe0f5; white-space: nowrap; }
+.who.away .who-t { color: #8d9cb4; }
+
 .status {
   display: flex; align-items: center; height: 34px; padding: 0 14px;
   border-radius: 999px; background: rgba(255,255,255,.045);
@@ -172,6 +189,19 @@ body::before {
 .t-val.muted { font-size: 24px; letter-spacing: 0; color: #7e8ca3; }
 .t-val .u { font-size: 15px; font-weight: 400; letter-spacing: 0; color: #8b9ab1; margin-left: 3px; }
 .t-val.small { font-size: 30px; }
+/* 传感器卡片：左侧数值 + 右侧迷你历史曲线（宽 42%，最高 120px） */
+.t-midrow { display: flex; align-items: center; min-height: 0; }
+/* 数值固定不动，曲线吃掉剩余宽度（不再用百分比，否则窄卡里会和单位重叠） */
+.t-midrow .t-val { flex: 0 0 auto; white-space: nowrap; }
+.t-spark { flex: 1 1 auto; min-width: 26px; max-width: 120px; margin-left: 10px; height: 46px; display: flex; align-items: center; }
+.t-spark.none { display: none; }
+.t-spark-svg { width: 100%; height: 100%; display: block; overflow: visible; }
+.t-spark-line {
+  fill: none; stroke: rgb(var(--accent)); stroke-width: 1.6;
+  stroke-linejoin: round; stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+.t-spark-area { fill: rgb(var(--accent)); opacity: .16; stroke: none; }
 
 /* 百分比进度条：比最早的 5px 高很多，手指能直接按住拖；
    填充和拖动钮的位置统一读 CSS 变量 --pct，JS 只改这一个值。
@@ -815,3 +845,11 @@ body::before {
 }
 .tile.resizing .t-grip::before { border-bottom-color: #6ea8ff; }
 .tile.resizing .t-grip::after { border-color: #dbe9ff; }
+
+/* 迷你曲线：卡片越小，曲线越矮越窄 */
+.grid.size-sm .t-spark { height: 38px; }
+.grid.size-lg .t-spark { height: 56px; }
+.grid.cols-5 .t-spark { max-width: 104px; margin-left: 8px; }
+.grid.cols-6 .t-spark { max-width: 78px; height: 34px; margin-left: 6px; }
+.grid.cols-3 .t-spark { max-width: 150px; height: 56px; }
+.grid.cols-6 .t-spark-svg { overflow: hidden; }
