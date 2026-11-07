@@ -673,8 +673,12 @@ var COLOR_PRESETS = [
         if (pbar.style.display !== 'none') pbar.style.display = 'none';
       } else {
         if (pbar.style.display === 'none') pbar.style.display = '';
-        var dragNow = S.pctDrag && S.pctDrag.bar === pbar;
-        if (!dragNow) setBarPct(pbar, st === 'on' ? pm.pct : 0);
+        /* 拖动中：按实体判断（DOM 可能已被重建）
+           刚松手 1.2s 内：HA 会把 brightness 的过渡中间值一条条推回来，
+           照画就会出现「松手后自己往回弹」，所以给一个静默窗口 */
+        var dragNow = S.pctDrag && S.pctDrag.entity === tile.entity;
+        var holding = S.pctHold && S.pctHold.entity === tile.entity && Date.now() < S.pctHold.until;
+        if (!dragNow && !holding) setBarPct(pbar, st === 'on' ? pm.pct : 0);
       }
     }
 
@@ -3229,6 +3233,9 @@ function bindDim() {
       var now = Date.now();
       if (!force && now - d.sentAt < 140) return;   /* 拖动中限流，别把 HA 打满 */
       d.sentAt = now;
+      /* 发出去之后的一小段时间里，HA 推回来的中间值不覆盖本地手感：
+         过渡灯会一条条回包，照画就会出现「松手后自己往回弹」 */
+      S.pctHold = { entity: d.entity, until: now + 1500 };
       var data = { entity_id: d.entity };
       data[d.meta.key] = d.pct;
       callService(d.meta.domain, d.meta.service, data).then(null, function () { });
@@ -3272,6 +3279,7 @@ function bindDim() {
       if (!d) return;
       S.pctDrag = null;
       pctSend(d, true);
+      S.pctHold = { entity: d.entity, until: Date.now() + 1200 };
       d.bar.className = 't-bar';
       setTimeout(function () { S.pctFired = false; }, 400);
       actLog('pct up ' + d.entity + ' ' + d.pct);

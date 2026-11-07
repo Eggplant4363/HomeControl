@@ -188,8 +188,8 @@ body::before {
   transition: width .22s;
 }
 .t-bar b {
-  position: absolute; top: 50%; left: var(--pct); width: 26px; height: 26px;
-  margin: -13px 0 0 -13px; border-radius: 50%;
+  position: absolute; top: 50%; left: var(--pct); width: 22px; height: 22px;
+  margin: -11px 0 0 -11px; border-radius: 50%;
   background: #eef5ff; box-shadow: 0 2px 7px rgba(0,0,0,.38);
   transition: left .22s;
 }
@@ -199,7 +199,7 @@ body::before {
 /* 小卡片（紧凑/6 列）里条矮一点、钮小一点，别把名字挤出去 */
 .grid.size-sm .t-bar, .grid.cols-6 .t-bar { height: 14px; border-radius: 7px; margin-top: 6px; }
 .grid.size-sm .t-bar i, .grid.cols-6 .t-bar i { border-radius: 7px; }
-.grid.size-sm .t-bar b, .grid.cols-6 .t-bar b { width: 18px; height: 18px; margin: -9px 0 0 -9px; }
+.grid.size-sm .t-bar b, .grid.cols-6 .t-bar b { width: 14px; height: 14px; margin: -7px 0 0 -7px; }
 
 .t-ctl { display: flex; align-items: center; margin-top: 9px; }
 .t-step {

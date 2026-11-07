@@ -1,4 +1,4 @@
-﻿/*
+/*
  * 只为了「看清卡片排版」的截图脚本：mock 模式下把几张卡灌进 hc.edit，再截图。
  * 用法：node tools\shot-foot.js [http://127.0.0.1:8788/]
  */
@@ -129,6 +129,9 @@ class WS {
   console.log(info.cards.join('\n'));
   var dbg = await evalJs('(function(){var g=document.getElementById("grid")||document.querySelector(".grid");return {prefs:localStorage.getItem("hc.prefs"),cls:g?g.className:"?",colsInline:g?(g.style.gridTemplateColumns||""):""};})()');
   console.log('debug ' + JSON.stringify(dbg));
+  /* 进度条几何：改条高/钮大小时先看这里，比肉眼看截图准 */
+  var geo = await evalJs('(function(){var b=document.querySelector(".t-bar");if(!b)return null;var f=b.querySelector("i"),k=b.querySelector("b");var rb=b.getBoundingClientRect(),rf=f?f.getBoundingClientRect():null,rk=k?k.getBoundingClientRect():null;var cs=getComputedStyle(b);return {bar:[Math.round(rb.width),Math.round(rb.height)],barCss:[cs.height,cs.borderRadius,cs.marginTop],fill:rf?[Math.round(rf.width),Math.round(rf.height)]:null,knob:rk?[Math.round(rk.width),Math.round(rk.height)]:null};})()');
+  console.log('geo ' + JSON.stringify(geo));
   fs.mkdirSync(path.dirname(OUT), { recursive: true });
   const shot = await ws.call('Page.captureScreenshot', { format: 'png' });
   fs.writeFileSync(OUT, Buffer.from(shot.data, 'base64'));
