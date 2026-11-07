@@ -22,6 +22,8 @@
     dragging: false,
     lpTimer: null,
     lpFired: false,
+    pctDrag: null,
+    pctFired: false,
     dimOn: false,
     dimTimer: null,
     status: { connected: false, text: '连接中…' },
@@ -261,6 +263,28 @@ var COLOR_PRESETS = [
   }
   function lightPct(attrs) { return Math.max(1, Math.round(num(attrs.brightness, 255) / 255 * 100)); }
 
+  /* ---------------- 卡片百分比进度条 ----------------
+     有些器件天生带一个 0–100 的量（灯的亮度、以后的音量/开合度），卡片上把它画成
+     一条进度条，手指直接拖就能改。pctMeta() 是唯一的能力判断入口：有百分比才出条，
+     也顺便告诉调用方该往哪个 HA 服务写回。 */
+  function pctMeta(tile, attrs) {
+    if (!tile) return null;
+    var a = attrs || {};
+    if (tile.type === 'light' && hasBrightness(a)) {
+      return { pct: lightPct(a), domain: 'light', service: 'turn_on', key: 'brightness_pct' };
+    }
+    return null;
+  }
+  /** 手指横坐标 → 1..100。贴边就取整到边上；0 不给（0% 等于关灯，会误关）。 */
+  function pctFromX(x, left, width) {
+    var w = num(width, 0);
+    if (!(w > 0)) return null;
+    var p = Math.round((num(x, 0) - num(left, 0)) / w * 100);
+    if (p < 1) p = 1;
+    if (p > 100) p = 100;
+    return p;
+  }
+
   /* Chromium 57 的 SVGElement.matches 不可靠（点 svg 图标时 closest 会失效），
      这里用 class 字符串 / getAttribute 手工向上查找。 */
   function hasClass(n, cls) {
@@ -428,7 +452,7 @@ var COLOR_PRESETS = [
     if (tile.type === 'climate') {
       if (st === 'off') return '已关闭';
       var cur = attrs.current_temperature;
-      return (HVAC[st] || st) + (cur != null ? ' · 室温 ' + num(cur, 0).toFixed(1) + '°' : '');
+      return (HVAC[st] || st) + (cur != null ? ' · ' + num(cur, 0).toFixed(1) + '°' : '');
     }
     if (tile.type === 'cover') {
       return (COVER_STATE[st] || st) + (attrs.current_position != null ? ' · ' + Math.round(num(attrs.current_position, 0)) + '%' : '');
@@ -443,6 +467,24 @@ var COLOR_PRESETS = [
   }
 
   /* ---------------- 卡片 ---------------- */
+  /* 百分比进度条骨架：i = 已填充部分，b = 拖动钮。位置都读 CSS 变量 --pct，
+     JS 只改一个值（setBarPct），比同时改 width/left 两处省一次样式计算。 */
+  function barHtml() {
+    return '<div class="t-bar" data-role="pbar" data-pct="0">' +
+      '<i data-role="bar"></i><b class="t-knob"></b></div>';
+  }
+
+  /** 进度条画到某个百分比。拖动中每帧都会调用，值没变就不写 DOM。 */
+  function setBarPct(bar, pct) {
+    if (!bar) return;
+    var p = num(pct, 0);
+    if (p < 0) p = 0;
+    if (p > 100) p = 100;
+    if (bar.getAttribute('data-pct') === String(p)) return;
+    bar.setAttribute('data-pct', String(p));
+    bar.style.setProperty('--pct', p + '%');
+  }
+
   function midHtml(tile) {
     if (tile.type === 'camera') {
       return '<div class="cam-thumb" data-cam="' + esc(tile.entity) + '"></div>';
@@ -464,8 +506,9 @@ var COLOR_PRESETS = [
         '<button class="t-step" data-act="cover-close">' + svg('down') + '</button></div>';
     }
     if (tile.type === 'light') {
-      var bar = hasBrightness(attrsOf(tile.entity)) ? '<div class="t-bar"><i data-role="bar"></i></div>' : '';
-      return '<div class="t-val" data-role="val"></div>' + bar;
+      /* 条的骨架无条件渲染：卡片常常先于 HA 首个状态包画出来，
+         那时还判断不出这盏灯能不能调，等状态到了再由 updateTile 决定显示/隐藏 */
+      return '<div class="t-val" data-role="val"></div>' + barHtml();
     }
     return '<div class="t-val" data-role="val"></div>';
   }
@@ -555,39 +598,46 @@ var COLOR_PRESETS = [
     var tile = item.tile;
     var naCls = isNa(stateOf(tile.entity)) ? ' na' : '';
     var span = cardSpan(tile.entity, num(prefs().cols, 4));
+    var rows = S.editing ? rowSpan(tile.entity) : 1;
     var notAdded = S.editing && !cardVisible(tile.entity);
-    return '<div class="tile' + naCls + (notAdded ? ' not-added' : '') + (span > 1 ? ' span-' + span : '') + '" data-entity="' + esc(tile.entity) + '"' +
-      (span > 1 ? ' data-span="' + span + '"' : '') + '>' +
+    var grabbable = S.editing && !notAdded;
+    return '<div class="tile' + naCls + (notAdded ? ' not-added' : '') + (span > 1 ? ' span-' + span : '') + (rows > 1 ? ' rows-' + rows : '') + '" data-entity="' + esc(tile.entity) + '"' +
+      (span > 1 ? ' data-span="' + span + '"' : '') + (rows > 1 ? ' data-rows="' + rows + '"' : '') + '>' +
       '<div class="tile-head">' +
       (S.editing
-        ? '<div class="t-edit-ico" data-role="ico" data-icon="' + esc(iconFor(tile)) + '">' + svg(iconFor(tile)) + '</div>'
-        : '<div class="t-icon" data-role="ico" data-icon="' + esc(iconFor(tile)) + '">' + svg(iconFor(tile)) + '</div>') +
+        ? '<div class="t-ico-wrap"><div class="t-edit-ico" data-role="ico" data-icon="' + esc(iconFor(tile)) + '">' + svg(iconFor(tile)) + '</div></div>'
+        : '<div class="t-ico-wrap"><div class="t-icon" data-role="ico" data-icon="' + esc(iconFor(tile)) + '">' + svg(iconFor(tile)) + '</div></div>') +
       (item.room ? '<div class="tile-room">' + esc(item.room) + '</div>' : '') +
       (S.editing
         ? ''
         : '<button class="t-more" data-act="sheet">' + svg('dots') + '</button>') +
       '</div>' +
-      (S.editing && notAdded
-        ? '<div class="t-tools"><button class="t-tool t-add" data-act="card-add">+ 添加</button></div>'
+      (S.editing
+        ? '<div class="t-tools">' +
+            (notAdded ? '<button class="t-tool t-add" data-act="card-add">+ 添加</button>' : '') +
+            '<span class="t-size">' + spanLabel(tile.entity) + (rows > 1 ? ' · 高 ' + rows : '') + '</span>' +
+          '</div>'
         : '') +
       '<div class="tile-mid">' + midHtml(tile) + '</div>' +
       '<div class="tile-foot"><div class="t-name">' + esc(displayName(tile)) + '</div>' +
       '<div class="t-sub" data-role="sub"></div></div>' +
+      (grabbable ? '<div class="t-grip" data-grip="' + esc(tile.entity) + '"></div>' : '') +
       '</div>';
   }
 
   /** 卡片头部那个宽度按钮显示的字：1× / 2× / 整行 */
   function spanLabel(entity) {
-    var cols = num(prefs().cols, 4);
-    var n = num(cardSpan(entity, 99), 1);
-    if (n >= cols) return '整行';
-    return n + '×';
+    return spanText(cardSpan(entity, 99), num(prefs().cols, 4));
   }
 
   function updateTile(node, item) {
     if (!node) return;
     var tile = item.tile, st = stateOf(tile.entity), attrs = attrsOf(tile.entity);
-    var tcls = 'tile type-' + tile.type + (isOn(tile) ? ' on' : '');
+    /* 保留 span-N（卡片宽度）与 selected（编辑态选中），否则每次状态推送都会把宽度/选中抹掉 */
+    var sp = cardSpan(tile.entity, num(prefs().cols, 4));
+    var rw = rowSpan(tile.entity);
+    var tcls = 'tile type-' + tile.type + (isOn(tile) ? ' on' : '') + (isNa(st) ? ' na' : '') + (sp > 1 ? ' span-' + sp : '') + (rw > 1 ? ' rows-' + rw : '');
+    if (S.tileSel === node && node.className.indexOf('selected') >= 0) tcls += ' selected';
     if (node.className !== tcls) node.className = tcls;
     var tacc = accentFor(tile);
     if (node.getAttribute('data-accent') !== tacc) {
@@ -613,15 +663,26 @@ var COLOR_PRESETS = [
       if (val.innerHTML !== vhtml) val.innerHTML = vhtml;
     }
 
-    var bar = node.querySelector('[data-role="bar"]');
-    if (bar) {
-      var w = (st === 'on' ? lightPct(attrs) : 0) + '%';
-      if (bar.style.width !== w) bar.style.width = w;
+    /* 百分比进度条：关着就画到 0（但条还在，点一下就能把灯调亮）。
+       正在被手指拖的那一条不跟服务器回包走，否则拖到一半会被拉回去。
+       不支持调光的灯（onoff）把条藏掉——骨架是渲染时就画好的，所以这里只切显隐。 */
+    var pbar = node.querySelector('[data-role="pbar"]');
+    if (pbar) {
+      var pm = pctMeta(tile, attrs);
+      if (!pm) {
+        if (pbar.style.display !== 'none') pbar.style.display = 'none';
+      } else {
+        if (pbar.style.display === 'none') pbar.style.display = '';
+        var dragNow = S.pctDrag && S.pctDrag.bar === pbar;
+        if (!dragNow) setBarPct(pbar, st === 'on' ? pm.pct : 0);
+      }
     }
 
     var sub = node.querySelector('[data-role="sub"]');
     if (sub) {
       var stxt = subText(tile, st, attrs);
+      /* 名称与状态现在同一行：传感器那种「人体感应 | 人体感应」的重复就没必要了 */
+      if (stxt && stxt === displayName(tile)) stxt = '';
       if (sub.textContent !== stxt) sub.textContent = stxt;
     }
 
@@ -745,7 +806,8 @@ var COLOR_PRESETS = [
     return {
       added: (o.added && typeof o.added === 'object') ? o.added : {},
       order: Array.isArray(o.order) ? o.order.slice() : [],
-      span: (o.span && typeof o.span === 'object') ? o.span : {}
+      span: (o.span && typeof o.span === 'object') ? o.span : {},
+      rows: (o.rows && typeof o.rows === 'object') ? o.rows : {}
     };
   }
 
@@ -773,12 +835,30 @@ var COLOR_PRESETS = [
     return n;
   }
 
-  /** 卡片宽度的可选项：1 列 / 2 列 / 整行（整行 = 按当前列数占满） */
+  /** 卡片宽度的可选项：1× ~ N×（N = 当前每行卡片数），最后一档显示「整行」 */
+  /** 卡片占几行（1~2），磁贴式拉伸用 */
+  function rowSpan(entity) {
+    var n = num(editState().rows && editState().rows[entity], 1);
+    if (n < 1) n = 1;
+    if (n > 2) n = 2;
+    return n;
+  }
+
   function spanOptions(cols) {
-    var out = [{ v: 1, t: '1×' }];
-    if (cols >= 2) out.push({ v: 2, t: '2×' });
-    if (cols >= 3) out.push({ v: cols, t: '整行' });
+    var n = num(cols, 4);
+    if (n < 1) n = 1;
+    if (n > 6) n = 6;
+    var out = [];
+    for (var i = 1; i <= n; i++) out.push({ v: i, t: i === n ? (n === 1 ? '1×' : '整行') : (i + '×') });
     return out;
+  }
+
+  /** 宽度标签：整行（= 当前列数）显示「整行」，其余显示 N× */
+  function spanText(v, cols) {
+    var n = num(v, 1);
+    var c = num(cols, 4);
+    if (c > 1 && n >= c) return '整行';
+    return n + '×';
   }
 
   /** 排序：先按自定义顺序，没排过的按「设备名/实体名」稳定排序，保证切列数不会乱 */
@@ -1023,6 +1103,39 @@ var COLOR_PRESETS = [
     return h;
   }
 
+  function spanSheetHtml(item) {
+    var cols = num(prefs().cols, 4);
+    var cur = cardSpan(item.tile.entity, 99);
+    var h = '<div class="cfg-head">卡片宽度</div>' +
+      '<div class="cfg-desc">' + esc(displayName(item.tile)) + ' 现在占 ' + spanText(cur, cols) +
+      '；最多 ' + cols + ' 列（跟随「每行卡片」设置）。</div>' +
+      '<div class="ed-list">';
+    spanOptions(cols).forEach(function (o) {
+      var on = o.v === cur;
+      h += '<button class="ed-row' + (on ? ' on' : '') + '" data-act="card-span-set:' + o.v + '">' +
+        '<span class="ed-box">' + (on ? '✓' : '') + '</span>' +
+        '<span class="ed-name">' + o.t + '</span>' +
+        '<span class="ed-id">占 ' + o.v + ' / ' + cols + ' 列</span></button>';
+    });
+    h += '</div>' +
+      '<div class="cfg-actions"><button class="btn primary" data-act="span-close">返回</button></div>';
+    return h;
+  }
+
+  function openSpanSheet(item) {
+    if (!item) return;
+    S.sheetShow = 'span';
+    S.sheetItem = item;
+    S.sheetEntity = item.tile.entity;
+    el.sheetInner.innerHTML = spanSheetHtml(item);
+    if (el.sheetInner) el.sheetInner.scrollTop = 0;
+    S.sheetOpenedAt = Date.now();
+    freezeGrid(true);
+    el.mask.className = 'mask show';
+    el.sheet.className = 'sheet show';
+    actLog('span sheet open ' + item.tile.entity);
+  }
+
   function openAddSheet() {
     S.sheetShow = 'add';
     S.sheetItem = null;
@@ -1074,6 +1187,19 @@ var COLOR_PRESETS = [
     renderGrid(true);
   }
 
+  /** 磁贴式拉伸：一次写入列跨度（1..N）与行跨度（1..2） */
+  function resizeCard(entity, c, r) {
+    var e = editState();
+    var cols = num(prefs().cols, 4);
+    var cv = num(c, 1); if (cv < 1) cv = 1; if (cv > cols) cv = cols;
+    var rv = num(r, 1); if (rv < 1) rv = 1; if (rv > 2) rv = 2;
+    if (cv <= 1) delete e.span[entity]; else e.span[entity] = cv;
+    if (rv <= 1) delete e.rows[entity]; else e.rows[entity] = rv;
+    writeEdit(e);
+    actLog('resize ' + entity + ' ' + cv + 'x' + rv);
+    renderGrid(true);
+  }
+
   /** 编辑模式下左右停靠：占满整行 / 占两列 / 占一列 */
   function setSpan(entity, n) {
     var e = editState();
@@ -1083,6 +1209,10 @@ var COLOR_PRESETS = [
     if (v <= 1) delete e.span[entity]; else e.span[entity] = v;
     writeEdit(e);
     actLog('span ' + entity + ' ' + v);
+    if (S.sheetShow === 'span' && S.sheetItem) {
+      el.sheetInner.innerHTML = spanSheetHtml(S.sheetItem);
+      return;
+    }
     renderGrid(true);
   }
 
@@ -1184,7 +1314,7 @@ var COLOR_PRESETS = [
     bar.innerHTML = '<div class="tb-name">' + esc(displayName(item.tile)) + '</div>' +
       '<button class="t-tool" data-act="card-move-left">◀</button>' +
       '<button class="t-tool" data-act="card-move-right">▶</button>' +
-      '<button class="t-tool t-span" data-act="card-span">' + spanLabel(item.tile.entity) + '</button>' +
+      '<button class="t-tool t-span" data-act="card-span" data-hold="card-span-list">' + spanLabel(item.tile.entity) + '</button>' +
       '<button class="t-tool t-del" data-act="card-remove">✕ 移除</button>';
     bar.className = 'tile-bar show';
     actLog('select ' + item.tile.entity);
@@ -1476,10 +1606,15 @@ var COLOR_PRESETS = [
     if (act === 'card-span') {
       var cCols = num(prefs().cols, 4);
       var cNow = num(cardSpan(item.tile.entity, 99), 1);
-      var cNext = cNow >= cCols ? 1 : (cNow >= 2 ? cCols : 2);
-      setSpan(item.tile.entity, cNext);
+      setSpan(item.tile.entity, cNow >= cCols ? 1 : cNow + 1);
       return;
     }
+    if (act.indexOf('card-span-set:') === 0) {
+      setSpan(item.tile.entity, num(act.slice(14), 1));
+      return;
+    }
+    if (act === 'card-span-list') { openSpanSheet(item); return; }
+    if (act === 'span-close') { closeSheet(); return; }
     if (act.indexOf('add-toggle:') === 0) { addToggle(act.slice(11)); return; }
     if (act === 'scene-run') {
       var ent = item && item.entity;
@@ -2001,6 +2136,7 @@ var COLOR_PRESETS = [
   }
 
   function enterDim() {
+    actLog('dim enter');
     setBacklight(num(dimCfg().brightness, 0.35));
     if (S.sheetItem || S.sheetEntity) { scheduleDim(); return; }
     var c = dimCfg();
@@ -2017,6 +2153,7 @@ var COLOR_PRESETS = [
   }
 
   function exitDim() {
+    if (S.dimOn) actLog('dim exit');
     var pb = num(prefs().bright, 100);
     setBacklight(pb >= 100 ? -1 : pb / 100);
     if (!S.dimOn) return;
@@ -2527,7 +2664,7 @@ function bindDim() {
   function panelSheetHtml() {
     var p = prefs();
     var html = '<div class="sheet-title">设置</div>' +
-      '<div class="sheet-desc">这些设置只记在这台平板上，改完立刻生效。</div>';
+      '<div class="sheet-desc">这些设置只记在这台平板上，改完立刻生效。卡片最大宽度 = 每行卡片数（' + num(prefs().cols, 4) + ' 列）。编辑卡片时拖右下角的小箭头，就能像磁贴一样拉伸大小。</div>';
 
     html += '<div class="set-sec">显示</div>' +
       segRow('每行卡片', 'cols', [{ v: 3, t: '3' }, { v: 4, t: '4' }, { v: 5, t: '5' }, { v: 6, t: '6' }]) +
@@ -2553,6 +2690,11 @@ function bindDim() {
         '<button class="p-sw' + (off ? '' : ' on') + '" data-act="room-toggle:' + esc(r.id) + '">' +
         (off ? '已隐藏' : '显示中') + '</button></div>';
     });
+
+    html += '<div class="set-sec">负一屏（主屏往右滑）</div>' +
+      '<div class="set-row"><div class="set-k">音乐</div><div class="set-v">' +
+      '<button class="btn" data-act="music-cfg">' + esc(musicKindLabel(musicNow().kind)) + ' · 设置</button>' +
+      '<button class="btn" data-act="music-open">打开</button></div></div>';
 
     html += '<div class="set-sec">卡片</div>' +
       '<div class="cfg-actions"><button class="btn primary" data-act="edit-open">编辑卡片</button>' +
@@ -2771,6 +2913,15 @@ function bindDim() {
         return;
       }
       if (act === 'open-cfg') { openConfigSheet(); return; }
+      if (act === 'music-cfg') { openMusicCfgSheet(); return; }
+      if (act === 'music-open') {
+        if (S.sheetShow === 'panel') closeSettingsView(); else closeSheet();
+        setTimeout(function () { if (window.MusicUI) window.MusicUI.open(); }, 140);
+        return;
+      }
+      if (act === 'music-kind') { S.musicKindSel = actEl.getAttribute('data-val'); markSeg('music', actEl); return; }
+      if (act === 'music-save') { saveMusicCfg(false); return; }
+      if (act === 'music-demo') { saveMusicCfg(true); return; }
       if (act === 'panel-reload') { reloadSoon('正在重新加载…'); return; }
       if (act === 'scene-run') {
         doAct('scene-run', {
@@ -2787,6 +2938,92 @@ function bindDim() {
       doAct(act, item);
     
   }
+
+  /* ---------------- 负一屏（panel/js/music.js）对接 ----------------
+     音乐页自己管渲染和播放，这里只给它四样东西：toast、动作日志、
+     「这次触摸别当成点卡片」的取消钩子、以及设置页的入口。 */
+  function cancelPanelTap() {
+    clearTimeout(S.lpTimer);
+    clearTimeout(S.holdTimer);
+    S.lpFired = true;
+    clearTimeout(S.pullFiredTimer);
+    S.pullFiredTimer = setTimeout(function () {
+      S.lpFired = false;
+      S.holdFired = false;
+    }, 500);
+  }
+
+  function musicNow() {
+    if (window.MusicUI && window.MusicUI.cfg) return window.MusicUI.cfg();
+    return cfg.music || { kind: 'mock' };
+  }
+
+  function musicKindLabel(k) {
+    if (k === 'daoliyu') return '道理鱼';
+    if (k === 'subsonic') return 'Subsonic';
+    return '演示音源';
+  }
+
+  function musicCfgSheetHtml() {
+    var m = musicNow();
+    var kind = S.musicKindSel || m.kind || 'mock';
+    function kindBtn(v, t) {
+      return '<button class="seg' + (kind === v ? ' on' : '') + '" data-act="music-kind" data-val="' + v + '">' + t + '</button>';
+    }
+    return '<div class="cfg-head">音乐 · 负一屏</div>' +
+      '<div class="cfg-desc">主屏往右滑进入。连道理鱼或任何 Subsonic 兼容服务（Navidrome / Gonic / AirSonic 都行），' +
+      '地址填到端口即可，例如 http://10.10.1.7:4533。演示音源不需要服务器。' +
+      '</div>' +
+      '<div class="set-row"><div class="set-k">音源</div><div class="set-v">' +
+      kindBtn('mock', '演示') + kindBtn('daoliyu', '道理鱼') + kindBtn('subsonic', 'Subsonic') + '</div></div>' +
+      '<div class="cfg-row"><div class="cfg-k">服务器</div>' +
+      '<input class="cfg-in" id="mCfgUrl" type="text" onfocus="this.select()" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="http://192.168.1.10:4533" value="' + esc(m.baseUrl || '') + '"></div>' +
+      '<div class="cfg-row"><div class="cfg-k">账号</div>' +
+      '<input class="cfg-in" id="mCfgUser" type="text" onfocus="this.select()" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="用户名" value="' + esc(m.user || '') + '"></div>' +
+      '<div class="cfg-row"><div class="cfg-k">密码</div>' +
+      '<input class="cfg-in" id="mCfgPass" type="password" onfocus="this.select()" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="密码" value="' + esc(m.pass || '') + '"></div>' +
+      '<div class="cfg-actions">' +
+      '<button class="btn primary" data-act="music-save">保存并连接</button>' +
+      '<button class="btn" data-act="music-demo">改用演示音源</button>' +
+      '<button class="btn" data-act="close">取消</button></div>';
+  }
+
+  function openMusicCfgSheet() {
+    if (S.sheetShow === 'panel') closeSettingsView();
+    S.sheetOpenedAt = Date.now();
+    S.sheetItem = null;
+    S.sheetEntity = null;
+    S.musicKindSel = null;
+    el.sheetInner.innerHTML = musicCfgSheetHtml();
+    el.mask.className = 'mask show';
+    el.sheet.className = 'sheet show';
+    actLog('open music cfg');
+  }
+
+  function saveMusicCfg(forceMock) {
+    var kind = forceMock ? 'mock' : (S.musicKindSel || musicNow().kind || 'mock');
+    var urlEl = document.getElementById('mCfgUrl');
+    var userEl = document.getElementById('mCfgUser');
+    var passEl = document.getElementById('mCfgPass');
+    var baseUrl = urlEl ? String(urlEl.value || '').trim() : '';
+    if (kind !== 'mock' && !baseUrl) { toast('先填音乐服务器地址'); return; }
+    if (!window.MusicUI) { toast('音乐页没加载成功，重新加载面板试试'); return; }
+    window.MusicUI.saveCfg({
+      kind: kind,
+      baseUrl: baseUrl,
+      user: userEl ? String(userEl.value || '').trim() : '',
+      pass: passEl ? String(passEl.value || '') : ''
+    });
+    S.musicKindSel = null;
+    closeSheet();
+    toast(kind === 'mock' ? '已切到演示音源' : ('已保存（' + musicKindLabel(kind) + '），正在连接…'));
+    setTimeout(function () { if (window.MusicUI) window.MusicUI.open(); }, 220);
+  }
+
+  window.__PANEL_TOAST__ = function (t) { toast(t); };
+  window.__PANEL_ACTLOG__ = function (w) { actLog(w); };
+  window.__PANEL_CANCEL_TAP__ = cancelPanelTap;
+  window.__PANEL_OPEN_MUSIC_CFG__ = function () { openMusicCfgSheet(); };
 
   function bindEvents() {
     document.addEventListener('click', onEditBarClick, false);
@@ -2831,12 +3068,21 @@ function bindDim() {
 
     el.grid.addEventListener('click', function (ev) {
       if (S.lpFired) return;
+      /* 刚拖完拉伸手柄：这一次 click 是拖动产生的，不能当选中/开关处理 */
+      if (S.gripFired) return;
+      /* 刚拖/点过亮度条：那是「设置百分比」，绝不能再顺手把灯关掉 */
+      if (S.pctFired) return;
       var tileEl = closest(ev.target, null, 'data-entity') || closest(ev.target, 'tile');
       if (!tileEl) { S.tileSel = null; return; }
       var idx = S.tileEls.indexOf(tileEl);
       if (idx < 0 || !S.items[idx]) return;
       var item = S.items[idx];
       var actEl = closest(ev.target, null, 'data-act');
+      if (actEl && S.holdFired && actEl.getAttribute('data-hold')) {
+        /* 长按已经处理过，这一次的 click 不再走短按逻辑 */
+        S.holdFired = false;
+        return;
+      }
       if (actEl) {
         var actAttr = actEl.getAttribute('data-act');
         S.tileSel = S.editing ? tileEl : null;
@@ -2851,6 +3097,17 @@ function bindDim() {
 
     el.grid.addEventListener('touchstart', function (ev) {
       var tileEl = closest(ev.target, null, 'data-entity') || closest(ev.target, 'tile');
+      /* 宽度按钮长按 → 全档列表（短按仍是 +1 循环） */
+      var holdEl = closest(ev.target, null, 'data-hold');
+      if (holdEl && tileEl) {
+        clearTimeout(S.holdTimer);
+        S.holdTimer = setTimeout(function () {
+          S.holdFired = true;
+          setTimeout(function () { S.holdFired = false; }, 700);
+          var hidx = S.tileEls.indexOf(tileEl);
+          if (hidx >= 0 && S.items[hidx]) doAct(holdEl.getAttribute('data-hold'), S.items[hidx]);
+        }, 520);
+      }
       if (!tileEl || S.editing || closest(ev.target, null, 'data-act')) return;
       clearTimeout(S.lpTimer);
       S.lpTimer = setTimeout(function () {
@@ -2860,10 +3117,173 @@ function bindDim() {
         if (idx >= 0 && S.items[idx]) openSheet(S.items[idx]);
       }, 520);
     }, true);
-    var cancelLp = function () { clearTimeout(S.lpTimer); };
+    var cancelLp = function () { clearTimeout(S.lpTimer); clearTimeout(S.holdTimer); };
     el.grid.addEventListener('touchend', cancelLp, true);
     el.grid.addEventListener('touchcancel', cancelLp, true);
     el.grid.addEventListener('touchmove', cancelLp, true);
+
+    /* ---------- 磁贴式拉伸：编辑态卡片右下角手柄 ---------- */
+    function gripPoint(ev) {
+      if (ev.touches && ev.touches.length) return ev.touches[0];
+      if (ev.changedTouches && ev.changedTouches.length) return ev.changedTouches[0];
+      return ev;
+    }
+    function gripDown(ev) {
+      if (!S.editing) return;
+      var g = closest(ev.target, null, 'data-grip');
+      var tileEl = g ? closest(g, 'tile') : null;
+      var entity = g ? g.getAttribute('data-grip') : null;
+      var pt = gripPoint(ev);
+      if (!pt) return;
+      if (!tileEl || !entity) {
+        tileEl = closest(ev.target, 'tile');
+        if (!tileEl) return;
+        var rc = tileEl.getBoundingClientRect();
+        var zone = 88;
+        if (pt.clientX < rc.right - zone || pt.clientY < rc.bottom - zone) return;
+        entity = tileEl.getAttribute('data-entity');
+        if (!entity) return;
+      }
+      var cols = num(prefs().cols, 4);
+      var gap = 14;
+      var gw = el.grid.clientWidth || 0;
+      var colW = cols > 0 ? (gw - gap * (cols - 1)) / cols : 0;
+      if (!(colW > 0)) colW = 120;
+      S.grip = {
+        entity: entity, el: tileEl,
+        x0: pt.clientX, y0: pt.clientY,
+        c0: cardSpan(entity, cols), r0: rowSpan(entity),
+        stepX: colW + gap, stepY: rowHeight() + gap,
+        cols: cols, c: cardSpan(entity, cols), r: rowSpan(entity)
+      };
+      S.gripFired = true;
+      clearTimeout(S.lpTimer); clearTimeout(S.holdTimer);
+      if (tileEl.className.indexOf('resizing') < 0) tileEl.className += ' resizing';
+      actLog('grip down ' + entity);
+      if (ev.cancelable) ev.preventDefault();
+    }
+    function gripMove(ev) {
+      var st = S.grip;
+      if (!st) return;
+      var pt = gripPoint(ev);
+      if (!pt) return;
+      var dc = Math.round((pt.clientX - st.x0) / st.stepX);
+      var dr = Math.round((pt.clientY - st.y0) / st.stepY);
+      var c = st.c0 + dc; if (c < 1) c = 1; if (c > st.cols) c = st.cols;
+      var r = st.r0 + dr; if (r < 1) r = 1; if (r > 2) r = 2;
+      if (c === st.c && r === st.r) { if (ev.cancelable) ev.preventDefault(); return; }
+      st.c = c; st.r = r;
+      st.el.style.gridColumn = 'span ' + c;
+      st.el.style.gridRow = 'span ' + r;
+      var tag = st.el.querySelector('.t-size');
+      if (tag) tag.innerHTML = spanText(c, st.cols) + (r > 1 ? ' · 高 ' + r : '');
+      if (ev.cancelable) ev.preventDefault();
+    }
+    function gripUp(ev) {
+      var st = S.grip;
+      if (!st) return;
+      S.grip = null;
+      st.el.className = st.el.className.replace(/\s*resizing/g, '');
+      st.el.style.gridColumn = '';
+      st.el.style.gridRow = '';
+      setTimeout(function () { S.gripFired = false; }, 400);
+      if (ev && ev.cancelable) ev.preventDefault();
+      if (st.c !== st.c0 || st.r !== st.r0) {
+        resizeCard(st.entity, st.c, st.r);
+      } else {
+        var tag = st.el.querySelector('.t-size');
+        if (tag) tag.innerHTML = spanText(st.c0, st.cols) + (st.r0 > 1 ? ' · 高 ' + st.r0 : '');
+      }
+      actLog('grip up ' + st.entity + ' ' + st.c + 'x' + st.r);
+    }
+    el.grid.addEventListener('touchstart', gripDown, true);
+    el.grid.addEventListener('mousedown', gripDown, true);
+    document.addEventListener('touchmove', gripMove, { passive: false, capture: true });
+    document.addEventListener('mousemove', gripMove, true);
+    document.addEventListener('touchend', gripUp, true);
+    document.addEventListener('touchcancel', gripUp, true);
+    document.addEventListener('mouseup', gripUp, true);
+
+    /* ---------- 卡片百分比进度条：点/拖直接改亮度 ----------
+       这三段在磁贴拉伸之后注册，所以拖动开始时能先一步清掉长按定时器
+       （同一个 touchstart 上，长按监听器先跑、我们后跑，正好把它取消）。
+       横坐标 → 百分比是纯函数 pctFromX()，离线单测可以直接断言。 */
+    function pctPt(ev) {
+      if (ev.touches && ev.touches.length) return ev.touches[0];
+      if (ev.changedTouches && ev.changedTouches.length) return ev.changedTouches[0];
+      return ev;
+    }
+    function pctAt(ev, bar) {
+      var pt = pctPt(ev);
+      if (!pt || pt.clientX == null) return null;
+      var rc = bar.getBoundingClientRect();
+      return pctFromX(pt.clientX, rc.left, rc.width);
+    }
+    /** 本地先画、再异步告诉 HA：手指看到的响应不受网络延迟影响 */
+    function pctPaint(d, p) {
+      d.pct = p;
+      setBarPct(d.bar, p);
+      patch(d.entity, 'on', { brightness: Math.round(p * 255 / 100) });
+    }
+    function pctSend(d, force) {
+      var now = Date.now();
+      if (!force && now - d.sentAt < 140) return;   /* 拖动中限流，别把 HA 打满 */
+      d.sentAt = now;
+      var data = { entity_id: d.entity };
+      data[d.meta.key] = d.pct;
+      callService(d.meta.domain, d.meta.service, data).then(null, function () { });
+    }
+    function barDown(ev) {
+      if (S.editing) return;
+      var bar = closest(ev.target, 't-bar');
+      if (!bar || bar.getAttribute('data-role') !== 'pbar') return;
+      var tileEl = closest(bar, 'tile');
+      if (!tileEl) return;
+      var idx = S.tileEls.indexOf(tileEl);
+      var item = idx >= 0 ? S.items[idx] : null;
+      if (!item) return;
+      var entity = item.tile.entity;
+      if (isNa(stateOf(entity))) return;
+      var meta = pctMeta(item.tile, attrsOf(entity));
+      if (!meta) return;
+      var p = pctAt(ev, bar);
+      if (p == null) return;
+      S.pctDrag = { entity: entity, bar: bar, meta: meta, pct: meta.pct, sentAt: 0 };
+      S.pctFired = true;
+      clearTimeout(S.lpTimer);
+      clearTimeout(S.holdTimer);
+      if (bar.className.indexOf('dragging') < 0) bar.className = 't-bar dragging';
+      actLog('pct down ' + entity + ' ' + p);
+      pctPaint(S.pctDrag, p);
+      pctSend(S.pctDrag, true);
+      if (ev.cancelable) ev.preventDefault();
+    }
+    function barMove(ev) {
+      var d = S.pctDrag;
+      if (!d) return;
+      var p = pctAt(ev, d.bar);
+      if (p == null) return;
+      if (p !== d.pct) pctPaint(d, p);
+      pctSend(d, false);
+      if (ev.cancelable) ev.preventDefault();
+    }
+    function barUp(ev) {
+      var d = S.pctDrag;
+      if (!d) return;
+      S.pctDrag = null;
+      pctSend(d, true);
+      d.bar.className = 't-bar';
+      setTimeout(function () { S.pctFired = false; }, 400);
+      actLog('pct up ' + d.entity + ' ' + d.pct);
+      if (ev && ev.cancelable) ev.preventDefault();
+    }
+    el.grid.addEventListener('touchstart', barDown, true);
+    el.grid.addEventListener('mousedown', barDown, true);
+    document.addEventListener('touchmove', barMove, { passive: false, capture: true });
+    document.addEventListener('mousemove', barMove, true);
+    document.addEventListener('touchend', barUp, true);
+    document.addEventListener('touchcancel', barUp, true);
+    document.addEventListener('mouseup', barUp, true);
 
     el.mask.addEventListener('click', function () {
       /* 打开弹层的那一次触摸，其 click 可能在弹层已经出现之后才派发，
@@ -3065,6 +3485,8 @@ function boot() {
     applyPrefs();
   bindDim();
   startPixelShift();
+    /* 负一屏：音乐页自己接管右滑手势和渲染（panel/js/music.js） */
+    if (window.MusicUI) window.MusicUI.attach();
 
     var bootEl = $('boot');
     if (bootEl) setTimeout(function () { bootEl.className = 'boot hide'; }, 260);
@@ -3077,6 +3499,7 @@ function boot() {
     isNa: isNa, isAuto: isAuto, hasBrightness: hasBrightness, hasPosition: hasPosition,
     climateTempCaps: climateTempCaps, dualTarget: dualTarget,
     valHtml: valHtml, subText: subText, midHtml: midHtml, tileHtml: tileHtml, iconFor: iconFor,
+    pctMeta: pctMeta, pctFromX: pctFromX, barHtml: barHtml,
     setStates: function (o) { S.states = o || {}; },
     normalizeHa: normalizeHa, haHttpBase: haHttpBase, normalizeToken: normalizeToken,
     camLiveUrl: camLiveUrl, camSrc: camSrc, camStamp: camStamp, cfgRef: cfg,

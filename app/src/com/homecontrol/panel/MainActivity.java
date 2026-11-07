@@ -635,7 +635,8 @@ public class MainActivity extends Activity {
                 }
                 u = u.replace("/api/websocket", "").replace("/api/websocket/", "");
                 if (u.endsWith("/")) u = u.substring(0, u.length() - 1);
-                u = u + "/api/";
+                /* 注意：u 只是基地址，/api/ 由 openHa 拼 path 补上；
+                   之前这里又拼了一次 "/api/"，实际请求成了 /api//api/（404）。 */
                 c = openHa(u, token, "GET", "/api/", false);
                 int code = c.getResponseCode();
                 Log.i(TAG, "httpProbe " + u + " -> " + code);
@@ -647,6 +648,105 @@ public class MainActivity extends Activity {
                 if (c != null) try { c.disconnect(); } catch (Throwable t) { }
             }
         }
+        /** 通用 GET（音乐服务这类非 HA 接口）：file:// 里 XHR 会被 CORS 挡，走原生取文本。
+            结果异步回 window.__musicHttpCb(cbId, {status|error, body})。 */
+        @JavascriptInterface
+        public void httpJson(final String cbId, final String url) {
+            httpReq(cbId, "GET", url, "{}", "");
+        }
+
+        /** 通用请求：method/headers(JSON 对象字符串)/body 都可指定，给道理鱼那种要 POST 登录的接口用。 */
+        @JavascriptInterface
+        public void httpReq(final String cbId, final String method, final String url,
+                            final String headersJson, final String body) {
+            new Thread(new Runnable() {
+                public void run() {
+                    final String out = httpText(url, method, headersJson, body);
+                    ui.post(new Runnable() {
+                        public void run() {
+                            try {
+                                if (web != null) {
+                                    web.evaluateJavascript("window.__musicHttpCb && window.__musicHttpCb("
+                                            + org.json.JSONObject.quote(cbId) + ","
+                                            + org.json.JSONObject.quote(out) + ")", null);
+                                }
+                            } catch (Throwable t) { Log.w(TAG, "httpReq cb failed: " + t); }
+                        }
+                    });
+                }
+            }).start();
+        }
+
+        private String httpGetText(String url) {
+            return httpText(url, "GET", "{}", "");
+        }
+
+        private String httpText(String url, String method, String headersJson, String body) {
+            HttpURLConnection c = null;
+            try {
+                URL u = new URL(url);
+                if ("https".equals(u.getProtocol())) {
+                    HttpsURLConnection h = (HttpsURLConnection) u.openConnection();
+                    h.setSSLSocketFactory(trustAll().getSocketFactory());
+                    h.setHostnameVerifier(new HostnameVerifier() {
+                        public boolean verify(String host, SSLSession s) { return true; }
+                    });
+                    c = h;
+                } else {
+                    c = (HttpURLConnection) u.openConnection();
+                }
+                c.setConnectTimeout(6000);
+                c.setReadTimeout(15000);
+                c.setRequestMethod(method == null || method.length() == 0 ? "GET" : method);
+                c.setRequestProperty("Accept", "application/json, */*");
+                c.setRequestProperty("User-Agent", "HomeControl-Panel");
+                if (headersJson != null && headersJson.length() > 2) {
+                    try {
+                        org.json.JSONObject h = new org.json.JSONObject(headersJson);
+                        java.util.Iterator<?> it = h.keys();
+                        while (it.hasNext()) {
+                            String k = String.valueOf(it.next());
+                            c.setRequestProperty(k, h.optString(k, ""));
+                        }
+                    } catch (Throwable t) { Log.w(TAG, "httpText bad headers: " + t); }
+                }
+                if (body != null && body.length() > 0) {
+                    c.setDoOutput(true);
+                    byte[] bytes = body.getBytes("UTF-8");
+                    c.setRequestProperty("Content-Type", "application/json; charset=utf-8");
+                    c.setFixedLengthStreamingMode(bytes.length);
+                    java.io.OutputStream os = c.getOutputStream();
+                    os.write(bytes);
+                    os.close();
+                }
+                int code = c.getResponseCode();
+                InputStream is = code >= 400 ? c.getErrorStream() : c.getInputStream();
+                String text = "";
+                if (is != null) {
+                    ByteArrayOutputStream bo = new ByteArrayOutputStream();
+                    byte[] buf = new byte[8192];
+                    int n;
+                    while ((n = is.read(buf)) > 0) bo.write(buf, 0, n);
+                    is.close();
+                    text = new String(bo.toByteArray(), "UTF-8");
+                }
+                Log.i(TAG, "httpReq " + method + " -> " + code + " (" + text.length() + " chars) " + url);
+                org.json.JSONObject out = new org.json.JSONObject();
+                out.put("status", code);
+                out.put("body", text);
+                return out.toString();
+            } catch (Throwable t) {
+                Log.w(TAG, "httpReq failed " + url + " : " + t);
+                try {
+                    org.json.JSONObject out = new org.json.JSONObject();
+                    out.put("error", t.getClass().getSimpleName());
+                    return out.toString();
+                } catch (Throwable t2) { return "{\"error\":\"unknown\"}"; }
+            } finally {
+                if (c != null) try { c.disconnect(); } catch (Throwable t) { }
+            }
+        }
+
         @JavascriptInterface
         public void exitApp() {
             ui.post(new Runnable() {

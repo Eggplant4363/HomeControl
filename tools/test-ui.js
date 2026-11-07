@@ -393,6 +393,27 @@ var css = windowStub.document && windowStub.document.styleSheets ? '' : '';
 eq(api.tileHtml({ tile: { type: 'light', entity: 'y', name: 'Y', dev: '' }, room: '' }).indexOf('tile') >= 0, true, 'tileHtml 正常渲染');
 
 
+/* ---- 卡片百分比进度条（亮度条） ---- */
+var bm = api.pctMeta({ type: 'light', entity: 'l1' }, { brightness: 128, supported_color_modes: ['brightness'] });
+eq(bm && bm.pct, 50, '百分比条：亮度 128 → 50%');
+eq(bm && bm.domain, 'light', '百分比条：写回 light 域');
+eq(bm && bm.key, 'brightness_pct', '百分比条：写回 brightness_pct');
+eq(api.pctMeta({ type: 'light', entity: 'l2' }, { supported_color_modes: ['onoff'] }), null, '百分比条：onoff 灯不出条');
+eq(api.pctMeta({ type: 'switch', entity: 's1' }, { brightness: 80 }), null, '百分比条：开关不出条');
+eq(api.pctMeta({ type: 'light', entity: 'l3' }, { brightness: 255 }).pct, 100, '百分比条：满亮度 → 100%');
+eq(api.pctMeta({ type: 'light', entity: 'l4' }, { brightness: 5 }).pct, 2, '百分比条：dimmest 值按比例取整（5/255≈2%）');
+eq(api.pctMeta({ type: 'light', entity: 'l5' }, { brightness: 0 }).pct, 1, '百分比条：0 亮度也至少显示 1%');
+
+/* 手指横坐标 → 百分比：条从 100px 开始、宽 200px */
+eq(api.pctFromX(100, 100, 200), 1, '进度条换算：最左端 → 1%');
+eq(api.pctFromX(200, 100, 200), 50, '进度条换算：正中 → 50%');
+eq(api.pctFromX(400, 100, 200), 100, '进度条换算：最右端 → 100%');
+eq(api.pctFromX(900, 100, 200), 100, '进度条换算：超出右边界钳到 100%');
+eq(api.pctFromX(10, 100, 200), 1, '进度条换算：超出左边界钳到 1%（不会变关灯）');
+eq(api.pctFromX(200, 100, 0), null, '进度条换算：宽度为 0 时放弃');
+eq(api.barHtml().indexOf('data-role="pbar"') >= 0, true, '进度条：骨架带 pbar 标记');
+eq(api.barHtml().indexOf('t-knob') >= 0, true, '进度条：骨架带拖动钮');
+
 console.log('');
 if (failed === 0) {
   console.log('ALL PASS (' + passed + ' checks)');

@@ -10,7 +10,7 @@ const path = require('path');
 
 const ROOT = path.resolve(__dirname, '..');
 const FILES = ['panel/js/config.js', 'panel/js/icons.js', 'panel/js/layout.js',
-  'panel/js/backend.js', 'panel/js/app.js'];
+  'panel/js/backend.js', 'panel/js/music.js', 'panel/js/app.js'];
 
 /* 每条规则：正则 + 说明 + 允许的例外（有些字符出现在字符串/注释里是合法的，宁可人工复核） */
 const RULES = [

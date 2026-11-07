@@ -33,5 +33,16 @@ window.ICONS = {
   fan: '<path d="M12 12c1.5-4 3-5 4.5-4s.5 4-1.5 4.5M12 12c-1.5 4-3 5-4.5 4s-.5-4 1.5-4.5M12 12c-4 1.5-5 3-4 4.5s4 .5 4.5-1.5M12 12c4-1.5 5-3 4-4.5s-4-.5-4.5 1.5"/>',
   sun: '<circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2.2M12 19.3v2.2M2.5 12h2.2M19.3 12h2.2M5.2 5.2l1.6 1.6M17.2 17.2l1.6 1.6M18.8 5.2l-1.6 1.6M6.8 17.2l-1.6 1.6"/>',
   cloud: '<path d="M6.5 18.5a4.2 4.2 0 0 1 .2-8.4 5.6 5.6 0 0 1 10.8 1.6 3.6 3.6 0 0 1-.3 6.8z"/>',
-  rain: '<path d="M6.5 15.5a4.2 4.2 0 0 1 .2-8.4 5.6 5.6 0 0 1 10.8 1.6 3.6 3.6 0 0 1-.3 6.8z"/><path d="M8 18.5v2M12 18.5v2.6M16 18.5v2"/>'
+  rain: '<path d="M6.5 15.5a4.2 4.2 0 0 1 .2-8.4 5.6 5.6 0 0 1 10.8 1.6 3.6 3.6 0 0 1-.3 6.8z"/><path d="M8 18.5v2M12 18.5v2.6M16 18.5v2"/>',
+
+  /* 负一屏 · 音乐 */
+  pause: '<rect x="7" y="5" width="3.6" height="14" rx="1.2" fill="currentColor" stroke="none"/><rect x="13.4" y="5" width="3.6" height="14" rx="1.2" fill="currentColor" stroke="none"/>',
+  prev: '<path d="M19 5v14L9 12z" fill="currentColor" stroke="none"/><rect x="5" y="5" width="2.4" height="14" rx="1" fill="currentColor" stroke="none"/>',
+  next: '<path d="M5 5v14l10-7z" fill="currentColor" stroke="none"/><rect x="16.6" y="5" width="2.4" height="14" rx="1" fill="currentColor" stroke="none"/>',
+  volume: '<path d="M4 9.5h3.4L12 6v12L7.4 14.5H4z"/><path d="M15.5 9a4 4 0 0 1 0 6"/><path d="M18 6.5a7.5 7.5 0 0 1 0 11"/>',
+  music: '<path d="M9 18V6l10-2v12"/><circle cx="6.5" cy="18" r="2.6"/><circle cx="16.5" cy="16" r="2.6"/>',
+  back: '<path d="M14.5 5.5L8 12l6.5 6.5"/>',
+  chev: '<path d="M9.5 5.5L16 12l-6.5 6.5"/>',
+  wave: '<path d="M4 10v4M8 7v10M12 4.5v15M16 8v8M20 10.5v3"/>',
+  refresh: '<path d="M20 12a8 8 0 1 1-2.4-5.7"/><path d="M20 4.5V10h-5.4"/>'
 };

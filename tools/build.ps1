@@ -1,4 +1,4 @@
-﻿# Manual APK build: aapt2 -> javac -> d8 -> zip -> zipalign -> apksigner.
+# Manual APK build: aapt2 -> javac -> d8 -> zip -> zipalign -> apksigner.
 # No Gradle, no dependencies beyond the Android SDK build-tools and a JDK 17.
 [CmdletBinding()]
 param(
@@ -56,6 +56,33 @@ $baseApk = Join-Path $b "base.apk"
     $resZip
 if ($LASTEXITCODE -ne 0) { throw "aapt2 link failed" }
 Write-Host "[3/7] aapt2 link ok"
+
+# 3b. aapt2 (Windows) writes asset entry names with '\'; Android needs '/'
+#     otherwise file:///android_asset/... 无法打开（ERR_FILE_NOT_FOUND）
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+Add-Type -AssemblyName System.IO.Compression
+$tmpApk = Join-Path $b "base-fixed.apk"
+$srcStream = [System.IO.File]::OpenRead($baseApk)
+$srcZip = New-Object System.IO.Compression.ZipArchive($srcStream, [System.IO.Compression.ZipArchiveMode]::Read)
+$dstStream = [System.IO.File]::Create($tmpApk)
+$dstZip = New-Object System.IO.Compression.ZipArchive($dstStream, [System.IO.Compression.ZipArchiveMode]::Create)
+$fixed = 0
+foreach ($e in $srcZip.Entries) {
+    $name = $e.FullName -replace '\\', '/'
+    if ($name -ne $e.FullName) { $fixed++ }
+    $ne = $dstZip.CreateEntry($name, [System.IO.Compression.CompressionLevel]::Optimal)
+    $s = $e.Open()
+    $d = $ne.Open()
+    $s.CopyTo($d)
+    $d.Dispose()
+    $s.Dispose()
+}
+$dstZip.Dispose()
+$dstStream.Dispose()
+$srcZip.Dispose()
+$srcStream.Dispose()
+if ($fixed -gt 0) { Move-Item -Force $tmpApk $baseApk } else { Remove-Item -Force $tmpApk }
+Write-Host "[3b/7] asset entry names normalized ($fixed)"
 
 # 4. java
 $srcs = @()

@@ -49,3 +49,7 @@ node_modules/
 .DS_Store
 Thumbs.db
 desktop.ini
+# tools/cdp 下的调试表达式片段
+tools/cdp/
+docs/screens/panel-foot-inline.png
+docs/screens/panel-tile-final.png

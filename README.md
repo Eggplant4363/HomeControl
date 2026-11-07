@@ -13,6 +13,7 @@ panel/                 面板前端（纯静态、无构建链、ES5，兼容 Ch
   js/backend.js        MockBackend + HABackend（HA WebSocket 客户端）
   js/layout.js         按 HA registry 自动生成房间 / 卡片 / 场景键
   js/app.js            渲染、弹层与交互
+  js/music.js          负一屏音乐页（演示 / 道理鱼 / Subsonic 三种音源）
 app/                   安卓壳（Java，minSdk 21 / targetSdk 22）
 tools/
   build.ps1            手工构建 APK（aapt2 + javac + d8 + zipalign + apksigner）
@@ -26,6 +27,8 @@ tools/
   make-big-fixture.ps1 生成 80 实体压力测试用的面板副本
   fixture-panel-ha.js  验收副本里的样例数据后端（替换 window.HABackend）
   fake-ha.js           零依赖假 HA（WebSocket），可单跑，也被单测复用
+  fake-daoliyu.js      零依赖假「道理鱼」音乐服务（REST + WAV + SVG 封面），负一屏联调用
+  cdp-run.js           用 CDP 在面板 WebView 里执行一段 JS（调试/验收用）
   test-ha.js           协议 + 自动布局单测（24 项断言）
   devserver.js         PC 侧静态服务（8787），用于 PC 上快速看页面
 dist/homecontrol.apk   构建产物
@@ -66,6 +69,8 @@ adb install -r .\dist\homecontrol.apk
 powershell -ExecutionPolicy Bypass -File .\tools\push.ps1 -Restart
 ```
 
+`build.ps1` 里有个 Windows 专属的坑：`aapt2 link -A` 写进 APK 的资产条目名带反斜杠（`assets/panel\js\app.js`），Android 只认 `/`，于是 `file:///android_asset/panel/index.html` 一律 `ERR_FILE_NOT_FOUND`。第 3b 步会把条目名统一正斜杠再继续打包（构建日志里 `[3b/7] asset entry names normalized (8)`）；改构建脚本时别把这一步去掉。
+
 ## 中控屏行为（上墙相关）
 
 - **默认桌面**：壳 App 声明了 `CATEGORY_HOME`，设为默认桌面后开机会直接进面板，不需要解锁或点图标
@@ -82,6 +87,7 @@ powershell -ExecutionPolicy Bypass -File .\tools\push.ps1 -Restart
 - **防烧屏位移**：每 5 分钟把 `#app` 整体随机平移 1~2px（`cfg.burnIn.shiftEverySec` / `maxShift`，`panel/js/app.js` 的 `startPixelShift()`），配合 `scale(1.01)` 盖住边缘。像素级偏移肉眼看不出来，但静态的时钟、卡片边框不会长期压在同一个物理像素上
 - **记住房间**：选中的房间存 localStorage['hc.room']，凌晨静默重载 / 应用重启后回到同一个房间，不会跳回「全部」；如果那个房间在真实 HA 里已经不存在，自动回落到「全部」
 - **误触撤销**：点卡片开关后，底部提示条给 5 秒「撤销」（	oggle() 里调 	oast(text,'撤销',fn)，n 发反向 	urn_on/	urn_off）。墙上触摸屏手臂伸过去容易蹭到旁边卡片，撤销比重做一次便宜。整条提示可点——Chromium 57 里 pointer-events:none 的父元素即使子元素设 uto 也点不到（elementFromPoint 能命中但事件不派发），所以带动作时给 .toast.act 整条放开
+- **亮度条直接拖**：可调光的灯（`light` 且 `supported_color_modes` 含亮度）卡片上有一条 22px 高的进度条，手指按住任意位置就能拖，拖动中每 140ms 推一次 `light.turn_on {brightness_pct}`，本地先改、不跟着 HA 回包抖；关灯时条留在原位画到 0（半透明），一眼看出这盏灯能调。能力判断在 `panel/js/app.js` 的 `pctMeta()`，拖完那一下的 click 会被吞掉，不会顺手关灯
 - **房间多 / 实体多**：房间 tab 放不下时自动改为可横向滑动（选中的房间会自动滑进可视区）；某个房间实体超过 8 张时网格改为可纵向滑动，行高固定，不会把卡片挤出屏幕又没法翻。场景键超过 4 个时同样可横向滑动，且场景区最宽只占 46%，不会把房间 tab 挤没
 - **诊断页**：长按左上角时间 → 显示模式、HA 地址、令牌（打码）、连接状态、连通测试、房间/卡片/实体数、**设备网络（IP + Wi-Fi SSID）**、视口、内核版本、最近一次 JS 错误；带按钮「重新加载 / 清缓存并重载 / 连接设置 / 回模拟数据 / 关闭」。上墙后不用连电脑就能自己判断问题
 - **夜间静默重载**：每天 04:00 自动 reload 一次释放 WebView 内存（2GB 老设备长时间点亮会越用越慢），每天只执行一次，由 `panel/js/config.js` 的 `reloadHour` 控制（设 `null` 关闭）
@@ -97,6 +103,35 @@ powershell -ExecutionPolicy Bypass -File .\tools\push.ps1 -Restart
 - 壳 App 另有 45 秒心跳看门狗：页面假死会整页重载
 
 实测：重启后面板 33 秒自动出现；WiFi 晚到时页面先显示「正在连接 Home Assistant…」，网络就绪后约 26 秒内自动连上，无需人工干预。
+
+## 负一屏（主屏往右滑 · 音乐）
+
+主屏右滑（或点左边缘的拉手）拉出负一屏音乐页：左边是正在播放（封面 / 歌名 / 歌手 / 专辑 / 进度条 / 播放暂停·上下首 / 音量），右边是歌单和曲目（点一首就播）。左滑、点左上角返回、或点弹层外收起。
+
+支持的音源（设置页 → 负一屏 → 「道理鱼 · 设置」里切换）：
+
+| 音源 | 说明 |
+| --- | --- |
+| 演示 | 内置 3 个歌单 + 合成音源，不联网；首次上墙默认就是这个 |
+| 道理鱼 | 自家 REST：`POST /api/auth/login` 换 token，`/api/playlists/web/mine` 取歌单，`/api/playlists/{id}/tracks` 取曲目，`/api/cover`、`/api/tracks/{id}/stream?token=` 取封面和音频。地址只填到端口（如 `http://10.10.1.7:4000`），不要带 `/api` |
+| Subsonic | Navidrome / Gonic / AirSonic 等兼容服务，`/rest/*` + `u/p=enc:<hex>` |
+
+道理鱼不是 Subsonic 兼容服务（`/rest/*` 会 404），所以走的是它自己的接口；接口若有变动，只改 `panel/js/music.js` 里的 `DaoliyuBackend`。
+
+配置优先级：`/sdcard/HomeControl/music.json` → localStorage `hc.music` → `config.js` 里的 `PANEL_CONFIG.music`。面板里点「保存并连接」会同时写 `music.json`，所以重启、重装都不会丢：
+
+```powershell
+adb push music.json /sdcard/HomeControl/music.json
+# {"kind":"daoliyu","baseUrl":"http://10.10.1.7:4000","user":"you@example.com","pass":"***"}
+```
+
+两个实现细节：
+
+- `file://` 页面里 XHR 会被 CORS 拦（道理鱼不返回 `Access-Control-Allow-Origin`），所以所有接口请求都走壳 App 的原生桥 `AndroidBridge.httpReq(cbId, method, url, headersJson, body)`，回调 `window.__musicHttpCb(id, {'{'}status,body{'}'})`；`<audio>` / `<img>` 不受 CORS 限制，可以直接用
+- 拖动时页面**不**先置 `open`，松手后按位移/速度一次性决定开或收（早期版本先置 `open` → 后半段手势被守卫丢掉，右滑打不开）
+
+本地联调不需要真的道理鱼：`node tools\fake-daoliyu.js 8099` 起一个零依赖假服务器（登录 → 歌单 → 曲目 → 封面 → WAV 音频），模拟器里地址填 `http://10.0.2.2:8099` 即可跑通全链路。
+
 ## 接入真实 Home Assistant
 
 **最快的方式**：面板上长按右上角状态胶囊 → 填 HA 地址（如 `http://192.168.1.10:8123`）+ 长期访问令牌 → 「保存并重连」。地址可以只写 base（`/api/websocket` 会自动补）。
@@ -253,6 +288,8 @@ powershell -ExecutionPolicy Bypass -File .\tools\push.ps1 -Mock -Restart
 设置页底部还有：房间显示开关、**恢复默认名称**、**恢复默认房间**、**恢复默认设置**、**编辑卡片**、**恢复默认编辑**，
 以及「HA 地址与令牌」「重新加载面板」两个常用动作。
 
+磁贴拉伸的真机验收（2026-11-08，MI PAD 2 / 6 列）：编辑态从卡片右下角 `(780,720)` 拖到 `(1180,1120)` → logcat `ACT grip down …` / `ACT resize … 3x2` / `ACT grip up … 3x2`，卡片当场变成 3 列 × 2 行（截图 `docs/screens/panel-tile-resize.png`）；再反向拖回 → `ACT resize … 2x1`（`docs/screens/panel-tile-resized.png`）。
+
 验收：`node tools\sim.js --mock --port 8791` + `node tools\e2e-settings.js`（CDP 真点击：
 开设置 → 切 3 列 → 隐藏传感器 → 点击语义改「打开面板」→ 恢复默认，全部断言）。
 
@@ -268,7 +305,8 @@ powershell -ExecutionPolicy Bypass -File .\tools\push.ps1 -Mock -Restart
 | 按房间整加 / 整减 | 工具条「本房间 +」/「本房间 −」 | 只作用于当前选中的房间 |
 | 全部添加 / 全部清空 | 工具条 | 一次把所有可显示设备加进来或清空 |
 | 调顺序 | 卡片头部 ▲ / ▼ | 每次移动一位，写进 `order` |
-| 卡片跨列 | 卡片头部「2×」（再点变「1×」） | 占 2 列；3 列布局时不会被压成 1 列，4 列以上照常跨 2 列 |
+| 改卡片大小（磁贴式拉伸） | 编辑态卡片**右下角的三角手柄**，按住拖动 | 横向最多拉满当前「每行卡片」列数，纵向最多 2 行；松手才落盘（`span` / `rows`），拖太小会回到 1×1 |
+| 卡片底部排版 | 名称与状态**同一行**（名称靠左、状态靠右） | 状态与名称相同时（如「人体感应」）自动留空；6 列窄卡下名字先让位、状态字号自动缩到 11px |
 | 恢复默认编辑 | 设置页「恢复默认编辑」 | 清空 `hc.edit`，回到一张卡片都没有 |
 
 **切列数顺序不变**：卡片顺序只由 `order` 数组决定（没排过的按「名称 + 实体 id」稳定排序补在后面），
@@ -281,10 +319,10 @@ powershell -ExecutionPolicy Bypass -File .\tools\push.ps1 -Mock -Restart
 
 1. 点顶栏 **✎** 进入编辑：网格只显示已添加的卡片（不会把全部设备铺出来），每张卡变成虚线框，末尾多一个 **＋ 添加卡片** 空格子。
 2. 点 **＋ 添加卡片**（或工具条上的「+ 添加卡片」）弹出**设备列表**，按房间分组，点一行加一张，已加的带 ✓，可反复点。
-3. 点某张卡选中它，底部浮出这张卡的工具栏：**◀ ▶** 调顺序、**1× / 2× / 整行** 改宽度（点一下循环）、**✕ 移除**。
-4. 点「完成」退出编辑。
+3. **拖卡片右下角的三角手柄**改大小（微软磁贴那套）：往右拉变宽（最多到当前每行列数，拉满时标签显示「整行」）、往下拉变高（最多 2 行）；拖的时候只是预览，松手才保存。卡片右上角的小字实时显示当前尺寸，例如 `3× · 高 2`。
+4. 点某张卡选中它，底部浮出工具栏：**◀ ▶** 调顺序、**✕ 移除**；点「完成」退出编辑。
 
-数据存在 `localStorage['hc.edit']`：`{ added: {实体:1}, order: [实体…], span: {实体: 2|3} }`。
+数据存在 `localStorage['hc.edit']`：`{ added: {实体:1}, order: [实体…], span: {实体: 2..N}, rows: {实体: 2} }`（`span` 是横跨列数、`rows` 是横跨行数，1 表示不存）。
 「每行卡片」3~6 与「卡片大小」在设置里，切来切去顺序不变（排序按 `order`，没排过的按名字稳定排序）。
 
 真机验收记录（2026-11-07，MI PAD 2 / 真实 HA 1254 实体 / 本房间 70 张卡）：
@@ -664,3 +702,18 @@ powershell -ExecutionPolicy Bypass -File .\tools\smoke.ps1
 - 上墙：已设为默认桌面，重启自动拉起（实测）；常亮、锁屏覆盖、看门狗、双返回键逃生口均可用；夜间/空闲自动调暗（实测，docs/screens/panel-night-dim.png）；长按时间可开诊断页（docs/screens/panel-diag.png）；每天 04:00 静默重载一次
 - **假死自愈（实测）**：面板 JS 每 4 秒心跳一次；壳 App 的看门狗每 15 秒检查，超过 45 秒没心跳就 `web.reload()`。真机验证：URL 加 `?selftest=hang` 让页面主线程卡死 60 秒 → logcat 出现 `watchdog: no heartbeat for 45s, reloading`，卡死结束后自动重载、页面恢复、无人工干预
 - **进程被杀后的恢复**：默认桌面角色保证按 Home 键 / 重启都会重新拉起（实测 force-stop 后按 Home 重新拉起、重启后无需解锁直接进面板）；MIUI 的 AutoStart 会拒绝后台自启广播，所以不依赖开机广播这一路
+
+## PC 侧排版自检（不用真机）
+
+改卡片布局、文字排版这类「看得见」的东西时，先在 PC 模拟器里过一眼再推真机：
+
+```powershell
+# 1. 起 mock 模拟器（站点根就是 panel/，不要再加 /panel/）
+Start-Process node tools\sim.js --mock --port 8788 -WindowStyle Hidden
+
+# 2. 灌 5 张卡并截图，第 3 个参数是列数（3/4/5/6），4 列就省略
+node tools\shot-foot.js http://127.0.0.1:8788/ build\foot.png 6
+```
+
+脚本会打印每张卡的 `名称 | 状态`，方便确认有没有挤压、截断、名称被状态顶掉。
+注意：列数参数必须传**数字**，传 JSON 会被 PowerShell 吃掉双引号（localStorage 里存成 `{cols:6}` 而失效）。

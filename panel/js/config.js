@@ -29,6 +29,17 @@ window.PANEL_CONFIG = {
     shiftEverySec: 300,
     maxShift: 2
   },
+  /* 负一屏 · 音乐（右滑进入）
+     kind: 'mock' 演示音源 | 'subsonic' 任何 Subsonic 兼容服务 | 'daoliyu' 道理鱼
+     在平板上「设置 → 音乐」里填服务器地址和账号，会写到 /sdcard/HomeControl/music.json，
+     优先级：music.json > localStorage > 这里的默认值。 */
+  music: {
+    kind: 'mock',
+    baseUrl: '',
+    user: '',
+    pass: '',
+    playlists: []
+  },
   scenes: [
     { name: '回家', entity: 'scene.arrive', icon: 'home' },
     { name: '观影', entity: 'scene.movie', icon: 'play' },

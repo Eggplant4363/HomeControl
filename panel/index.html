@@ -33,6 +33,53 @@
     <div class="view" id="view"></div>
   </div>
 
+  <!-- ============ 负一屏 · 音乐（右滑进入） ============ -->
+  <div class="m-scrim" id="mScrim"></div>
+  <div class="music" id="music" aria-hidden="true">
+    <div class="m-head">
+      <button class="m-back" id="mBack" type="button" data-mact="close"></button>
+      <div class="m-title">音乐<span class="m-sub" id="mSub">箭头音乐 · 道理鱼</span></div>
+      <div class="m-status" id="mStatus"><span class="dot"></span><span>连接中…</span></div>
+    </div>
+
+    <div class="m-body">
+      <div class="m-left">
+        <div class="m-cover" id="mCover"></div>
+        <div class="m-meta" id="mMeta">
+          <div class="m-song" id="mSong">未在播放</div>
+          <div class="m-artist" id="mArtist"></div>
+          <div class="m-album" id="mAlbum"></div>
+        </div>
+        <div class="m-progress">
+          <div class="m-bar" id="mBar">
+            <div class="m-fill" id="mFill"></div>
+            <div class="m-knob" id="mKnob"></div>
+          </div>
+          <div class="m-times"><span id="mPos">0:00</span><span id="mDur">0:00</span></div>
+        </div>
+        <div class="m-ctl">
+          <button class="m-btn" id="mPrev" type="button" data-mact="prev" aria-label="上一首"></button>
+          <button class="m-btn m-play" id="mPlay" type="button" data-mact="toggle" aria-label="播放 / 暂停"></button>
+          <button class="m-btn" id="mNext" type="button" data-mact="next" aria-label="下一首"></button>
+        </div>
+        <div class="m-vol">
+          <span class="m-vol-ico" id="mVolIco"></span>
+          <div class="m-vbar" id="mVol">
+            <div class="m-fill" id="mVolFill"></div>
+            <div class="m-knob" id="mVolKnob"></div>
+          </div>
+          <span class="m-vol-pct" id="mVolPct">70%</span>
+        </div>
+      </div>
+
+      <div class="m-right">
+        <div class="m-crumb" id="mCrumb"></div>
+        <div class="m-list" id="mList"></div>
+      </div>
+    </div>
+  </div>
+  <button class="m-handle" id="mHandle" type="button" aria-label="打开音乐" title="音乐"></button>
+
   <div class="mask" id="mask"></div>
   <div class="sheet" id="sheet">
     <div class="sheet-inner" id="sheetInner"></div>
@@ -48,6 +95,7 @@
   <script src="js/icons.js"></script>
   <script src="js/backend.js"></script>
   <script src="js/layout.js"></script>
+  <script src="js/music.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>
