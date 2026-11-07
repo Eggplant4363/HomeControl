@@ -909,11 +909,41 @@
     paintVol();
   }
 
+  /* 只认「从屏幕左边缘往右滑」：手指必须落在左边 28 CSS px 内起手。
+     这样屏幕中间的卡片亮度条、房间/场景横向滚动条怎么拖都不会把页面拽出来。 */
+  var EDGE_PULL = 28;
+
+  /* 主屏上有些控件自己就要横着拖：卡片亮度条（.t-bar）、场景/房间那两条横向滚动条
+     .toolbar、设置弹层里的滑条（input.slider）。落在这些上面时也不能启动手势。 */
+  var GRABBY = ['t-bar', 'tbar', 'slider', 'sheet', 'sheet-inner', 'mask', 'view', 'dim',
+    'toast', 'edit-bar', 'toolbar', 'music', 'm-scrim'];
+
+  function isGrabby(node) {
+    while (node && node !== document.body) {
+      var tag = node.nodeName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true;
+      var c = node.className;
+      if (typeof c === 'string' && c) {
+        var s = ' ' + c + ' ';
+        for (var i = 0; i < GRABBY.length; i++) {
+          if (s.indexOf(' ' + GRABBY[i] + ' ') >= 0) return true;
+        }
+      }
+      node = node.parentNode;
+    }
+    return false;
+  }
+
   function onTouchStart(ev) {
     if (!ev.touches || ev.touches.length !== 1) { S.g = null; return; }
     var t = ev.touches[0];
     S.pulling = false;
-    S.g = { x0: t.clientX, y0: t.clientY, t0: Date.now(), x: t.clientX, mode: '', dx: 0 };
+    /* 只在「没打开」这一侧拦：打开之后整页都是我们自己的，滑条由 bindBars 处理 */
+    if (!S.open && isGrabby(ev.target)) { S.g = null; return; }
+    S.g = {
+      x0: t.clientX, y0: t.clientY, t0: Date.now(), x: t.clientX, mode: '', dx: 0,
+      edge: t.clientX <= EDGE_PULL
+    };
   }
 
   function onTouchMove(ev) {
@@ -926,7 +956,7 @@
     if (!g.mode) {
       if (Math.abs(dx) < 10 && Math.abs(dy) < 10) return;
       if (Math.abs(dy) > Math.abs(dx) * 1.25) { g.mode = 'v'; return; }
-      if (dx > 0 && !S.open) g.mode = 'pull';
+      if (dx > 0 && !S.open && g.edge) g.mode = 'pull';
       else if (dx < 0 && S.open) g.mode = 'close';
       else { g.mode = 'no'; return; }
       if (g.mode === 'pull' || g.mode === 'close') {

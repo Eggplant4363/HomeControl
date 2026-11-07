@@ -93,16 +93,33 @@ for (const rel of FILES) {
   });
 }
 
-/* 附带检查：设备加载的是 /sdcard 副本，assets 里那份只是兜底，两者最好一致 */
-const p1 = path.join(ROOT, 'panel/js/app.js');
-const p2 = path.join(ROOT, 'app/assets/panel/js/app.js');
-if (fs.existsSync(p2)) {
-  const a = fs.readFileSync(p1, 'utf8');
-  const b = fs.readFileSync(p2, 'utf8');
-  if (a !== b) {
-    console.log('  WARN  app/assets/panel 与 panel/ 不一致（重新 build 会同步；设备实际读 /sdcard 副本）');
+/* 附带检查：设备加载的是 /sdcard 副本，assets 里那份只是兜底，两者最好一致。
+   以前只比 app.js —— 结果 music.js / app.css 早就分叉了也没人发现，现在整棵树逐文件比。 */
+const A_DIR = path.join(ROOT, 'panel');
+const B_DIR = path.join(ROOT, 'app/assets/panel');
+function walkFiles(dir, base, out) {
+  for (const name of fs.readdirSync(dir)) {
+    const full = path.join(dir, name);
+    const rel = base ? base + '/' + name : name;
+    if (fs.statSync(full).isDirectory()) walkFiles(full, rel, out);
+    else out.push(rel);
+  }
+  return out;
+}
+if (fs.existsSync(B_DIR)) {
+  const files = walkFiles(A_DIR, '', []);
+  const diffs = [];
+  for (const rel of files) {
+    const mine = path.join(A_DIR, rel);
+    const other = path.join(B_DIR, rel);
+    if (!fs.existsSync(other)) { diffs.push(rel + '（assets 里缺）'); continue; }
+    if (!fs.readFileSync(mine).equals(fs.readFileSync(other))) diffs.push(rel);
+  }
+  if (diffs.length) {
+    console.log('  WARN  app/assets/panel 与 panel/ 不一致：' + diffs.join(', '));
+    console.log('        （重新 build 会同步；设备实际读 /sdcard 副本，assets 只是兜底）');
   } else {
-    console.log('  PASS  app/assets/panel 与 panel/ 内容一致');
+    console.log('  PASS  app/assets/panel 与 panel/ 内容一致（' + files.length + ' 个文件）');
   }
 }
 
