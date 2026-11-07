@@ -79,6 +79,9 @@ body::before {
 }
 .gear svg { width: 19px; height: 19px; flex: 0 0 auto; }
 .gear:active { transform: scale(.95); background: rgba(255,255,255,.1); }
+/* 编辑态：顶栏按钮换成 ✓ 并且点亮，一眼看出「点它完成」 */
+.gear.ok { color: #071018; background: #8fc3ff; border-color: #8fc3ff; }
+.gear.ok:active { background: #a7d2ff; }
 
 /* ---------------- 场景 + 房间 ---------------- */
 .toolbar { display: flex; align-items: center; flex: 0 0 auto; height: 58px; margin-top: 4px; }
@@ -182,14 +185,21 @@ body::before {
   transition: opacity .2s;
 }
 .tile:not(.on) .t-bar { opacity: .5; }   /* 关着也看得见：点一下就能把灯点亮 */
+/* 填充的裁剪层：跟着轨道圆角走。填充右端保持直角，让橙色正好停在钮的中心线上，
+   圆头由白色钮自己给出 —— 否则填充末端的半圆圆心会比钮中心左移半个条高。 */
+.t-bar .t-fill {
+  position: absolute; left: 0; right: 0; top: 0; bottom: 0;
+  border-radius: inherit; overflow: hidden; pointer-events: none;
+}
 .t-bar i {
   position: absolute; left: 0; top: 0; bottom: 0; width: var(--pct);
-  border-radius: 11px; background: rgb(var(--accent));
+  border-radius: inherit; border-top-right-radius: 0; border-bottom-right-radius: 0;
+  background: rgb(var(--accent));
   transition: width .22s;
 }
 .t-bar b {
-  position: absolute; top: 50%; left: var(--pct); width: 26px; height: 26px;
-  margin: -13px 0 0 -13px; border-radius: 50%;
+  position: absolute; top: 50%; left: var(--pct); width: 22px; height: 22px;
+  margin: -11px 0 0 -11px; border-radius: 50%;
   background: #eef5ff; box-shadow: 0 2px 7px rgba(0,0,0,.38);
   transition: left .22s;
 }
@@ -198,8 +208,8 @@ body::before {
 .t-bar.dragging { opacity: 1; }
 /* 小卡片（紧凑/6 列）里条矮一点、钮小一点，别把名字挤出去 */
 .grid.size-sm .t-bar, .grid.cols-6 .t-bar { height: 14px; border-radius: 7px; margin-top: 6px; }
-.grid.size-sm .t-bar i, .grid.cols-6 .t-bar i { border-radius: 7px; }
-.grid.size-sm .t-bar b, .grid.cols-6 .t-bar b { width: 18px; height: 18px; margin: -9px 0 0 -9px; }
+.grid.size-sm .t-bar i, .grid.cols-6 .t-bar i { border-radius: 7px 0 0 7px; }
+.grid.size-sm .t-bar b, .grid.cols-6 .t-bar b { width: 14px; height: 14px; margin: -7px 0 0 -7px; }
 
 .t-ctl { display: flex; align-items: center; margin-top: 9px; }
 .t-step {
@@ -380,6 +390,7 @@ body::before {
 .empty { flex-direction: column; text-align: center; }
 .empty .empty-main { font-size: 15px; color: rgba(255,255,255,.55); }
 .empty .empty-sub { display: block; margin-top: 10px; font-size: 13px; color: rgba(255,255,255,.35); }
+.empty .empty-add { margin-top: 18px; height: 40px; padding: 0 22px; font-size: 14px; }
 /* 实体多的房间：网格允许纵向滚动，行高固定，避免超出屏幕后无法翻看 */
 .grid.dense {
   align-content: start;

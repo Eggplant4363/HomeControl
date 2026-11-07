@@ -1,6 +1,7 @@
 /* 图标集：24x24 线性 SVG，直接用 innerHTML 插入 */
 window.ICONS = {
   edit: '<path d="M4 20h4L20 8l-4-4L4 16v4z"/><path d="M13.5 5.5l5 5"/>',
+  check: '<path d="M5 13l4.5 4.5L19 6.8"/>',
   cam: '<path d="M4 8h3l1.2-2h7.6L17 8h3v10H4z"/><circle cx="12" cy="13" r="3"/>',
   bulb: '<path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.6 10.8c.6.5.9 1.2.9 2V17h5.4v-1.2c0-.8.3-1.5.9-2A6 6 0 0 0 12 3z"/>',
   plug: '<path d="M9 3v5M15 3v5M6 8h12v3a6 6 0 0 1-12 0V8zM12 17v4"/>',

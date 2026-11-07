@@ -467,22 +467,40 @@ var COLOR_PRESETS = [
   }
 
   /* ---------------- 卡片 ---------------- */
-  /* 百分比进度条骨架：i = 已填充部分，b = 拖动钮。位置都读 CSS 变量 --pct，
+  /* 百分比进度条骨架：t-fill 是裁剪层（把填充裁成轨道圆角，满格也不露直角），
+     i = 已填充部分，b = 拖动钮。位置都读 CSS 变量 --pct，
      JS 只改一个值（setBarPct），比同时改 width/left 两处省一次样式计算。 */
   function barHtml() {
     return '<div class="t-bar" data-role="pbar" data-pct="0">' +
-      '<i data-role="bar"></i><b class="t-knob"></b></div>';
+      '<span class="t-fill"><i data-role="bar"></i></span><b class="t-knob"></b></div>';
   }
 
-  /** 进度条画到某个百分比。拖动中每帧都会调用，值没变就不写 DOM。 */
+  /** 进度条画到某个百分比。拖动中每帧都会调用，值没变就不写 DOM。
+   *  圆钮中心在 [r, w-r] 之间移动（r = 钮半径），拉到 0% / 100% 时钮的外沿
+   *  正好贴住轨道两端；填充右端就是钮中心，圆头由白色圆钮自己充。
+   *  用像素算而不是纯 CSS 百分比：百分比会让 100% 时钮有一半探出轨道。 */
   function setBarPct(bar, pct) {
     if (!bar) return;
     var p = num(pct, 0);
     if (p < 0) p = 0;
     if (p > 100) p = 100;
-    if (bar.getAttribute('data-pct') === String(p)) return;
+    var w = bar.clientWidth || 0;
+    var same = bar.getAttribute('data-pct') === String(p) && bar.getAttribute('data-bw') === String(w);
+    if (same) return;
     bar.setAttribute('data-pct', String(p));
+    bar.setAttribute('data-bw', String(w));
     bar.style.setProperty('--pct', p + '%');
+    var knob = bar.querySelector('.t-knob');
+    var fill = bar.querySelector('.t-fill i');
+    if (knob && fill && w > 6) {
+      var r = (knob.offsetWidth || 22) / 2;
+      var x = r + (w - 2 * r) * p / 100;
+      knob.style.left = x + 'px';
+      fill.style.width = x + 'px';
+    } else {
+      if (knob) knob.style.left = '';
+      if (fill) fill.style.width = '';
+    }
   }
 
   function midHtml(tile) {
@@ -673,8 +691,12 @@ var COLOR_PRESETS = [
         if (pbar.style.display !== 'none') pbar.style.display = 'none';
       } else {
         if (pbar.style.display === 'none') pbar.style.display = '';
-        var dragNow = S.pctDrag && S.pctDrag.bar === pbar;
-        if (!dragNow) setBarPct(pbar, st === 'on' ? pm.pct : 0);
+        /* 拖动中：按实体判断（DOM 可能已被重建）
+           刚松手 1.2s 内：HA 会把 brightness 的过渡中间值一条条推回来，
+           照画就会出现「松手后自己往回弹」，所以给一个静默窗口 */
+        var dragNow = S.pctDrag && S.pctDrag.entity === tile.entity;
+        var holding = S.pctHold && S.pctHold.entity === tile.entity && Date.now() < S.pctHold.until;
+        if (!dragNow && !holding) setBarPct(pbar, st === 'on' ? pm.pct : 0);
       }
     }
 
@@ -944,14 +966,15 @@ var COLOR_PRESETS = [
     if (!items.length) {
       var hint;
       if (!prefs().allCards && !editAddCount()) {
-        hint = '<div class="empty-main">还没有添加设备</div><div class="empty-sub">点右上角 ✎ 进入编辑，再点「+ 添加卡片」从列表里挑设备</div>';
+        hint = '<div class="empty-main">还没有添加设备</div><div class="empty-sub">点右上角 ✎ 进入编辑，再点「＋ 添加卡片」从列表里挑设备</div>';
       } else if (S.real && !S.layoutReady) {
         hint = '<div class="empty-main">正在连接 Home Assistant…</div><div class="empty-sub">连不上时长按右上角状态胶囊，改地址与令牌；短按可重连</div>';
       } else {
         hint = '<div class="empty-main">这里还没有设备</div>';
       }
       /* 编辑模式：即使一张都没有，也要能进编辑去加 */
-      if (S.editing) hint = '<div class="empty-main">编辑中：这块屏还没有卡片</div><div class="empty-sub">点工具条上的「+ 添加卡片」，从列表里挑要放上去的设备</div>';
+      if (S.editing) hint = '<div class="empty-main">还没有卡片</div><div class="empty-sub">点下面的「＋ 添加卡片」，从列表里挑要放上去的设备；右上角 ✓ 完成</div>' +
+        '<button class="btn primary empty-add" data-act="edit-add">＋ 添加卡片</button>';
       var eCols = num(prefs().cols, 4);
       if (eCols < 3 || eCols > 6) eCols = 4;
       el.grid.className = 'grid cols-' + eCols + (S.editing ? ' editing' : '');
@@ -1163,7 +1186,6 @@ var COLOR_PRESETS = [
       actLog('add on ' + entity);
     }
     writeEdit(e);
-    actLog('DBG store=' + (function () { var m = 'ok'; var v = 'nil'; try { localStorage.setItem('hc.dbg', String(Date.now())); localStorage.setItem('hc.dbg2', 'x'); v = localStorage.getItem('hc.dbg2') || 'nil'; localStorage.removeItem('hc.dbg'); localStorage.removeItem('hc.dbg2'); } catch (x) { m = 'err:' + x.message; } return m + ' read=' + v + ' edit=' + (function(){ try { return localStorage.getItem(EDIT_KEY) ? 'yes' : 'no'; } catch(t) { return 'e'; } })(); })());
     renderGrid(true);
     if (S.sheetShow === 'add') el.sheetInner.innerHTML = addSheetHtml();
   }
@@ -1233,12 +1255,12 @@ var COLOR_PRESETS = [
       '<div class="ed-h"><b>◀ ▶</b><span>调顺序，和前一张 / 后一张交换</span></div>' +
       '<div class="ed-h"><b>1× / 2× / 整行</b><span>点一下改宽度，三种宽度循环</span></div>' +
       '<div class="ed-h"><b>✕</b><span>从这块屏上移除这张卡</span></div>' +
-      '<div class="ed-h"><b>+ 添加卡片</b><span>顶栏右边，打开列表挑新设备</span></div>' +
+      '<div class="ed-h"><b>+ 添加卡片</b><span>网格末尾的虚线格子，打开列表挑新设备</span></div>' +
       '</div>' +
       '<div class="cfg-actions">' +
-      '<button class="btn" data-act="edit-add">添加卡片</button>' +
+      '<button class="btn primary" data-act="edit-add">添加卡片</button>' +
       '<button class="btn" data-act="edit-reset">全部清空</button>' +
-      '<button class="btn primary" data-act="edit-done">完成</button>' +
+      '<button class="btn" data-act="edit-exit">完成</button>' +
       '</div>';
   }
 
@@ -1288,8 +1310,9 @@ var COLOR_PRESETS = [
     S.edit = null;
     actLog('edit enter');
     renderGrid(true);
+    paintEditBtn();
     el.grid.scrollTop = 0;
-    toast('编辑模式：点卡片加/删，✓ 是已添加');
+    toast('编辑模式：点卡片加/删，右上角 ✓ 完成');
   }
 
   /** 编辑模式下选中一张卡（null = 取消）；选中时这张卡才显示自己的工具按钮 */
@@ -1357,30 +1380,30 @@ var COLOR_PRESETS = [
     if (S.sheetShow === 'add' || S.sheetShow === 'edit') closeSheet();
     actLog('edit exit');
     renderGrid(true);
+    paintEditBtn();
     if (S.editBarEl) { S.editBarEl.className = 'edit-bar'; S.editBarEl.innerHTML = ''; }
     selectTile(null, null);
     el.grid.scrollTop = 0;
     toast('已保存');
   }
 
+  /** 顶栏那颗按钮跟着编辑态换脸：✎ 进编辑，✓ 退出（编辑时不再另占一行工具条） */
+  function paintEditBtn() {
+    if (!el.editBtn) return;
+    var on = !!S.editing;
+    el.editBtn.innerHTML = svg(on ? 'check' : 'edit');
+    el.editBtn.className = 'gear' + (on ? ' ok' : '');
+    el.editBtn.setAttribute('data-editing', on ? '1' : '0');
+    el.editBtn.setAttribute('aria-label', on ? '完成编辑' : '编辑卡片');
+    el.editBtn.setAttribute('title', on ? '完成编辑' : '编辑卡片');
+  }
+
+  /* 编辑态不再显示「编辑中 · N 张卡片 / + 添加卡片 / 完成」那一行：
+     改为顶栏按钮变成 ✓，点它就是「完成」。加卡片仍走网格末尾的「＋ 添加卡片」格子 */
   function renderEditBar() {
-    if (!el.grid) return;
-    var bar = S.editBarEl;
-    if (!bar) {
-      var host = el.grid.parentNode;
-      if (!host) return;
-      bar = document.createElement('div');
-      bar.className = 'edit-bar';
-      host.insertBefore(bar, el.grid);
-      S.editBarEl = bar;
-    }
-    if (!S.editing) { bar.className = 'edit-bar'; bar.innerHTML = ''; return; }
-    var n = editAddCount(), total = allCards().length;
-    if (S.real && !S.layoutReady) { bar.className = 'edit-bar'; bar.innerHTML = ''; return; }
-    bar.className = 'edit-bar show';
-    bar.innerHTML = '<div class="eb-info">编辑中 · ' + n + ' 张卡片</div>' +
-      '<button class="eb-btn" data-act="edit-add">+ 添加卡片</button>' +
-      '<button class="eb-btn primary" data-act="edit-done">完成</button>';
+    if (!S.editBarEl) return;
+    S.editBarEl.className = 'edit-bar';
+    S.editBarEl.innerHTML = '';
   }
 
   /* 网格里是否有摄像头卡（有就立刻补一次缩略图，不必等 8 秒轮询） */
@@ -2876,6 +2899,8 @@ function bindDim() {
       if (act === 'diag-panel') { if (el.view) closeSheet(); setTimeout(openSettingsView, 60); return; }
       if (act === 'edit-open') { openEditSheet(); return; }
       if (act === 'edit-add') { openAddSheet(); return; }
+      /* 添加卡片列表里点一行：这张卡加进去 / 拿掉（列表自身重画，不关弹层） */
+      if (act.indexOf('add-toggle:') === 0) { addToggle(act.slice(11)); el.sheetInner.innerHTML = addSheetHtml(); return; }
       if (act === 'add-done') { closeSheet(); setTimeout(function () { toast('已保存'); }, 60); return; }
       if (act === 'add-room') {
         var rr = roomById(S.room);
@@ -3229,6 +3254,9 @@ function bindDim() {
       var now = Date.now();
       if (!force && now - d.sentAt < 140) return;   /* 拖动中限流，别把 HA 打满 */
       d.sentAt = now;
+      /* 发出去之后的一小段时间里，HA 推回来的中间值不覆盖本地手感：
+         过渡灯会一条条回包，照画就会出现「松手后自己往回弹」 */
+      S.pctHold = { entity: d.entity, until: now + 1500 };
       var data = { entity_id: d.entity };
       data[d.meta.key] = d.pct;
       callService(d.meta.domain, d.meta.service, data).then(null, function () { });
@@ -3272,6 +3300,7 @@ function bindDim() {
       if (!d) return;
       S.pctDrag = null;
       pctSend(d, true);
+      S.pctHold = { entity: d.entity, until: Date.now() + 1200 };
       d.bar.className = 't-bar';
       setTimeout(function () { S.pctFired = false; }, 400);
       actLog('pct up ' + d.entity + ' ' + d.pct);
@@ -3401,7 +3430,7 @@ function boot() {
     el.status = $('status'); el.statusText = $('statusText');
     el.gear = $('gear');
     el.editBtn = $('editBtn');
-    el.editBar = $('editBar');
+    el.editBar = $('editBar'); S.editBarEl = el.editBar;
     el.scenes = $('scenes'); el.tabs = $('tabs'); el.grid = $('grid');
     el.mask = $('mask'); el.sheet = $('sheet'); el.sheetInner = $('sheetInner');
     el.toast = $('toast');
@@ -3413,9 +3442,9 @@ function boot() {
     if (el.gear) {
       el.gear.innerHTML = svg('gear');
     if (el.editBtn) {
-      el.editBtn.innerHTML = svg('edit');
       el.editBtn.addEventListener('click', function () { if (S.editing) exitEdit(); else enterEdit(); });
       el.editBtn.addEventListener('touchstart', function (ev) { ev.stopPropagation(); });
+      paintEditBtn();
     }
       el.gear.addEventListener('click', function () { openSettingsView(); });
       el.gear.addEventListener('touchstart', function (ev) { if (ev && ev.stopPropagation) ev.stopPropagation(); }, false);

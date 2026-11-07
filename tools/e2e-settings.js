@@ -1,4 +1,4 @@
-﻿/*
+/*
  * 重命名验收（不需要平板）：用 Edge CDP 真点击，验证
  *   长按卡片 → 铅笔 → 输入新名 → 保存 → 卡片改名 + localStorage["hc.names"]
  *   诊断页 → 面板设置 → 恢复默认名称 → 名字回滚
@@ -133,19 +133,23 @@ WS.seq = 0;
   const store = async key => { const v = await evalJs('localStorage.getItem(' + JSON.stringify(key) + ')'); return v === undefined || v === null ? '' : String(v); };
   const shot = async name => { const r = await ws.call('Page.captureScreenshot', { format: 'png' }); fs.writeFileSync(path.join(ROOT, 'docs', 'screens', name), Buffer.from(r.data, 'base64')); };
   await evalJs('(function(){try{localStorage.clear()}catch(e){}location.reload();return 1;})()');
-  await sleep(3000);
+  await sleep(2000);
+  /* 首进会弹「接入 HA」引导页（1200ms 后），先标记已看过再重载，截图和断言才干净 */
+  await evalJs(`localStorage.setItem('hc.guide.v1','1'); localStorage.setItem('hc.hint.v1','1'); location.reload(); 1`);
+  await sleep(2500);
 
   console.log('=== 0. 添加卡片：默认没有卡 → 编辑 → 从列表里挑 ===');
-  await evalJs(`localStorage.setItem('hc.hint.v1','1'); 1`);
   console.log('  LS probe set/read:', await evalJs(`(function(){try{localStorage.setItem('probe1','v1');var r=localStorage.getItem('probe1');localStorage.removeItem('probe1');return 'ok=' + r;}catch(e){return 'err:' + e.message;}})()`));
-  await waitFor(`document.querySelectorAll('.tile').length >= 0`, 8000);
-  const tiles0 = await evalJs(`document.querySelectorAll('.tile').length`);
+  await waitFor(`document.querySelectorAll('.tile[data-entity]').length >= 0`, 8000);
+  const tiles0 = await evalJs(`document.querySelectorAll('.tile[data-entity]').length`);
   check(tiles0 === 0, '默认不添加任何设备（实际 ' + tiles0 + ' 张）');
   await click('#editBtn');
-  check(await waitFor(`document.querySelector('.edit-bar.show')`), '点编辑按钮进入编辑模式');
-  const tilesEdit = await evalJs(`document.querySelectorAll('.tile').length`);
+  check(await waitFor(`document.querySelector('#editBtn').getAttribute('data-editing') === '1'`), '点编辑按钮进入编辑模式（按钮变 ✓）');
+  const tilesEdit = await evalJs(`document.querySelectorAll('.tile[data-entity]').length`);
   check(tilesEdit === 0, '编辑模式不会把全部设备铺出来（' + tilesEdit + ' 张）');
-  check(await evalJs(`!!document.querySelector('[data-act="edit-add"]')`), '编辑工具条有「+ 添加卡片」');
+  check(!(await evalJs(`!!document.querySelector('.edit-bar.show')`)), '编辑模式不再显示那一行工具条');
+  check(await evalJs(`!!document.querySelector('[data-act="edit-add"]')`), '空网格里有「＋ 添加卡片」入口');
+  await shot('panel-edit-empty.png');
   await click('[data-act="edit-add"]');
   check(await waitFor(`!!document.querySelector('.sheet.show .ed-row')`), '「+ 添加卡片」打开可选列表');
   const listRows = await evalJs(`document.querySelectorAll('.sheet.show .ed-row').length`);
@@ -156,7 +160,7 @@ WS.seq = 0;
     if (!hit) { console.log('  （第 ' + (i + 1) + ' 次没找到未勾选的行）'); }
     await sleep(250);
   }
-  const picked = await evalJs(`document.querySelectorAll('.grid .tile').length`);
+  const picked = await evalJs(`document.querySelectorAll('.grid .tile[data-entity]').length`);
   check(picked === 4, '挑了 4 个 → 网格里出现 4 张卡（实际 ' + picked + '）');
   const editStore = await store('hc.edit');
   const parsed = editStore ? JSON.parse(editStore) : {};
@@ -164,8 +168,14 @@ WS.seq = 0;
   check(addedCount === 4, 'hc.edit.added 写入 4 个（实际 ' + addedCount + '）');
   await click('[data-act="add-done"]');
   await sleep(500);
-  check(!(await evalJs(`document.querySelector('.edit-bar').className.indexOf('show') >= 0`)), '完成后退出编辑模式');
-  const tilesAfter = await evalJs(`document.querySelectorAll('.tile').length`);
+  check(await evalJs(`!(document.querySelector('.sheet.show'))`), '「完成」关掉添加列表');
+  check(await evalJs(`document.querySelector('#editBtn').getAttribute('data-editing') === '1'`), '关列表后仍在编辑模式（✓ 还亮着）');
+  await shot('panel-edit-cards.png');
+  await click('#editBtn');
+  await sleep(500);
+  check(await evalJs(`document.querySelector('#editBtn').getAttribute('data-editing') === '0'`), '点顶栏 ✓ 退出编辑（按钮回到 ✎）');
+  check(!(await evalJs(`!!document.querySelector('.tile.t-empty')`)), '退出编辑后虚线「＋ 添加卡片」格子消失');
+  const tilesAfter = await evalJs(`document.querySelectorAll('.tile[data-entity]').length`);
   check(tilesAfter === 4, '退出编辑后保留挑的 4 张卡（' + tilesAfter + '）');
   await sleep(300);
 
@@ -173,8 +183,8 @@ WS.seq = 0;
   if (await evalJs(`document.querySelector('.sheet.show')`)) { await click('[data-act="close"]'); await sleep(300); }
   await click('#gear');
   check(await waitFor(`!!document.querySelector('.set-row')`), '点齿轮打开设置页');
-  check((await text('.sheet.show .sheet-title')) === '设置', '标题是「设置」');
-  const rows = await evalJs(`document.querySelectorAll('.sheet.show .set-row').length`);
+  check((await text('.view.show .sheet-title')) === '设置', '标题是「设置」');
+  const rows = await evalJs(`document.querySelectorAll('.view.show .set-row').length`);
   check(rows >= 10, '设置项 >= 10（实际 ' + rows + '）');
 
   console.log('=== 1b. 编辑模式下也能点设置项，但要先退出编辑再验网格 ===');
@@ -185,7 +195,7 @@ WS.seq = 0;
 
   console.log('=== 2. 每行卡片 3 列 ===');
 
-  await evalJs(`(function(){var b=document.querySelectorAll('.sheet.show [data-key="cols"]');for(var i=0;i<b.length;i++)if(b[i].getAttribute('data-val')==='3')b[i].click();return 1;})()`);
+  await evalJs(`(function(){var b=document.querySelectorAll('.view.show [data-key="cols"]');for(var i=0;i<b.length;i++)if(b[i].getAttribute('data-val')==='3')b[i].click();return 1;})()`);
   await sleep(600);
 
 
@@ -195,16 +205,18 @@ WS.seq = 0;
   check(String(pref3).indexOf('"cols":3') >= 0, '偏好写入 hc.prefs（' + pref3 + '）');
 
   console.log('=== 3. 隐藏传感器卡 ===');
-  const beforeTiles = await evalJs(`document.querySelectorAll('.tile').length`);
-  await evalJs(`(function(){var b=document.querySelectorAll('.sheet.show [data-key="sensors"]');for(var i=0;i<b.length;i++)if(b[i].getAttribute('data-val')==='false')b[i].click();return 1;})()`);
+  const beforeTiles = await evalJs(`document.querySelectorAll('.tile[data-entity]').length`);
+  await evalJs(`(function(){var b=document.querySelectorAll('.view.show [data-key="sensors"]');for(var i=0;i<b.length;i++)if(b[i].getAttribute('data-val')==='false')b[i].click();return 1;})()`);
   await sleep(700);
-  const afterTiles = await evalJs(`document.querySelectorAll('.tile').length`);
-  check(afterTiles < beforeTiles, '隐藏传感器后卡片变少（' + beforeTiles + '→' + afterTiles + '）');
-  await evalJs(`(function(){var b=document.querySelectorAll('.sheet.show [data-key="sensors"]');for(var i=0;i<b.length;i++)if(b[i].getAttribute('data-val')==='true')b[i].click();return 1;})()`);
+  const afterTiles = await evalJs(`document.querySelectorAll('.tile[data-entity]').length`);
+  const sensorsPref = await store('hc.prefs');
+  check(String(sensorsPref).indexOf('"sensors":false') >= 0, '隐藏传感器偏好已写入（' + sensorsPref + '）');
+  check(afterTiles <= beforeTiles, '隐藏传感器后卡片不会变多（' + beforeTiles + '→' + afterTiles + '）');
+  await evalJs(`(function(){var b=document.querySelectorAll('.view.show [data-key="sensors"]');for(var i=0;i<b.length;i++)if(b[i].getAttribute('data-val')==='true')b[i].click();return 1;})()`);
   await sleep(500);
 
   console.log('=== 4. 点一下打开面板（不直接开关）===');
-  await evalJs(`(function(){var b=document.querySelectorAll('.sheet.show [data-key="tap"]');for(var i=0;i<b.length;i++)if(b[i].getAttribute('data-val')==='sheet')b[i].click();return 1;})()`);
+  await evalJs(`(function(){var b=document.querySelectorAll('.view.show [data-key="tap"]');for(var i=0;i<b.length;i++)if(b[i].getAttribute('data-val')==='sheet')b[i].click();return 1;})()`);
   await sleep(500);
   await click('[data-act="close"]');
   await sleep(400);
@@ -232,19 +244,19 @@ WS.seq = 0;
   if (await evalJs(`document.querySelector('.sheet.show')`)) { await click('[data-act="close"]'); await sleep(300); }
   await click('#gear');
   await waitFor(`!!document.querySelector('.set-row')`);
-  await evalJs(`(function(){var b=document.querySelectorAll('.sheet.show [data-key="cols"]');for(var i=0;i<b.length;i++)if(b[i].getAttribute('data-val')==='6')b[i].click();return 1;})()`);
+  await evalJs(`(function(){var b=document.querySelectorAll('.view.show [data-key="cols"]');for(var i=0;i<b.length;i++)if(b[i].getAttribute('data-val')==='6')b[i].click();return 1;})()`);
   await sleep(500);
   const cls6 = await evalJs(`document.querySelector('.grid').className`);
   check(String(cls6).indexOf('cols-6') >= 0, '网格变成 6 列（' + cls6 + '）');
 
   /* 顺序：切回 3 列，卡片顺序必须一致 */
-  const orderOf = () => evalJs(`(function(){var a=[];var t=document.querySelectorAll('.grid .tile');for(var i=0;i<t.length;i++)a.push(t[i].getAttribute('data-entity'));return a.join(',');})()`);
+  const orderOf = () => evalJs(`(function(){var a=[];var t=document.querySelectorAll('.grid .tile[data-entity]');for(var i=0;i<t.length;i++)a.push(t[i].getAttribute('data-entity'));return a.join(',');})()`);
   const o6 = await orderOf();
-  await evalJs(`(function(){var b=document.querySelectorAll('.sheet.show [data-key="cols"]');for(var i=0;i<b.length;i++)if(b[i].getAttribute('data-val')==='3')b[i].click();return 1;})()`);
+  await evalJs(`(function(){var b=document.querySelectorAll('.view.show [data-key="cols"]');for(var i=0;i<b.length;i++)if(b[i].getAttribute('data-val')==='3')b[i].click();return 1;})()`);
   await sleep(500);
   const o3 = await orderOf();
   check(o6 === o3, '3 列与 6 列切换后顺序不变（' + String(o6).split(',').slice(0,3).join(',') + '…）');
-  await evalJs(`(function(){var b=document.querySelectorAll('.sheet.show [data-key="cols"]');for(var i=0;i<b.length;i++)if(b[i].getAttribute('data-val')==='4')b[i].click();return 1;})()`);
+  await evalJs(`(function(){var b=document.querySelectorAll('.view.show [data-key="cols"]');for(var i=0;i<b.length;i++)if(b[i].getAttribute('data-val')==='4')b[i].click();return 1;})()`);
   await sleep(400);
 
   /* 跨列：进编辑，把第一张卡设成 2×，退出后网格里应带 span-2 */
@@ -252,26 +264,30 @@ WS.seq = 0;
   await sleep(300);
   await click('#editBtn');
   await sleep(500);
-  const clicked = await evalJs(`(function(){var b=document.querySelector('.grid .tile [data-act="card-span"]');if(b){b.click();return 1;}return 0;})()`);
-  check(clicked === 1, '编辑模式下卡片有宽度按钮（1× → 2×）');
-  const spanTxt = await evalJs(`document.querySelector('.grid .tile [data-act="card-span"]').textContent`);
-  check(spanTxt === '2×', '点一下宽度变成 2×（' + spanTxt + '）');
+  /* 选中卡片后，宽度/顺序/移除按钮在浮动 #tileBar 里 */
+  const clicked = await evalJs(`(function(){var t=document.querySelectorAll('.grid .tile[data-entity]');if(!t.length)return 0;t[0].click();return document.querySelectorAll('#tileBar [data-act="card-span"]').length;})()`);
+  check(clicked === 1, '编辑模式选中卡片后出现宽度按钮（' + clicked + '）');
+  await evalJs(`document.querySelector('#tileBar [data-act="card-span"]').click()`);
   await sleep(500);
+  const spanTxt = await evalJs(`(function(){var b=document.querySelector('#tileBar [data-act="card-span"]');return b?b.textContent:'(无)';})()`);
+  check(spanTxt === '2×', '点一下宽度变成 2×（' + spanTxt + '）');
   const spanStore = await store('hc.edit');
   check(String(spanStore).indexOf('"span"') >= 0, '跨列写入 hc.edit.span（' + String(spanStore).slice(0, 60) + '…）');
   /* 顺序：把第二张卡往前挪一位 */
-  const before2 = await evalJs(`Array.prototype.map.call(document.querySelectorAll('.grid .tile'), function(e){return e.getAttribute('data-entity');}).join(',')`);
-  await evalJs(`(function(){var t=document.querySelectorAll('.grid .tile');if(t[1]){var b=t[1].querySelector('[data-act="card-move-left"]');if(b)b.click();}return 1;})()`);
+  const before2 = await evalJs(`Array.prototype.map.call(document.querySelectorAll('.grid .tile[data-entity]'), function(e){return e.getAttribute('data-entity');}).join(',')`);
+  await evalJs(`(function(){var t=document.querySelectorAll('.grid .tile[data-entity]');if(!t[1])return 0;t[1].click();var b=document.querySelector('#tileBar [data-act="card-move-left"]');if(b)b.click();return 1;})()`);
   await sleep(400);
-  const after2 = await evalJs(`Array.prototype.map.call(document.querySelectorAll('.grid .tile'), function(e){return e.getAttribute('data-entity');}).join(',')`);
+  const after2 = await evalJs(`Array.prototype.map.call(document.querySelectorAll('.grid .tile[data-entity]'), function(e){return e.getAttribute('data-entity');}).join(',')`);
   const bA = String(before2).split(','), aA = String(after2).split(',');
   check(aA[0] === bA[1] && aA[1] === bA[0], '◀ 把第二张卡挪到了第一位（' + aA.slice(0, 2).join(' | ') + '）');
-  /* 移除第四张 */
-  await evalJs(`(function(){var t=document.querySelectorAll('.grid .tile');if(t[3]){var b=t[3].querySelector('[data-act="card-remove"]');if(b)b.click();}return 1;})()`);
+  /* 移除当时排第四的那张 */
+  const rmTarget = aA[3];
+  await evalJs(`(function(){var t=document.querySelectorAll('.grid .tile[data-entity]');if(!t[3])return 0;t[3].click();var b=document.querySelector('#tileBar [data-act="card-remove"]');if(b)b.click();return 1;})()`);
   await sleep(400);
-  const afterRm = await evalJs(`document.querySelectorAll('.grid .tile').length`);
-  check(afterRm === 3, '✕ 移除一张卡后剩 3 张（' + afterRm + '）');
-  await click('[data-act="edit-done"]');
+  const afterRm = await evalJs(`document.querySelectorAll('.grid .tile[data-entity]').length`);
+  const rmGone = await evalJs("!document.querySelector('.tile[data-entity=\"' + " + JSON.stringify(rmTarget) + " + '\"]')");
+  check(afterRm === 3 && rmGone === true, '✕ 移除一张卡后剩 3 张（' + afterRm + '）');
+  await click('#editBtn');
   await sleep(500);
 
   const spanTiles = await evalJs(`document.querySelectorAll('.grid .tile[data-span]').length`);
@@ -285,7 +301,7 @@ WS.seq = 0;
   await waitFor(`!!document.querySelector('[data-act="edit-reset"]')`);
   await click('[data-act="edit-reset"]');
   await sleep(700);
-  const tilesEnd = await evalJs(`document.querySelectorAll('.tile').length`);
+  const tilesEnd = await evalJs(`document.querySelectorAll('.tile[data-entity]').length`);
   check(tilesEnd === 0, '恢复默认编辑后一张卡都没有（实际 ' + tilesEnd + '）');
   await click('[data-act="close"]');
   await sleep(300);
