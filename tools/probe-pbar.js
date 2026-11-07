@@ -131,6 +131,12 @@ class WS {
   if (!geo) { console.log('FAIL no .t-bar'); edge.kill(); process.exit(1); }
   console.log('bar=' + JSON.stringify([Math.round(geo.w), Math.round(geo.h)]) + ' knob=' + JSON.stringify([Math.round(geo.knobW), Math.round(geo.knobH)]));
 
+  const align = async (tag) => {
+    const a = await evalJs('(function(){var bar=document.querySelector(".t-bar");if(!bar)return null;var i=bar.querySelector("i"),k=bar.querySelector("b");if(!i||!k)return null;var rb=bar.getBoundingClientRect(),ri=i.getBoundingClientRect(),rk=k.getBoundingClientRect();var w=bar.querySelector(".t-fill");var rw=w?w.getBoundingClientRect():null;var cs=getComputedStyle(i);return {pct:getComputedStyle(bar).getPropertyValue("--pct").trim(),fillRight:Math.round((ri.right-rb.left)*10)/10,knobMid:Math.round((rk.left+rk.width/2-rb.left)*10)/10,deltaX:Math.round((rk.left+rk.width/2-ri.right)*10)/10,deltaY:Math.round((rk.top+rk.height/2-(rb.top+rb.height/2))*10)/10,fillRadius:cs.borderTopRightRadius,fillW:Math.round(ri.width*10)/10,barW:Math.round(rb.width*10)/10,fillClip:rw?[Math.round(rw.left-rb.left),Math.round(rw.width),getComputedStyle(w).borderTopLeftRadius]:null,fillRightRadius:getComputedStyle(i).borderTopRightRadius};})()');
+    console.log('align ' + tag + ' ' + JSON.stringify(a));
+  };
+  await align('init');
+
   const sample = async (tag) => {
     const v = await evalJs('(function(){var b=document.querySelector(".t-bar b");if(!b)return null;var rb=b.getBoundingClientRect();var bar=b.parentNode.getBoundingClientRect();return Math.round((rb.left+rb.width/2-bar.left)/bar.width*1000)/10;})()');
     return tag + '=' + v;
@@ -155,6 +161,7 @@ class WS {
     await sleep(70);
   }
   console.log(await sample('during'));
+  await align('during');
   await touch('touchEnd', x1, y);
 
   const seq = [];
@@ -170,8 +177,28 @@ class WS {
 
   /* 静默窗口过后，服务器值仍要能刷新钮：等 1.6s 再读一次 */
   await sleep(1600);
+  await align('after');
   console.log(await sample('after-hold'));
 
+  /* 极端位置：0% 与 100% 时，钮的外沿必须贴住轨道两端 */
+  const edgeCheck = async () => {
+    return evalJs('(function(){var bar=document.querySelector(".t-bar");if(!bar)return null;' +
+      'var k=bar.querySelector("b");var rb=bar.getBoundingClientRect(),rk=k.getBoundingClientRect();' +
+      'return {pct:Math.round(parseFloat(getComputedStyle(bar).getPropertyValue("--pct"))*10)/10,' +
+      'leftGap:Math.round((rk.left-rb.left)*10)/10,rightGap:Math.round((rb.right-rk.right)*10)/10,' +
+      'barW:Math.round(rb.width*10)/10};})()');
+  };
+  const dragTo = async (fx) => {
+    await touch('touchStart', x0, y);
+    await sleep(50);
+    for (let i = 1; i <= 5; i++) await touch('touchMove', Math.round(x0 + (fx - x0) * i / 5), y), await sleep(60);
+    await touch('touchEnd', fx, y);
+    await sleep(320);
+  };
+  await dragTo(Math.round(geo.x + geo.w + 40));
+  console.log('edge max ' + JSON.stringify(await edgeCheck()));
+  await dragTo(Math.round(geo.x - 40));
+  console.log('edge min ' + JSON.stringify(await edgeCheck()));
   edge.kill();
   await sleep(300);
   process.exit(0);
