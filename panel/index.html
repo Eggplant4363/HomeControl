@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+  <meta name="format-detection" content="telephone=no">
+  <title>中控屏</title>
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+  <div id="app">
+    <div class="topbar">
+      <div class="clock">
+        <div class="time" id="time">--:--</div>
+        <div class="date" id="date"></div>
+      </div>
+      <div class="weather" id="weather"></div>
+      <div class="spacer"></div>
+      <div class="status" id="status">
+        <span class="dot"></span><span id="statusText">连接中…</span>
+      </div>
+      <button class="gear" id="editBtn" type="button" aria-label="编辑卡片" title="编辑卡片"></button>
+      <button class="gear" id="gear" type="button" aria-label="设置" title="设置"></button>
+    </div>
+
+    <div class="toolbar">
+      <div class="scenes" id="scenes"></div>
+      <div class="tabs" id="tabs"></div>
+    </div>
+
+    <div class="edit-bar" id="editBar"></div>
+    <div class="grid" id="grid"></div>
+    <div class="view" id="view"></div>
+  </div>
+
+  <div class="mask" id="mask"></div>
+  <div class="sheet" id="sheet">
+    <div class="sheet-inner" id="sheetInner"></div>
+  </div>
+  <div class="dim" id="dim">
+    <div class="dim-time" id="dimTime">--:--</div>
+    <div class="dim-hint">轻触屏幕唤醒</div>
+  </div>
+  <div class="toast" id="toast"></div>
+  <div class="boot" id="boot">正在加载控制面板…</div>
+
+  <script src="js/config.js"></script>
+  <script src="js/icons.js"></script>
+  <script src="js/backend.js"></script>
+  <script src="js/layout.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,51 @@
+# ── 构建产物 / 可再生成 ──────────────────────────────────────
+build/
+dist/
+app/build/
+.gradle/
+*.apk
+*.apk.idsig
+*.aab
+*.class
+*.log
+
+# ── 本机与设备私有数据（不要进仓库）──────────────────────────
+# ha.json 里有本机 HA 地址与长期访问令牌，只提交 ha.json.example
+ha.json
+syspkgs.txt
+device_backup_apk/
+
+# ── 根目录调试截图（2.4MB/张，非文档引用）────────────────────
+/*.png
+/*.jpg
+
+# ── docs/screens 下未被任何文档引用的截图（调试留存）─────────
+docs/screens/panel-add-sheet.png
+docs/screens/panel-edit.png
+docs/screens/panel-names.png
+docs/screens/panel-real-home.png
+docs/screens/panel-real-master.png
+docs/screens/panel-rename-input.png
+docs/screens/panel-rename-sheet.png
+docs/screens/panel-scroll-unfreeze.png
+docs/screens/panel-settings-bottom.png
+docs/screens/panel-settings-device.png
+docs/screens/panel-settings-gear-device.png
+docs/screens/panel-settings-gear.png
+docs/screens/panel-settings-perf.png
+docs/screens/panel-settings.png
+docs/screens/panel-tile-bar.png
+docs/screens/panel-topbar-gear.png
+docs/screens/simulator-camera-card.png
+docs/screens/simulator-camera-live-card.png
+docs/screens/simulator-camera-live.png
+docs/screens/simulator-camera-offline.png
+docs/screens/simulator-home.png
+docs/screens/simulator-room.png
+docs/screens/simulator-sheet.png
+
+# ── 编辑器 / 系统噪音 ────────────────────────────────────────
+node_modules/
+.DS_Store
+Thumbs.db
+desktop.ini
