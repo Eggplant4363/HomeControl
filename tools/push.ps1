@@ -1,16 +1,28 @@
-﻿param(
+param(
   [switch]$Build,
   [switch]$Restart,
-  [switch]$Mock
+  [switch]$Mock,
+  [string]$Serial = ''
 )
 # 用法：
 #   .\tools\push.ps1                 # 只推面板文件
 #   .\tools\push.ps1 -Restart        # 推完并重启 App
 #   .\tools\push.ps1 -Build -Restart # 重编 APK、安装、推面板、重启
 #   .\tools\push.ps1 -Mock           # 推完后删掉 ha.json，回到模拟数据模式
+#   .\tools\push.ps1 -Serial 10.10.1.78:5555   # 插着模拟器/多台设备时指定推给哪台
 $ErrorActionPreference = 'Stop'
 $adb = 'D:\Software\platform-tools\adb.exe'
 $root = Split-Path -Parent $PSScriptRoot
+
+# 多台设备时 adb 会报 "more than one device/emulator"；-Serial 或已有的
+# 环境变量 ANDROID_SERIAL 都能指定目标（adb 自己就认这个变量）。
+if ($Serial) { $env:ANDROID_SERIAL = $Serial }
+if (-not $env:ANDROID_SERIAL) {
+  $devs = @(& $adb devices | Select-String -Pattern "\sdevice$" | ForEach-Object { ($_.Line -split "\s+")[0] })
+  if ($devs.Count -gt 1) {
+    throw ('connected ' + $devs.Count + ' devices: ' + ($devs -join ', ') + ' -- use -Serial or set $env:ANDROID_SERIAL')
+  }
+}
 
 if ($Build) {
   & powershell -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'build.ps1')
