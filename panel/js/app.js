@@ -2055,6 +2055,103 @@ var COLOR_PRESETS = [
     el.weather.innerHTML = svg(info[1]) + '<span>' + esc(info[0]) + '</span>' + temp;
   }
 
+  /* ---------------- 住户头像 + 在家/离家（HA 的 person.*） ---------------- */
+  var WHO_MAX = 3;
+
+  /** 从 states 里挑出 person.*（按 entity_id 排序，最多 3 个） */
+  function personList() {
+    var out = [];
+    for (var id in S.states) {
+      if (id.indexOf('person.') !== 0) continue;
+      var st = S.states[id];
+      if (st) out.push(st);
+    }
+    out.sort(function (a, b) { return String(a.entity_id) < String(b.entity_id) ? -1 : 1; });
+    return out.length > WHO_MAX ? out.slice(0, WHO_MAX) : out;
+  }
+
+  /** person 的 state 说人话：home/not_home 翻译，自定义区域名原样显示 */
+  function whoState(st) {
+    var s = String(((st && st.state) == null) ? '' : st.state);
+    if (s === 'home') return { text: '在家', home: true };
+    if (s === 'not_home') return { text: '离家', home: false };
+    if (!s || s === 'unknown' || s === 'unavailable') return { text: '状态未知', home: false };
+    return { text: s, home: false };
+  }
+
+  /** entity_picture 常是相对路径（/api/image/serve/…），拼成 WebView 能直接取的绝对地址 */
+  function avatarUrl(pic) {
+    var p = String((pic == null) ? '' : pic);
+    if (!p) return '';
+    if (/^(https?:|data:)/i.test(p)) return p;
+    var base = haHttpBase((S.ha && S.ha.url) || (cfg.ha && cfg.ha.url) || '');
+    if (!base) return '';
+    return base + (p.charAt(0) === '/' ? p : '/' + p);
+  }
+
+  /** 头像加载不出来时露出的首字母 */
+  function whoInitial(st) {
+    var n = String(((st && st.attributes) || {}).friendly_name || '');
+    return n ? n.charAt(0).toUpperCase() : '?';
+  }
+
+  function whoLabel(st) {
+    var a = (st && st.attributes) || {};
+    return String(a.friendly_name || st.entity_id);
+  }
+
+  function whoHtml(list) {
+    var html = '';
+    for (var i = 0; i < list.length; i++) {
+      var st = list[i], w = whoState(st), a = st.attributes || {};
+      var url = avatarUrl(a.entity_picture);
+      html += '<span class="who-av' + (w.home ? ' home' : '') + '" title="' +
+        esc(whoLabel(st)) + ' · ' + esc(w.text) + '">' +
+        '<b>' + esc(whoInitial(st)) + '</b>' +
+        (url ? '<img src="' + esc(url) + '" alt="" data-role="pic">' : '') +
+        '</span>';
+    }
+    return html;
+  }
+
+  /** 头像图挂了（HA 关了匿名访问/图被删）就退回首字母，别留一个碎图标 */
+  function bindWhoImgs() {
+    var imgs = el.who.querySelectorAll('img');
+    for (var i = 0; i < imgs.length; i++) {
+      imgs[i].onerror = function () { if (this.parentNode) this.parentNode.removeChild(this); };
+    }
+  }
+
+  function renderWho() {
+    if (!el.who) return;
+    var list = personList();
+    if (!list.length) {
+      S.whoSig = '';
+      el.who.className = 'who';
+      el.who.innerHTML = '';
+      el.who.style.display = 'none';
+      return;
+    }
+    var sig = [], i, home = 0;
+    for (i = 0; i < list.length; i++) {
+      var a = list[i].attributes || {};
+      sig.push(list[i].entity_id + '|' + list[i].state + '|' + String(a.entity_picture || '') + '|' + String(a.friendly_name || ''));
+      if (whoState(list[i]).home) home++;
+    }
+    var txt = (list.length === 1) ? whoState(list[0]).text : (home + '/' + list.length + ' 在家');
+    el.who.className = 'who' + (home && home === list.length ? ' home' : ' away');
+    el.who.style.display = '';
+    var s = sig.join(',');
+    var t = el.who.querySelector('.who-t');
+    if (s === S.whoSig && t) {                       /* 只更新文字，避免频繁重载头像图片 */
+      if (t.textContent !== txt) t.textContent = txt;
+      return;
+    }
+    S.whoSig = s;
+    el.who.innerHTML = whoHtml(list) + '<span class="who-t">' + esc(txt) + '</span>';
+    bindWhoImgs();
+  }
+
   function setStatus(st) {
     /* 未配置时后端会推「模拟数据」，这里保持「未配置」更符合事实 */
     if (S.unconfigured && st && !S.real) st = { connected: st.connected, text: '未配置 · 长按右上角' };
@@ -2118,6 +2215,7 @@ var COLOR_PRESETS = [
     }
     S.states = states;
     renderWeather();
+    renderWho();
     if (S.real && !S.layoutReady) { applyAutoLayout(); return; }
     renderGrid(false);
     refreshSheet();
@@ -3428,6 +3526,7 @@ function boot() {
     };
     el.time = $('time'); el.date = $('date'); el.weather = $('weather');
     el.status = $('status'); el.statusText = $('statusText');
+    el.who = $('who');
     el.gear = $('gear');
     el.editBtn = $('editBtn');
     el.editBar = $('editBar'); S.editBarEl = el.editBar;
@@ -3478,6 +3577,8 @@ function boot() {
       connected: false,
       text: S.real ? '连接 HA…' : (S.unconfigured ? '未配置 · 长按右上角' : '连接中…')
     });
+    S.whoSig = '';
+    renderWho();
     if (S.unconfigured) { firstRunHint(); maybeShowGuide(); }
 
     tick();
@@ -3529,6 +3630,8 @@ function boot() {
     climateTempCaps: climateTempCaps, dualTarget: dualTarget,
     valHtml: valHtml, subText: subText, midHtml: midHtml, tileHtml: tileHtml, iconFor: iconFor,
     pctMeta: pctMeta, pctFromX: pctFromX, barHtml: barHtml,
+    personList: personList, whoState: whoState, avatarUrl: avatarUrl, whoInitial: whoInitial,
+    whoHtml: whoHtml, renderWho: renderWho,
     setStates: function (o) { S.states = o || {}; },
     normalizeHa: normalizeHa, haHttpBase: haHttpBase, normalizeToken: normalizeToken,
     camLiveUrl: camLiveUrl, camSrc: camSrc, camStamp: camStamp, cfgRef: cfg,

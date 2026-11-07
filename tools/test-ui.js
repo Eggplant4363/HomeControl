@@ -415,6 +415,41 @@ eq(api.barHtml().indexOf('data-role="pbar"') >= 0, true, '进度条：骨架带 
 eq(api.barHtml().indexOf('t-knob') >= 0, true, '进度条：骨架带拖动钮');
 
 console.log('');
+console.log('=== 住户头像 / 在家-离家 ===');
+eq(api.whoState({ state: 'home' }).text, '在家', 'person home → 在家');
+eq(api.whoState({ state: 'home' }).home, true, 'person home → 在家标记');
+eq(api.whoState({ state: 'not_home' }).text, '离家', 'person not_home → 离家');
+eq(api.whoState({ state: 'not_home' }).home, false, 'person not_home → 不在家标记');
+eq(api.whoState({ state: '公司' }).text, '公司', '自定义区域名原样显示');
+eq(api.whoState({ state: 'unavailable' }).text, '状态未知', 'unavailable → 状态未知');
+eq(api.whoState({ state: 'unknown' }).text, '状态未知', 'unknown → 状态未知');
+eq(api.whoState(null).text, '状态未知', '空状态 → 状态未知');
+
+eq(api.avatarUrl('data:image/png;base64,AA'), 'data:image/png;base64,AA', '头像：data URI 原样用');
+eq(api.avatarUrl('http://ha.local/pic.jpg'), 'http://ha.local/pic.jpg', '头像：绝对地址原样用');
+eq(api.avatarUrl(''), '', '头像：没有图返回空');
+eq(api.whoInitial({ attributes: { friendly_name: '小明' } }), '小', '头像首字母兜底');
+eq(api.whoInitial({ attributes: {} }), '?', '头像没有名字用问号');
+
+api.setStates({
+  'person.a': { entity_id: 'person.a', state: 'home', attributes: { friendly_name: 'A', entity_picture: '/api/image/serve/x/64' } },
+  'person.b': { entity_id: 'person.b', state: 'not_home', attributes: { friendly_name: 'B' } },
+  'light.c': { entity_id: 'light.c', state: 'on', attributes: {} }
+});
+var pl = api.personList();
+eq(pl.length, 2, '只挑 person.*（忽略别的实体）');
+eq(pl[0].entity_id, 'person.a', 'person 按 entity_id 排序');
+var wh = api.whoHtml(pl);
+eq(wh.indexOf('class="who-av home"') >= 0, true, '在家的人环点亮');
+eq(wh.indexOf('who-av"') >= 0, true, '离家的人环不亮');
+eq(wh.indexOf('title="A · 在家"') >= 0, true, '标题带名字与状态');
+eq(wh.indexOf('/api/image/serve/x/64') >= 0, true, '相对头像路径用在 HTML 里');
+eq(wh.indexOf('<b>A</b>') >= 0, true, '头像首字母在 DOM 里兜底');
+
+api.setStates({ 'person.a': { entity_id: 'person.a', state: 'home', attributes: {} } });
+eq(api.personList().length, 1, 'states 变更后重新挑人');
+
+console.log('');
 if (failed === 0) {
   console.log('ALL PASS (' + passed + ' checks)');
   process.exit(0);

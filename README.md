@@ -88,6 +88,7 @@ powershell -ExecutionPolicy Bypass -File .\tools\push.ps1 -Restart
 - **记住房间**：选中的房间存 localStorage['hc.room']，凌晨静默重载 / 应用重启后回到同一个房间，不会跳回「全部」；如果那个房间在真实 HA 里已经不存在，自动回落到「全部」
 - **误触撤销**：点卡片开关后，底部提示条给 5 秒「撤销」（	oggle() 里调 	oast(text,'撤销',fn)，n 发反向 	urn_on/	urn_off）。墙上触摸屏手臂伸过去容易蹭到旁边卡片，撤销比重做一次便宜。整条提示可点——Chromium 57 里 pointer-events:none 的父元素即使子元素设 uto 也点不到（elementFromPoint 能命中但事件不派发），所以带动作时给 .toast.act 整条放开
 - **亮度条直接拖**：可调光的灯（`light` 且 `supported_color_modes` 含亮度）卡片上有一条 22px 高的进度条，手指按住任意位置就能拖，拖动中每 140ms 推一次 `light.turn_on {brightness_pct}`，本地先改、不跟着 HA 回包抖；关灯时条留在原位画到 0（半透明），一眼看出这盏灯能调。能力判断在 `panel/js/app.js` 的 `pctMeta()`，拖完那一下的 click 会被吞掉，不会顺手关灯
+- **顶栏住户头像 + 在家/离家**：「已连接」左边显示 `person.*` 的圆形头像（取 `attributes.entity_picture`，相对路径自动拼上 HA 地址，是公开图所以不需要带令牌；加载失败退回首字母），旁边一句在家人话。`home` → 「在家」（头像描绿环），`not_home` → 「离家」、自定义区域名原样显示、`unknown/unavailable` → 「状态未知」；家里有多个 person 时最多并排 3 个头像，文字显示「2/3 在家」。逻辑在 `panel/js/app.js` 的 `renderWho()` / `whoState()`，头像签名不变就不重绘，1254 个实体的高频回包不会反复重载图片
 - **房间多 / 实体多**：房间 tab 放不下时自动改为可横向滑动（选中的房间会自动滑进可视区）；某个房间实体超过 8 张时网格改为可纵向滑动，行高固定，不会把卡片挤出屏幕又没法翻。场景键超过 4 个时同样可横向滑动，且场景区最宽只占 46%，不会把房间 tab 挤没
 - **诊断页**：长按左上角时间 → 显示模式、HA 地址、令牌（打码）、连接状态、连通测试、房间/卡片/实体数、**设备网络（IP + Wi-Fi SSID）**、视口、内核版本、最近一次 JS 错误；带按钮「重新加载 / 清缓存并重载 / 连接设置 / 回模拟数据 / 关闭」。上墙后不用连电脑就能自己判断问题
 - **夜间静默重载**：每天 04:00 自动 reload 一次释放 WebView 内存（2GB 老设备长时间点亮会越用越慢），每天只执行一次，由 `panel/js/config.js` 的 `reloadHour` 控制（设 `null` 关闭）

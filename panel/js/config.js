@@ -124,6 +124,15 @@ window.MOCK_ENTITIES = {
   },
   'weather.home': { state: 'partlycloudy', attributes: { friendly_name: '天气', temperature: 18, humidity: 62 } },
 
+  /* 住户（顶栏头像 + 在家/离家）；改 state 为 not_home 即可看离家样式 */
+  'person.mock_owner': {
+    state: 'home',
+    attributes: {
+      friendly_name: '我',
+      entity_picture: 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 64 64%22%3E%3Crect width=%2264%22 height=%2264%22 fill=%22%233c6ea8%22/%3E%3Ccircle cx=%2232%22 cy=%2223%22 r=%2211%22 fill=%22%23eaf2ff%22/%3E%3Cpath d=%22M11 64c0-12 9-21 21-21s21 9 21 21z%22 fill=%22%23eaf2ff%22/%3E%3C/svg%3E'
+    }
+  },
+
   'light.living_main': { state: 'on', attributes: { friendly_name: '客厅主灯', brightness: 204, color_temp: 300, min_mireds: 153, max_mireds: 500, supported_color_modes: ['hs', 'color_temp'], color_mode: 'hs', hs_color: [35, 62], rgb_color: [255, 176, 80] } },
   'light.living_strip': { state: 'off', attributes: { friendly_name: '客厅灯带', brightness: 255, supported_color_modes: ['rgbw'], color_mode: 'rgbw', rgb_color: [110, 231, 183] } },
   'switch.living_tv': { state: 'on', attributes: { friendly_name: '电视插座', power: 68 } },
