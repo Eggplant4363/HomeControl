@@ -1115,11 +1115,6 @@
     document.addEventListener('touchend', onTouchEnd, true);
     document.addEventListener('touchcancel', function () { S.g = null; }, true);
 
-    var handle = $('mHandle');
-    if (handle) {
-      handle.addEventListener('click', function () { open(true); });
-      handle.addEventListener('touchstart', function (ev) { if (ev.stopPropagation) ev.stopPropagation(); }, false);
-    }
     if (e.cover) e.cover.innerHTML = '<span class="m-cover-ph">' + svg('music') + '</span>';
     var back = $('mBack');
     if (back) back.innerHTML = svg('back');
