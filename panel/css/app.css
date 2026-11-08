@@ -1,37 +1,45 @@
 /* ---------------- 皮肤（两套主题） ---------------- */
 /* 深色为默认；html.hc-light 换成明亮皮肤。所有颜色走变量，改皮肤只改这两个块。
    （皮肤类挂在 <html> 上，body 的 className 会被弹层/负一屏来回改写）
-   --accent 由 JS 按实体类型逐卡片设成三元组（r,g,b），不要在这里定义它。 */
+   --accent 这里只给皮肤默认值；JS 会按实体类型逐卡片把它设成三元组（r,g,b）覆盖掉。 */
 :root {
-  --bg: #06090f; --bg-rgb: 6,9,15; --bg-deep: #03060b; --bg-deep-rgb: 3,6,11;
-  --bg-2: #0b1017; --bg-3: #111824; --bg-4: #16233c;
-  --card-rgb: 14,20,32; --card-2-rgb: 22,29,42; --line-rgb: 120,150,190;
+  /* 深色皮肤（HA dark 取值） */
+  --bg: #181818; --bg-rgb: 24,24,24; --bg-deep: #111111; --bg-deep-rgb: 17,17,17;
+  --bg-2: #212121; --bg-3: #2b2b2b; --bg-4: #333333;
+  --card-rgb: 40,40,40; --card-2-rgb: 44,44,44; --line-rgb: 68,68,68;
   --surf: 255,255,255;
-  --text-hi: #ffffff; --text-1: #f2f6fc; --text-2: #dce6f2; --text-3: #c2d2e8;
-  --text-4: #7c8ba3; --text-5: #61718a;
-  --accent-hex: #5d8cff; --accent-rgb: 93,140,255; --accent-soft: #8fc3ff; --accent-soft-rgb: 143,195,255;
-  --wash-a: .30; --wash-border-a: .40; --wash-glow-a: .34; --wash-icon-a: .22;
-  --badge-a: .78; --badge-border-a: .45;
-  --ok: #3ddc84; --ok-rgb: 61,220,132; --ok-soft: #7ff0b0; --ok-tint-rgb: 16,46,32;
-  --warn: #f0a04b; --warn-rgb: 240,160,75; --warn-soft: #cbb08a;
-  --err: #ff6b6b; --err-rgb: 255,107,107; --err-soft: #ff9b9b;
-  --lyric-rgb: 226,238,248;
+  --text-hi: #ffffff; --text-1: #e0e0e0; --text-2: #c9c9c9; --text-3: #a0a0a0;
+  --text-4: #808080; --text-5: #6f6f6f;
+  --accent-hex: #0d7ec0; --accent-rgb: 13,126,192; --accent-soft: #5fbde6; --accent-soft-rgb: 95,189,230;
+  --wash-a: .14; --wash-border-a: .55; --wash-glow-a: .08; --wash-icon-a: .16;
+  --badge-a: .22; --badge-border-a: .40;
+  --ok: #4caf50; --ok-rgb: 76,175,80; --ok-soft: #81c784; --ok-tint-rgb: 30,58,32;
+  --warn: #ffa726; --warn-rgb: 255,167,38; --warn-soft: #ffcc80;
+  --err: #ef5350; --err-rgb: 239,83,80; --err-soft: #ff8a80;
+  --lyric-rgb: 224,224,224;
+  --accent: 13,126,192; --track: #3a3a3a; --knob: #ffffff;
+  --shadow: 0 2px 2px 0 rgba(0,0,0,.2), 0 1px 2px 0 rgba(0,0,0,.3);
 }
+
 html.hc-light {
-  --bg: #eef3f9; --bg-rgb: 238,243,249; --bg-deep: #f3f7fc; --bg-deep-rgb: 243,247,252;
-  --bg-2: #e4eaf3; --bg-3: #dbe4f0; --bg-4: #c9d6e8;
-  --card-rgb: 240,244,250; --card-2-rgb: 233,239,247; --line-rgb: 70,92,120;
-  --surf: 24,38,56;
-  --text-hi: #101827; --text-1: #16202c; --text-2: #2b3a4c; --text-3: #47586b;
-  --text-4: #55667a; --text-5: #6d7f93;
-  --accent-hex: #1c62c9; --accent-rgb: 28,98,201; --accent-soft: #24659f; --accent-soft-rgb: 36,101,159;
-  --wash-a: .17; --wash-border-a: .34; --wash-glow-a: .18; --wash-icon-a: .14;
-  --badge-a: .55; --badge-border-a: .38;
-  --ok: #178f52; --ok-rgb: 23,143,82; --ok-soft: #178f52; --ok-tint-rgb: 205,234,218;
-  --warn: #b0722a; --warn-rgb: 176,114,42; --warn-soft: #a07340;
-  --err: #cf4747; --err-rgb: 207,71,71; --err-soft: #c14a4a;
-  --lyric-rgb: 32,46,62;
+  /* 明亮皮肤（HA light 取值） */
+  --bg: #fafafa; --bg-rgb: 250,250,250; --bg-deep: #f2f2f2; --bg-deep-rgb: 242,242,242;
+  --bg-2: #efefef; --bg-3: #e6e6e6; --bg-4: #dedede;
+  --card-rgb: 255,255,255; --card-2-rgb: 252,252,252; --line-rgb: 224,224,224;
+  --surf: 26,26,26;
+  --text-hi: #000000; --text-1: #1a1a1a; --text-2: #3f3f3f; --text-3: #595959;
+  --text-4: #757575; --text-5: #8a8a8a;
+  --accent-hex: #03a9f4; --accent-rgb: 3,169,244; --accent-soft: #0277b6; --accent-soft-rgb: 2,119,182;
+  --wash-a: .10; --wash-border-a: .50; --wash-glow-a: .05; --wash-icon-a: .12;
+  --badge-a: .16; --badge-border-a: .35;
+  --ok: #2e7d32; --ok-rgb: 46,125,50; --ok-soft: #2e7d32; --ok-tint-rgb: 207,233,210;
+  --warn: #b26a00; --warn-rgb: 178,106,0; --warn-soft: #9a5b00;
+  --err: #c62828; --err-rgb: 198,40,40; --err-soft: #a92a2a;
+  --lyric-rgb: 26,26,26;
+  --accent: 3,169,244; --track: #dedede; --knob: rgb(var(--accent));
+  --shadow: 0 2px 2px 0 rgba(0,0,0,.05), 0 1px 2px 0 rgba(0,0,0,.12);
 }
+
 
 /* ---------------- 整页设置视图 ----------------
    老 WebView 里 position:fixed + transform 的弹层一旦滚动就整屏重绘（实测 ~19 帧），
@@ -183,13 +191,14 @@ body::before {
 .tile {
   position: relative; display: flex; flex-direction: column;
   padding: 15px 16px 13px; border-radius: 20px; overflow: hidden;
-  background: linear-gradient(158deg, rgba(var(--card-2-rgb),.96), rgba(var(--card-rgb),.96));
-  border: 1px solid rgba(var(--surf),.055);
+  background: rgba(var(--card-rgb),1);
+  border: 1px solid rgba(var(--line-rgb),.5);
+  box-shadow: var(--shadow);
   transition: background .22s, border-color .22s, transform .08s;
 }
 .tile:active { transform: scale(.985); }
 .tile.on {
-  background: linear-gradient(158deg, rgba(var(--accent), var(--wash-a)), rgba(var(--card-rgb),.97) 68%);
+  background: rgba(var(--card-rgb),1);
   border-color: rgba(var(--accent), var(--wash-border-a));
 }
 .tile.on::after {
@@ -244,8 +253,8 @@ body::before {
    touch-action:none 让在条上滑动不再触发页面滚动（Chromium 57 支持）。 */
 .t-bar {
   position: relative; flex: none; height: 22px; margin-top: 12px; border-radius: 11px;
-  background: rgba(var(--surf),.085);
-  box-shadow: inset 0 1px 2px rgba(0,0,0,.28);
+  background: var(--track);
+  box-shadow: inset 0 1px 2px rgba(0,0,0,.18);
   touch-action: none; -webkit-user-select: none; user-select: none;
   --pct: 0%;
   transition: opacity .2s;
@@ -266,7 +275,7 @@ body::before {
 .t-bar b {
   position: absolute; top: 50%; left: var(--pct); width: 22px; height: 22px;
   margin: -11px 0 0 -11px; border-radius: 50%;
-  background: var(--text-2); box-shadow: 0 2px 7px rgba(0,0,0,.38);
+  background: var(--knob); box-shadow: 0 2px 7px rgba(0,0,0,.38); border: 2px solid rgba(var(--card-rgb),.85);
   transition: left .22s;
 }
 /* 拖动中不要缓动，条要跟手 */
@@ -377,7 +386,7 @@ body::before {
 .slider::-webkit-slider-thumb {
   -webkit-appearance: none; appearance: none;
   width: 30px; height: 30px; margin-top: -11px; border-radius: 50%;
-  background: var(--text-hi); box-shadow: 0 3px 10px rgba(0,0,0,.45);
+  background: var(--knob); box-shadow: 0 3px 10px rgba(0,0,0,.45);
 }
 
 .opts { display: flex; flex: 1; }
