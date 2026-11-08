@@ -54,3 +54,5 @@ tools/cdp/
 docs/screens/panel-foot-inline.png
 docs/screens/panel-tile-final.png
 backup/
+app/assets/music.json
+build/music.json

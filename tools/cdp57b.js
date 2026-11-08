@@ -6,6 +6,8 @@ var exprPath = process.argv[2];
 var port = process.argv[3] || '9222';
 var expr = fs.readFileSync(exprPath, 'utf8');
 var DEBUG = process.env.CDP57_DEBUG === '1';
+/* CDP57_AWAIT=1：脚本可以返回 Promise（超时给到 20s），用于需要等待页面反应的探针 */
+var AWAIT = process.env.CDP57_AWAIT === '1';
 
 function httpGet(path, cb) {
   var sock = net.connect(Number(port), '127.0.0.1');
@@ -61,7 +63,7 @@ httpGet('/json/list', function (err, body) {
   var buf = Buffer.alloc(0);
   var upped = false;
   var cmdId = 1;
-  var timer = setTimeout(function () { console.error('timeout'); sock.destroy(); process.exit(1); }, 12000);
+  var timer = setTimeout(function () { console.error('timeout'); sock.destroy(); process.exit(1); }, AWAIT ? 20000 : 12000);
 
   sock.on('data', function (d) {
     buf = Buffer.concat([buf, d]);
@@ -73,7 +75,7 @@ httpGet('/json/list', function (err, body) {
       if (hdr.indexOf('101') === -1) { console.error('handshake refused'); process.exit(1); }
       upped = true;
       buf = buf.slice(h + 4);
-      var cmd = JSON.stringify({ id: cmdId, method: 'Runtime.evaluate', params: { expression: expr, returnByValue: true, awaitPromise: false } });
+      var cmd = JSON.stringify({ id: cmdId, method: 'Runtime.evaluate', params: { expression: expr, returnByValue: true, awaitPromise: AWAIT } });
       sock.write(frame(cmd));
       if (DEBUG) console.error('sent cmd ' + cmd.length + ' bytes');
     }
