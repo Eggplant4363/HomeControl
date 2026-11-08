@@ -722,8 +722,9 @@ body::before {
 .m-btn svg { width: 23px; height: 23px; }
 .m-btn:active { transform: scale(.95); background: rgba(255,255,255,.1); }
 .m-btn.on { background: rgba(93,140,255,.26); border-color: rgba(120,170,255,.55); color: #dfe9ff; }
-.m-mini { width: 42px; height: 42px; margin: 0 5px; }
+.m-mini { width: 42px; height: 42px; margin: 0 5px; opacity: .55; }
 .m-mini svg { width: 19px; height: 19px; }
+.m-mini.on { opacity: 1; }
 .m-play { width: 66px; height: 66px; background: rgba(93,140,255,.22); border-color: rgba(120,170,255,.5); color: #dfe9ff; }
 .m-play svg { width: 29px; height: 29px; }
 .m-play.on { background: rgba(120,170,255,.34); border-color: rgba(150,195,255,.68); }

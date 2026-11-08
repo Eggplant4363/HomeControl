@@ -1108,9 +1108,10 @@
     e.play.innerHTML = svg(playing ? 'pause' : 'play');
     e.play.className = 'm-btn m-play' + (playing ? ' on' : '');
     e.songWrap.className = 'm-meta' + (playing ? ' playing' : '');
-    if (e.queueBtn) { e.queueBtn.className = 'm-btn' + (S.view === 'queue' ? ' on' : ''); e.queueBtn.innerHTML = svg('list'); }
-    if (e.shuffleBtn) e.shuffleBtn.className = 'm-btn' + (S.shuffle ? ' on' : '');
-    if (e.repeatBtn) { e.repeatBtn.className = 'm-btn' + (S.repeat === 'off' ? '' : ' on'); e.repeatBtn.innerHTML = svg(S.repeat === 'one' ? 'repeatOne' : 'repeat'); }
+    if (e.queueBtn) { e.queueBtn.className = 'm-btn m-mini' + (S.view === 'queue' ? ' on' : ''); e.queueBtn.innerHTML = svg('list'); }
+    /* 随机 / 顺序是同一个按钮的两态：点亮=随机，压暗=顺序 */
+    if (e.shuffleBtn) { e.shuffleBtn.className = 'm-btn m-mini' + (S.shuffle ? ' on' : ''); e.shuffleBtn.innerHTML = svg('shuffle'); }
+    if (e.repeatBtn) { e.repeatBtn.className = 'm-btn m-mini' + (S.repeat === 'off' ? '' : ' on'); e.repeatBtn.innerHTML = svg(S.repeat === 'one' ? 'repeatOne' : 'repeat'); }
   }
 
   function setFill(fill, knob, pct) {
