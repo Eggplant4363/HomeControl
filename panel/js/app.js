@@ -738,7 +738,7 @@ var COLOR_PRESETS = [
     var tcls = 'tile type-' + tile.type + (isOn(tile) ? ' on' : '') + (isNa(st) ? ' na' : '') + (sp > 1 ? ' span-' + sp : '') + (rw > 1 ? ' rows-' + rw : '');
     if (S.tileSel === node && node.className.indexOf('selected') >= 0) tcls += ' selected';
     if (node.className !== tcls) node.className = tcls;
-    var tacc = accentFor(tile);
+    var tacc = themeAcc(accentFor(tile));
     if (node.getAttribute('data-accent') !== tacc) {
       node.setAttribute('data-accent', tacc);
       node.style.setProperty('--accent', tacc);
@@ -835,7 +835,7 @@ var COLOR_PRESETS = [
 
   /* ---------------- 面板设置（显示/交互/屏幕） ---------------- */
   var PREFS_KEY = 'hc.prefs';
-  var PREF_DEF = { cols: 4, allCards: false, size: 'md', sensors: true, offline: false, tap: 'toggle', undo: 5, autoDim: true, bright: 100, night: true, burn: true };
+  var PREF_DEF = { cols: 4, allCards: false, size: 'md', sensors: true, offline: false, tap: 'toggle', undo: 5, autoDim: true, bright: 100, night: true, burn: true, theme: 'dark' };
 
   function prefs() {
     var out = {}, k;
@@ -884,6 +884,34 @@ var COLOR_PRESETS = [
     }
     if (p.autoDim) { if (!S.dimOn) scheduleDim(); } else { clearTimeout(S.dimTimer); }
     setBacklight(p.bright >= 100 ? -1 : num(p.bright, 100) / 100);
+    applyTheme(p.theme);
+  }
+
+  /* ---------------- 皮肤（深色 / 明亮） ---------------- */
+  /* 皮肤类挂在 <html> 上：body.className 会被弹层和负一屏来回改写，不能占用它。 */
+  function isLight() {
+    return document.documentElement.className.indexOf('hc-light') > -1;
+  }
+
+  function applyTheme(name) {
+    var light = name === 'light';
+    document.documentElement.className = light ? 'hc-light' : '';
+    renderGrid(true);
+  }
+
+  /** 明亮皮肤下把卡片强调色压暗（浅色实体色在白底上对比不够）。
+      入参是 'r,g,b' 三元组；亮度超过 0.52 就等比例压到 0.52。 */
+  function themeAcc(triple) {
+    if (!isLight()) return triple;
+    var p = String(triple).split(',');
+    if (p.length < 3) return triple;
+    var r = num(p[0], 0), g = num(p[1], 0), b = num(p[2], 0);
+    var lum = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+    if (lum > 0.52) {
+      var k = 0.52 / lum;
+      r = Math.round(r * k); g = Math.round(g * k); b = Math.round(b * k);
+    }
+    return r + ',' + g + ',' + b;
   }
 
   function visibleRooms(rooms, hidden) {
@@ -2063,7 +2091,7 @@ var COLOR_PRESETS = [
       '<button class="sheet-close" data-act="close">' + svg('close') + '</button></div>' +
       '<div class="sheet-body">' + body + '</div>';
 
-    el.sheet.style.setProperty('--accent', accentFor(tile));
+    el.sheet.style.setProperty('--accent', themeAcc(accentFor(tile)));
     bindSheetInputs();
   }
 
@@ -2882,7 +2910,8 @@ function bindDim() {
       segRow('每行卡片', 'cols', [{ v: 3, t: '3' }, { v: 4, t: '4' }, { v: 5, t: '5' }, { v: 6, t: '6' }]) +
       segRow('卡片大小', 'size', [{ v: 'sm', t: '紧凑' }, { v: 'md', t: '标准' }, { v: 'lg', t: '大' }]) +
       segRow('传感器卡片', 'sensors', [{ v: true, t: '显示' }, { v: false, t: '隐藏' }]) +
-      segRow('离线设备', 'offline', [{ v: true, t: '隐藏' }, { v: false, t: '保留' }]);
+      segRow('离线设备', 'offline', [{ v: true, t: '隐藏' }, { v: false, t: '保留' }]) +
+      segRow('皮肤', 'theme', [{ v: 'dark', t: '深色' }, { v: 'light', t: '明亮' }]);
 
     html += '<div class="set-sec">交互</div>' +
       segRow('点一下卡片', 'tap', [{ v: 'toggle', t: '直接开关' }, { v: 'sheet', t: '打开面板' }]) +
@@ -2930,7 +2959,7 @@ function bindDim() {
     if (el.toolbar) el.toolbar.style.visibility = on ? 'hidden' : '';
     /* 弹层打开时整块背景换成不透明纯黑：HwUI 走「颜色填充」快路径，
        不再为了 .58 的遮罩去合成后面那张大网格 */
-    if (el.app) el.app.style.background = on ? '#03060b' : '';
+    if (el.app) el.app.style.background = on ? 'var(--bg-deep)' : '';
     document.body.className = on ? 'sheet-open' : '';
   }
 
@@ -3021,7 +3050,7 @@ function bindDim() {
 
   function openDiagSheet() {
     freezeGrid(true);
-    if (el.app) el.app.style.background = '#03060b';
+    if (el.app) el.app.style.background = 'var(--bg-deep)';
     S.sheetItem = null;
     S.sheetEntity = null;
     el.sheetInner.innerHTML = diagSheetHtml();
