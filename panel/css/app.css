@@ -643,7 +643,6 @@ body::before {
 
 .m-head { display: flex; align-items: center; flex: 0 0 auto; height: 54px; }
 .m-title { font-size: 21px; font-weight: 600; color: #eef3fb; margin-left: 14px; }
-.m-title .m-sub { font-size: 12px; font-weight: 400; color: #7c8ba3; margin-left: 10px; }
 .m-status {
   margin-left: auto; display: flex; align-items: center; height: 32px; padding: 0 13px;
   border-radius: 999px; background: rgba(255,255,255,.045);
