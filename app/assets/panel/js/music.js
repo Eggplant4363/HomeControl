@@ -14,7 +14,8 @@
   var MODE_KEY = 'hc.music.mode';
   var LIB_PAGE = 120;      /* 所有歌曲一次装 120 行 */
   var LIB_MAX_ROWS = 1500; /* 列表最多渲染这么多行，再多就靠随机 */
-  var RECENT_MAX = 240;    /* 随机去重窗口：最近播过的 id 不再从随机批次里出现 */    /* {shuffle, repeat} —— 随机/循环的持久化 */
+  var RECENT_MAX = 240;    /* 随机去重窗口：最近播过的 id 不再从随机批次里出现 */
+  var RAND_REFILL = 12;    /* 随机批剩下 12 首时就在后台悄悄要下一批 */    /* {shuffle, repeat} —— 随机/循环的持久化 */
 
   var S = {
     cfg: null,
@@ -1099,22 +1100,54 @@
     if (c > RECENT_MAX) S.recent = {};
   }
 
-  /** 随机取一首：先吃手里这批，用完向服务器再要一批（滤掉最近播过的） */
+  /** 随机取一首：先吃手里这批；批快用完就后台补货；真用完了也不哑（兜底见下） */
   function randomPick(cb) {
-    if (S.randQ.length) { cb(S.randQ.shift()); return; }
-    if (S.randBusy || !S.backend || !S.backend.randomBatch) { cb(null); return; }
+    if (S.randQ.length) {
+      cb(S.randQ.shift());
+      if (S.randQ.length <= RAND_REFILL && !S.randBusy) refillRandom(null);
+      return;
+    }
+    /* 手里没有：从已经装进来的全库页里随机垫一首（立刻有歌播），同时向服务器要下一批 */
+    var filler = pickFromLibPages();
+    refillRandom(function (ok) {
+      if (ok && S.randQ.length) cb(S.randQ.shift());
+      else if (filler) cb(filler);
+      else cb(null);
+    });
+  }
+
+  function refillRandom(done) {
+    if (!S.backend || !S.backend.randomBatch) { if (done) done(false); return; }
+    if (S.randBusy) { if (done) done(false); return; }
     S.randBusy = true;
     S.backend.randomBatch(function (err, list) {
       S.randBusy = false;
-      if (err || !list || !list.length) { toast('随机曲目拿不到：' + (err || '空返回')); return; }
-      for (var i = 0; i < list.length; i++) {
-        var id = String(list[i].id);
-        if (S.recent[id]) continue;
-        S.randQ.push(list[i]);
-        markRecent(id);
-      }
-      if (S.randQ.length) cb(S.randQ.shift());
+      if (err || !list || !list.length) { act('random batch failed: ' + (err || 'empty')); if (done) done(false); return; }
+      pushBatch(list, false);
+      /* 整批都被「最近播过」滤掉：放宽一次，允许重复，总比没歌强 */
+      if (!S.randQ.length) pushBatch(list, true);
+      if (done) done(true);
     });
+  }
+
+  function pushBatch(list, relax) {
+    for (var i = 0; i < list.length; i++) {
+      var id = String(list[i].id);
+      if (!relax && S.recent[id]) continue;
+      S.randQ.push(list[i]);
+      markRecent(id);
+    }
+  }
+
+  function pickFromLibPages() {
+    var items = S.lib.items;
+    if (!items.length) return null;
+    var pool = [];
+    for (var i = 0; i < items.length; i++) { if (!S.recent[String(items[i].id)]) pool.push(items[i]); }
+    if (!pool.length) pool = items;
+    var t = pool[Math.floor(Math.random() * pool.length)];
+    markRecent(String(t.id));
+    return t;
   }
 
   function libRowHtml(t, i) {
