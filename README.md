@@ -55,7 +55,7 @@ powershell -ExecutionPolicy Bypass -File tools\deploy.ps1 -SkipApk   # 只改了
 
 它会依次做：adb 在线检查（离线时直接告诉你「长按电源键 10 秒」而不是抛异常）→ 装 APK → 推 `panel\` 到 `/sdcard/HomeControl/panel/` → 改写 `url.txt` → force-stop + 启动 → 校验 `page finished` / 无脚本错误 / 前台是壳 App，最后打印 DEPLOY OK。
 
-版本号随构建更新：`versionName 0.6.0` / `versionCode 36`，诊断页第一行就能看到「版本 0.6.0 · MI PAD 2」。
+版本号随构建更新：`versionName 0.7.0` / `versionCode 37`，诊断页第一行就能看到「版本 0.7.0 · MI PAD 2」。
 ## 构建与部署
 
 ```powershell
