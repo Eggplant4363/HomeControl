@@ -51,8 +51,8 @@ $baseApk = Join-Path $b "base.apk"
     --java (Join-Path $b "gen") `
     --min-sdk-version 21 `
     --target-sdk-version 22 `
-    --version-code 38 `
-    --version-name "0.7.1" `
+    --version-code 39 `
+    --version-name "0.7.2" `
     $resZip
 if ($LASTEXITCODE -ne 0) { throw "aapt2 link failed" }
 Write-Host "[3/7] aapt2 link ok"
