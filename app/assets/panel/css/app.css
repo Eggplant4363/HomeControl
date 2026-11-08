@@ -642,13 +642,6 @@ body::before {
 }
 
 .m-head { display: flex; align-items: center; flex: 0 0 auto; height: 54px; }
-.m-back {
-  display: flex; align-items: center; height: 38px; padding: 0 14px 0 10px;
-  border-radius: 12px; border: 1px solid rgba(255,255,255,.08);
-  background: rgba(255,255,255,.05); color: #c3d1e4; font-size: 14px;
-}
-.m-back svg { width: 18px; height: 18px; margin-right: 4px; }
-.m-back:active { background: rgba(255,255,255,.11); }
 .m-title { font-size: 21px; font-weight: 600; color: #eef3fb; margin-left: 14px; }
 .m-title .m-sub { font-size: 12px; font-weight: 400; color: #7c8ba3; margin-left: 10px; }
 .m-status {

@@ -1561,8 +1561,6 @@
     document.addEventListener('touchcancel', function () { S.g = null; }, true);
 
     if (e.cover) e.cover.innerHTML = '<span class="m-cover-ph">' + svg('music') + '</span>';
-    var back = $('mBack');
-    if (back) back.innerHTML = svg('back');
     /* 上一首/下一首/音量的图标以前没人填，屏幕上就是三个空心圆 */
     if (e.prev) e.prev.innerHTML = svg('prev');
     if (e.next) e.next.innerHTML = svg('next');
