@@ -899,19 +899,37 @@ var COLOR_PRESETS = [
     renderGrid(true);
   }
 
-  /** 明亮皮肤下把卡片强调色压暗（浅色实体色在白底上对比不够）。
-      入参是 'r,g,b' 三元组；亮度超过 0.52 就等比例压到 0.52。 */
+  /** 明亮皮肤下把卡片强调色改成「墨色」版（浅色实体色在白底上又淡又糊）。
+      入参是 'r,g,b' 三元组：保住色相，把亮度压到 0.36、饱和度抬到至少 0.55，
+      于是暖光从浑浊的棕黄变成深琥珀、蓝从淡蓝变成深靛。灰（饱和 < 0.18）不动。 */
   function themeAcc(triple) {
     if (!isLight()) return triple;
     var p = String(triple).split(',');
     if (p.length < 3) return triple;
-    var r = num(p[0], 0), g = num(p[1], 0), b = num(p[2], 0);
-    var lum = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
-    if (lum > 0.52) {
-      var k = 0.52 / lum;
-      r = Math.round(r * k); g = Math.round(g * k); b = Math.round(b * k);
-    }
-    return r + ',' + g + ',' + b;
+    var r = num(p[0], 0) / 255, g = num(p[1], 0) / 255, b = num(p[2], 0) / 255;
+    var mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+    var l = (mx + mn) / 2;
+    var d = mx - mn;
+    var s = d === 0 ? 0 : d / (1 - Math.abs(2 * l - 1));
+    if (s < 0.18) return triple;
+    var h = 0;
+    if (mx === r) h = ((g - b) / d) % 6;
+    else if (mx === g) h = (b - r) / d + 2;
+    else h = (r - g) / d + 4;
+    h = (h * 60 + 360) % 360;
+    l = Math.min(l, 0.36);
+    s = Math.max(s, 0.55);
+    var c = (1 - Math.abs(2 * l - 1)) * s;
+    var x = c * (1 - Math.abs((h / 60) % 2 - 1));
+    var m = l - c / 2;
+    var rr = 0, gg = 0, bb = 0;
+    if (h < 60) { rr = c; gg = x; bb = 0; }
+    else if (h < 120) { rr = x; gg = c; bb = 0; }
+    else if (h < 180) { rr = 0; gg = c; bb = x; }
+    else if (h < 240) { rr = 0; gg = x; bb = c; }
+    else if (h < 300) { rr = x; gg = 0; bb = c; }
+    else { rr = c; gg = 0; bb = x; }
+    return Math.round((rr + m) * 255) + ',' + Math.round((gg + m) * 255) + ',' + Math.round((bb + m) * 255);
   }
 
   function visibleRooms(rooms, hidden) {
