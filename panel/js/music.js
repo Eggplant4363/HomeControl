@@ -11,6 +11,7 @@
   var MUSIC_KEY = 'hc.music';        /* localStorage：面板里改过的音乐设置 */
   var MUSIC_FILE = '/sdcard/HomeControl/music.json';  /* 部署时写一次即可 */
   var VOL_KEY = 'hc.music.vol';
+  var MODE_KEY = 'hc.music.mode';    /* {shuffle, repeat} —— 随机/循环的持久化 */
 
   var S = {
     cfg: null,
@@ -27,8 +28,12 @@
     playlists: [],
     tracks: null,         /* 非空 = 正在看某个歌单的曲目 */
     crumb: '歌单',
+    view: 'pl',           /* pl | tracks | queue —— 右列现在看的是哪一个 */
     queue: [],
     qi: -1,
+    order: [],            /* 播放顺序（曲目下标）：随机时是洗牌后的顺序 */
+    shuffle: false,
+    repeat: 'off',        /* off | all | one */
     track: null,
     playing: false,
     vol: 0.7,
@@ -198,13 +203,38 @@
     if (S.el.crumb) { paintCrumb(); paintList(); paintStatus(); }
   }
 
+  /* 系统音量（Android AudioManager）。没有桥（桌面调试）时退回 audio 自己的音量。 */
+  function sysVol() {
+    var b = bridge();
+    if (!b || !b.getVolume) return null;
+    var v = num(b.getVolume(), -1);
+    if (v < 0 || v > 1) return null;
+    return v;
+  }
+
   function readVol() {
+    var s = sysVol();
+    if (s !== null) return s;
     try {
       var v = localStorage.getItem(VOL_KEY);
       if (v !== null) return clamp(num(v, 0.7), 0, 1);
     } catch (e) { }
     var m = (window.PANEL_CONFIG && window.PANEL_CONFIG.music) || {};
     return clamp(num(m.volume, 70) / 100, 0, 1);
+  }
+
+  function readMode() {
+    try {
+      var o = JSON.parse(localStorage.getItem(MODE_KEY) || '');
+      if (o && typeof o === 'object') {
+        return { shuffle: !!o.shuffle, repeat: o.repeat === 'all' ? 'all' : (o.repeat === 'one' ? 'one' : 'off') };
+      }
+    } catch (e) { }
+    return { shuffle: false, repeat: 'off' };
+  }
+
+  function saveMode() {
+    try { localStorage.setItem(MODE_KEY, JSON.stringify({ shuffle: S.shuffle, repeat: S.repeat })); } catch (e) { }
   }
 
   /* ---------------- 封面（mock 用内联 SVG，不依赖网络） ---------------- */
@@ -747,15 +777,29 @@
     } catch (e2) { cb('请求失败'); }
   }
 
+  /* 有原生桥时输出音量交给系统管（滑条拧的是 AudioManager），audio 元素本身保持满档 */
+  function applyAudioVol() {
+    if (!S.audio) return;
+    var b = bridge();
+    S.audio.volume = (b && b.setVolume) ? 1 : S.vol;
+  }
+
   /* ---------------- 播放器 ---------------- */
   function ensureAudio() {
     if (S.audio) return S.audio;
     var a = document.createElement('audio');
     a.preload = 'auto';
-    a.volume = S.vol;
+    a.volume = (bridge() && bridge().setVolume) ? 1 : S.vol;
     a.addEventListener('timeupdate', onTime);
     a.addEventListener('durationchange', onTime);
-    a.addEventListener('ended', function () { next(); });
+    a.addEventListener('ended', function () {
+      /* 单曲循环：重放同一首；否则按播放顺序走下一首（循环关时走到头就停） */
+      if (S.repeat === 'one' && S.track) {
+        try { a.currentTime = 0; a.play(); } catch (e) { }
+        return;
+      }
+      next();
+    });
     a.addEventListener('play', function () {
       S.playing = true; paintTransport(); paintList(); startTick();
       if (S.track && S.status !== 'error' && S.status !== 'mock') setStatus('ok', '正在播放');
@@ -776,7 +820,7 @@
           var a2 = ensureAudio();
           S.lastUrl = url2;
           try {
-            a2.src = url2; a2.currentTime = 0; a2.volume = S.vol;
+            a2.src = url2; a2.currentTime = 0; applyAudioVol();
             var p2 = a2.play();
             if (p2 && p2.then) p2.then(null, function () { setStatus('error', '播放失败（转码也放不出）'); });
           } catch (e) { setStatus('error', '播放器出错'); }
@@ -804,9 +848,25 @@
     }, 500);
   }
 
+  /** 播放顺序：随机 = 洗牌（当前曲排在最前），否则 = 从当前曲往后顺走 */
+  function buildOrder(startIdx) {
+    var n = S.queue.length;
+    if (!n) { S.order = []; return; }
+    var idx = [];
+    for (var i = 0; i < n; i++) if (i !== startIdx) idx.push(i);
+    if (S.shuffle) {
+      for (var j = idx.length - 1; j > 0; j--) {
+        var k = Math.floor(Math.random() * (j + 1));
+        var tmp = idx[j]; idx[j] = idx[k]; idx[k] = tmp;
+      }
+    }
+    S.order = [startIdx].concat(idx);
+  }
+
   function playTrack(track, queue, index) {
     if (!track) return;
     if (queue) { S.queue = queue; S.qi = index >= 0 ? index : 0; }
+    buildOrder(S.qi >= 0 ? S.qi : 0);
     S.track = track;
     S.lyrics = null; S.lyricIdx = -1; paintLyrics();
     paintNow();
@@ -821,7 +881,7 @@
         if (e2 || !picked) { act('lyrics none: ' + e2); return; }
         S.lyrics = picked;
         paintLyrics();
-        updateLyric(S.audio ? S.audio.currentTime : 0);
+        updateLyric();
       });
     }
     S.backend.streamUrl(track, function (err, url, rate) {
@@ -834,7 +894,7 @@
         if (a.src !== url) a.src = url;
         if (rate && a.playbackRate !== rate) a.playbackRate = rate;
         a.currentTime = 0;
-        a.volume = S.vol;
+        applyAudioVol();
         var p = a.play();
         if (p && p.then) p.then(null, function () { /* 自动播放被拦：等用户点播放 */ });
       } catch (e) { setStatus('error', '播放器出错'); }
@@ -854,23 +914,74 @@
     }
   }
 
+  /** 按 S.order 走下一首：循环关 = 走到头停下；列表循环 = 回到第一首 */
   function next() {
-    if (!S.queue.length) return;
-    var i = (S.qi + 1) % S.queue.length;
-    playTrack(S.queue[i], null, i);
+    if (!S.order.length) return;
+    var pos = S.order.indexOf(S.qi);
+    if (pos < 0) pos = 0;
+    if (pos + 1 < S.order.length) { playTrack(S.queue[S.order[pos + 1]], null, S.order[pos + 1]); return; }
+    if (S.repeat === 'all') { playTrack(S.queue[S.order[0]], null, S.order[0]); return; }
+    setStatus('ok', '放到列表末尾了');
+    paintTransport();
   }
 
   function prev() {
-    if (!S.queue.length) return;
+    if (!S.order.length) return;
     if (S.audio && S.audio.currentTime > 3) { S.audio.currentTime = 0; return; }
-    var i = (S.qi - 1 + S.queue.length) % S.queue.length;
-    playTrack(S.queue[i], null, i);
+    var pos = S.order.indexOf(S.qi);
+    if (pos > 0) { playTrack(S.queue[S.order[pos - 1]], null, S.order[pos - 1]); return; }
+    if (S.repeat === 'all') { playTrack(S.queue[S.order[S.order.length - 1]], null, S.order[S.order.length - 1]); return; }
+    if (S.audio) { try { S.audio.currentTime = 0; } catch (e) { } }
+  }
+
+  /* ---------------- 播放模式 ---------------- */
+  function toggleShuffle() {
+    S.shuffle = !S.shuffle;
+    if (S.queue.length) buildOrder(S.qi >= 0 ? S.qi : 0);
+    saveMode();
+    paintTransport();
+    toast(S.shuffle ? '随机播放：开' : '随机播放：关');
+    act('shuffle ' + (S.shuffle ? 'on' : 'off'));
+  }
+
+  /** 循环按钮三档：关 → 列表循环 → 单曲循环 */
+  function cycleRepeat() {
+    S.repeat = S.repeat === 'off' ? 'all' : (S.repeat === 'all' ? 'one' : 'off');
+    saveMode();
+    paintTransport();
+    toast(S.repeat === 'all' ? '循环：整个列表' : (S.repeat === 'one' ? '循环：单曲' : '循环：关'));
+    act('repeat ' + S.repeat);
+  }
+
+  function openQueueView() {
+    if (S.view === 'queue') {
+      S.view = S.tracks ? 'tracks' : 'pl';
+      S.crumb = S.tracks ? (playlistName() || '歌单') : '歌单';
+    } else {
+      S.view = 'queue';
+      S.crumb = '播放列表';
+    }
+    paintCrumb();
+    paintList();
+    paintTransport();
+  }
+
+  function playlistName() {
+    for (var i = 0; i < S.playlists.length; i++) if (S.playlists[i].id === S.curPlaylist) return S.playlists[i].name;
+    return '';
   }
 
   function setVol(v) {
     S.vol = clamp(v, 0, 1);
-    if (S.audio) S.audio.volume = S.vol;
-    try { localStorage.setItem(VOL_KEY, String(S.vol)); } catch (e) { }
+    var b = bridge();
+    if (b && b.setVolume) {
+      /* 负一屏的滑条直接拧安卓的系统音量（不弹系统音量条） */
+      try { b.setVolume(S.vol); } catch (e) { }
+      if (S.audio) S.audio.volume = 1;
+    } else if (S.audio) {
+      S.audio.volume = S.vol;
+    }
+    try { localStorage.setItem(VOL_KEY, String(S.vol)); } catch (e2) { }
     paintVol();
   }
 
@@ -904,6 +1015,7 @@
     for (var i = 0; i < S.playlists.length; i++) if (S.playlists[i].id === id) pl = S.playlists[i];
     if (!pl) return;
     S.crumb = pl.name;
+    S.view = 'tracks';
     S.tracks = null;
     S.loading = true;
     paintCrumb();
@@ -920,9 +1032,11 @@
 
   function backToPlaylists() {
     S.tracks = null;
+    S.view = 'pl';
     S.crumb = '歌单';
     paintCrumb();
     paintList();
+    paintTransport();
   }
 
   /* ---------------- 状态 ---------------- */
@@ -994,6 +1108,9 @@
     e.play.innerHTML = svg(playing ? 'pause' : 'play');
     e.play.className = 'm-btn m-play' + (playing ? ' on' : '');
     e.songWrap.className = 'm-meta' + (playing ? ' playing' : '');
+    if (e.queueBtn) { e.queueBtn.className = 'm-btn' + (S.view === 'queue' ? ' on' : ''); e.queueBtn.innerHTML = svg('list'); }
+    if (e.shuffleBtn) e.shuffleBtn.className = 'm-btn' + (S.shuffle ? ' on' : '');
+    if (e.repeatBtn) { e.repeatBtn.className = 'm-btn' + (S.repeat === 'off' ? '' : ' on'); e.repeatBtn.innerHTML = svg(S.repeat === 'one' ? 'repeatOne' : 'repeat'); }
   }
 
   function setFill(fill, knob, pct) {
@@ -1012,10 +1129,22 @@
     e.pos.textContent = fmtTime(p);
     if (d) e.dur.textContent = fmtTime(d);
     setFill(e.fill, e.knob, d ? (p / d * 100) : 0);
-    updateLyric(p);
+    updateLyric();
   }
 
-  /* ---------------- 歌词渲染 ---------------- */
+  /* ---------------- 歌词渲染：只显示三行（上一行 / 当前行 / 下一行） ---------------- */
+  function lyricIdxNow() {
+    var L = S.lyrics && S.lyrics.lines;
+    if (!L || !L.length) return -1;
+    if (S.lyrics.synced) return lyricIdxAt(L, num(S.audio ? S.audio.currentTime : 0, 0));
+    /* 纯文本歌词没有时间轴，按播放进度比例估一个位置 */
+    var a = S.audio;
+    var d = a && isFinite(a.duration) ? a.duration : num(S.track && S.track.duration, 0);
+    var p = a ? a.currentTime : 0;
+    if (!d) return 0;
+    return Math.floor(clamp(p / d, 0, 1) * (L.length - 1));
+  }
+
   function paintLyrics() {
     var e = S.el.lyrics;
     if (!e) return;
@@ -1026,41 +1155,24 @@
       S.lyricIdx = -1;
       return;
     }
+    var idx = lyricIdxNow();
+    if (idx < 0) idx = 0;
+    S.lyricIdx = idx;
     e.className = 'm-lyrics';
     var h = '';
-    for (var i = 0; i < L.length; i++) {
-      h += '<div class="m-lr" data-i="' + i + '">' + esc(L[i].text) + '</div>';
+    for (var i = idx - 1; i <= idx + 1; i++) {
+      if (i < 0 || i >= L.length) continue;
+      var cls = 'm-lr' + (i === idx ? ' on' : (i === idx + 1 ? ' m-lr-soon' : ''));
+      h += '<div class="' + cls + '">' + esc(L[i].text) + '</div>';
     }
     if (!S.lyrics.synced) h += '<div class="m-lrc-tip">纯文本歌词（没有时间轴）</div>';
     e.innerHTML = h;
-    highlightLyric(S.lyricIdx);
   }
 
-  function highlightLyric(idx) {
-    var e = S.el.lyrics;
-    if (!e || !S.lyrics || !S.lyrics.lines.length) return;
-    var kids = e.children;
-    for (var i = 0; i < kids.length; i++) {
-      var k = kids[i];
-      var di = k.getAttribute ? k.getAttribute('data-i') : null;
-      if (di === null) continue;
-      var j = parseInt(di, 10);
-      var cls = 'm-lr' + (j === idx ? ' on' : (j === idx + 1 ? ' m-lr-soon' : ''));
-      if (k.className !== cls) k.className = cls;
-    }
-    /* 当前行滚到可视区中间 */
-    if (idx >= 0 && kids[idx]) {
-      var top = kids[idx].offsetTop - e.clientHeight / 2 + kids[idx].offsetHeight / 2;
-      if (top < 0) top = 0;
-      e.scrollTop = top;
-    }
-  }
-
-  function updateLyric(time) {
+  function updateLyric() {
     var L = S.lyrics && S.lyrics.lines;
     if (!L || !L.length) return;
-    var idx = S.lyrics.synced ? lyricIdxAt(L, num(time, 0)) : -1;
-    if (idx !== S.lyricIdx) { S.lyricIdx = idx; highlightLyric(idx); }
+    if (lyricIdxNow() !== S.lyricIdx) paintLyrics();
   }
 
   function paintVol() {
@@ -1073,8 +1185,30 @@
   function paintCrumb() {
     var e = S.el;
     if (!e.crumb) return;
-    e.crumb.innerHTML = (S.tracks ? '<button class="m-back" data-mact="back">' + svg('back') + '<span>歌单</span></button>' : '') +
+    e.crumb.innerHTML = (S.view !== 'pl' ? '<button class="m-back" data-mact="back">' + svg('back') + '<span>' + esc(S.view === 'queue' ? (playlistName() || '歌单') : '歌单') + '</span></button>' : '') +
       '<span class="m-crumb-t">' + esc(S.crumb) + '</span>';
+  }
+
+  /** 「正在播放列表」：当前曲在最前，后面是按随机/循环算出的播放顺序 */
+  function paintQueue() {
+    var e = S.el;
+    if (!S.order.length) {
+      e.list.innerHTML = '<div class="m-empty">还没有开始播放<br><span class="m-empty-d">回歌单里点一首，这里就会出现播放列表</span></div>';
+      return;
+    }
+    var h = '';
+    for (var k = 0; k < S.order.length; k++) {
+      var t = S.queue[S.order[k]];
+      if (!t) continue;
+      var cur = S.order[k] === S.qi;
+      var ico = cur ? svg(S.audio && !S.audio.paused ? 'wave' : 'play') : '<span class="m-q-n">' + (k + 1) + '</span>';
+      h += '<button class="m-song' + (cur ? ' on' : '') + '" data-mact="qtrack" data-pos="' + k + '">' +
+        '<span class="m-song-ico">' + ico + '</span>' +
+        '<span class="m-song-main"><span class="m-song-t">' + esc(t.title || '未命名') + '</span>' +
+        '<span class="m-song-a">' + esc((t.artist || '') + (t.album ? ' · ' + t.album : '')) + '</span></span>' +
+        '<span class="m-song-d">' + fmtTime(t.duration) + '</span></button>';
+    }
+    e.list.innerHTML = h;
   }
 
   function paintList(loadingText) {
@@ -1088,6 +1222,7 @@
         '<button class="btn" data-mact="open-cfg">音乐设置</button></div>';
       return;
     }
+    if (S.view === 'queue') { paintQueue(); return; }
     if (S.tracks) {
       if (!S.tracks.length) { e.list.innerHTML = '<div class="m-empty">这个歌单是空的</div>'; return; }
       var h = '';
@@ -1145,6 +1280,8 @@
     S.open = true;
     document.body.className = (document.body.className || '').replace(/\bmusic-open\b/g, '').trim() + ' music-open';
     applyX(0, animate !== false);
+    var sv = sysVol();
+    if (sv !== null) S.vol = sv;
     paintVol();
     paintNow();
     paintProgress();
@@ -1281,7 +1418,22 @@
     if (a === 'toggle') { toggle(); return; }
     if (a === 'next') { next(); return; }
     if (a === 'prev') { prev(); return; }
-    if (a === 'back') { backToPlaylists(); return; }
+    if (a === 'queue') { openQueueView(); return; }
+    if (a === 'shuffle') { toggleShuffle(); return; }
+    if (a === 'repeat') { cycleRepeat(); return; }
+    if (a === 'qtrack') {
+      var k = num(btn.getAttribute('data-pos'), -1);
+      if (k >= 0 && k < S.order.length) playTrack(S.queue[S.order[k]], null, S.order[k]);
+      return;
+    }
+    if (a === 'back') {
+      if (S.view === 'queue') {
+        S.view = S.tracks ? 'tracks' : 'pl';
+        S.crumb = S.view === 'tracks' ? (playlistName() || '歌单') : '歌单';
+        paintCrumb(); paintList(); paintTransport();
+      } else backToPlaylists();
+      return;
+    }
     if (a === 'pl') { openPlaylist(btn.getAttribute('data-id')); return; }
     if (a === 'track') {
       var i = num(btn.getAttribute('data-idx'), -1);
@@ -1370,12 +1522,15 @@
     e.pos = $('mPos'); e.dur = $('mDur');
     e.play = $('mPlay');
     e.prev = $('mPrev'); e.next = $('mNext');
+    e.queueBtn = $('mQueue'); e.shuffleBtn = $('mShuffle'); e.repeatBtn = $('mRepeat');
     e.lyrics = $('mLyrics');
     e.vol = $('mVol'); e.volFill = $('mVolFill'); e.volKnob = $('mVolKnob'); e.volPct = $('mVolPct');
     e.crumb = $('mCrumb'); e.list = $('mList');
 
     S.cfg = readCfg();
     S.vol = readVol();
+    var md = readMode();
+    S.shuffle = md.shuffle; S.repeat = md.repeat;
     buildBackend();
 
     page.addEventListener('click', onPageClick, false);
@@ -1442,6 +1597,11 @@
     status: function () { return { status: S.status, text: S.statusText, ready: S.ready, playlists: S.playlists.length }; },
     playlists: function () { return S.playlists; },
     playing: function () { return S.track; },
+    view: function () { return S.view; },
+    shuffle: function () { return S.shuffle; },
+    repeat: function () { return S.repeat; },
+    queueList: function () { return S.order.map(function (i) { return S.queue[i]; }); },
+    openQueue: openQueueView, toggleShuffle: toggleShuffle, cycleRepeat: cycleRepeat,
     next: next, prev: prev, togglePlay: toggle
   };
 })();

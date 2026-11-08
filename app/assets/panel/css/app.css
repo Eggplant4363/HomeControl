@@ -687,8 +687,8 @@ body::before {
 .m-artist { font-size: 14px; color: #9aa9be; margin-top: 7px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .m-album { font-size: 12px; color: #61718a; margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .m-lyrics {
-  width: 100%; max-width: 320px; flex: 1 1 auto; min-height: 0; overflow-y: auto;
-  margin-top: 14px; padding: 4px 0; text-align: center; -webkit-overflow-scrolling: touch;
+  width: 100%; max-width: 320px; flex: 0 0 auto; height: 88px; overflow: hidden;
+  margin-top: 14px; padding: 4px 0; text-align: center;
 }
 .m-lyrics.hide { display: none; }
 .m-lr {
@@ -698,13 +698,14 @@ body::before {
 .m-lr-soon { color: rgba(226,238,248,.5); }
 .m-lr.on { color: #cfe0ff; font-weight: 600; font-size: 16px; }
 .m-lrc-tip { font-size: 12px; color: #55677f; }
+.m-q-n { font-size: 12px; color: #61718a; }
 .m-progress { width: 100%; max-width: 320px; margin-top: 20px; }
 .m-bar {
   position: relative; height: 26px; border-radius: 13px; background: rgba(255,255,255,.075);
   box-shadow: inset 0 1px 2px rgba(0,0,0,.3); touch-action: none;
 }
 .m-bar .m-fill {
-  position: absolute; left: 0; top: 0; bottom: 0; width: 0; border-radius: 13px;
+  position: absolute; left: 0; top: 8px; bottom: 8px; width: 0; border-radius: 5px 0 0 5px;
   background: linear-gradient(90deg, #5d8cff, #8fc3ff);
 }
 .m-bar .m-knob {
@@ -720,6 +721,9 @@ body::before {
 }
 .m-btn svg { width: 23px; height: 23px; }
 .m-btn:active { transform: scale(.95); background: rgba(255,255,255,.1); }
+.m-btn.on { background: rgba(93,140,255,.26); border-color: rgba(120,170,255,.55); color: #dfe9ff; }
+.m-mini { width: 42px; height: 42px; margin: 0 5px; }
+.m-mini svg { width: 19px; height: 19px; }
 .m-play { width: 66px; height: 66px; background: rgba(93,140,255,.22); border-color: rgba(120,170,255,.5); color: #dfe9ff; }
 .m-play svg { width: 29px; height: 29px; }
 .m-play.on { background: rgba(120,170,255,.34); border-color: rgba(150,195,255,.68); }
@@ -730,7 +734,7 @@ body::before {
   position: relative; flex: 1; height: 22px; border-radius: 11px;
   background: rgba(255,255,255,.075); touch-action: none;
 }
-.m-vbar .m-fill { position: absolute; left: 0; top: 0; bottom: 0; width: 0; border-radius: 11px; background: rgba(205,220,240,.6); }
+.m-vbar .m-fill { position: absolute; left: 0; top: 7px; bottom: 7px; width: 0; border-radius: 4px 0 0 4px; background: rgba(205,220,240,.6); }
 .m-vbar .m-knob {
   position: absolute; top: 50%; left: 0; width: 18px; height: 18px; margin: -9px 0 0 -9px;
   border-radius: 50%; background: #eef5ff; box-shadow: 0 2px 6px rgba(0,0,0,.4);

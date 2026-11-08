@@ -45,5 +45,9 @@ window.ICONS = {
   back: '<path d="M14.5 5.5L8 12l6.5 6.5"/>',
   chev: '<path d="M9.5 5.5L16 12l-6.5 6.5"/>',
   wave: '<path d="M4 10v4M8 7v10M12 4.5v15M16 8v8M20 10.5v3"/>',
-  refresh: '<path d="M20 12a8 8 0 1 1-2.4-5.7"/><path d="M20 4.5V10h-5.4"/>'
+  refresh: '<path d="M20 12a8 8 0 1 1-2.4-5.7"/><path d="M20 4.5V10h-5.4"/>',
+  list: '<path d="M4 6h16M4 12h16M4 18h16"/>',
+  shuffle: '<path d="M4 7h3.5l9 10H18M4 17h3.5l9-10H18"/><path d="M16 4.5l3 2.5-3 2.5M16 14.5l3 2.5-3 2.5"/>',
+  repeat: '<path d="M17 2l4 4-4 4"/><path d="M3 11v-4a4 4 0 0 1 4-4h14"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v4a4 4 0 0 1-4 4H3"/>',
+  repeatOne: '<path d="M17 2l4 4-4 4"/><path d="M3 11v-4a4 4 0 0 1 4-4h14"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v4a4 4 0 0 1-4 4H3"/><path d="M11 10.5l2-1.5V15"/>'
 };

@@ -4,6 +4,7 @@ import android.app.Activity;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.graphics.Color;
+import android.media.AudioManager;
 import android.net.Uri;
 import android.net.http.SslError;
 import android.os.Build;
@@ -360,6 +361,34 @@ public class MainActivity extends Activity {
         public void heartbeat() {
             lastBeat = System.currentTimeMillis();
             if (retryCount > 0) retryCount = 0;
+        }
+
+        /** 系统媒体音量的比例 0..1（拿不到返回 -1，前端自己退回） */
+        @JavascriptInterface
+        public float getVolume() {
+            AudioManager am = (AudioManager) getSystemService(AUDIO_SERVICE);
+            if (am == null) return -1f;
+            int max = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC);
+            if (max <= 0) return -1f;
+            return am.getStreamVolume(AudioManager.STREAM_MUSIC) / (float) max;
+        }
+
+        /** 直接拧系统媒体音量；flag 0 = 不弹系统的音量条 */
+        @JavascriptInterface
+        public void setVolume(float v) {
+            AudioManager am = (AudioManager) getSystemService(AUDIO_SERVICE);
+            if (am == null) return;
+            int max = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC);
+            if (max <= 0) return;
+            int level = Math.round(v * max);
+            if (level < 0) level = 0;
+            if (level > max) level = max;
+            try {
+                am.setStreamVolume(AudioManager.STREAM_MUSIC, level, 0);
+                Log.d(TAG, "JSB system volume " + level + "/" + max);
+            } catch (Exception e) {
+                Log.w(TAG, "setVolume failed " + e);
+            }
         }
 
         @JavascriptInterface
