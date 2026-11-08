@@ -177,7 +177,10 @@
   }
 
   function saveCfg(o) {
+    var prevPass = S.cfg.pass || '';
     S.cfg = mergeCfg(defaultCfg(), o || {});
+    /* 弹层里的密码框显示时打了码，留空表示「不改」，沿用已存的密码 */
+    if (!o || o.pass === '' || o.pass === '***') S.cfg.pass = prevPass;
     try { localStorage.setItem(MUSIC_KEY, JSON.stringify(S.cfg)); } catch (e) { }
     var b = bridge();
     if (b && b.writeText) {
@@ -419,6 +422,9 @@
   DaoliyuBackend.prototype.login = function (cb) {
     var self = this;
     var body = JSON.stringify({ email: this.user, username: this.user, password: this.pass, remember: true });
+    if (window.AndroidBridge && window.AndroidBridge.log) {
+      window.AndroidBridge.log('login user=' + this.user + ' passLen=' + this.pass.length + ' base=' + this.base);
+    }
     httpReq('POST', this.base + '/api/auth/login', null, body, function (err, code, text) {
       if (err) { cb(err); return; }
       var o = null;

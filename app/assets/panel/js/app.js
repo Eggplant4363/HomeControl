@@ -3195,7 +3195,7 @@ function bindDim() {
       '<div class="cfg-row"><div class="cfg-k">账号</div>' +
       '<input class="cfg-in" id="mCfgUser" type="text" onfocus="this.select()" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="用户名" value="' + esc(m.user || '') + '"></div>' +
       '<div class="cfg-row"><div class="cfg-k">密码</div>' +
-      '<input class="cfg-in" id="mCfgPass" type="password" onfocus="this.select()" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="密码" value="' + esc(m.pass || '') + '"></div>' +
+      '<input class="cfg-in" id="mCfgPass" type="password" onfocus="this.select()" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="留空则保持已保存的密码" value=""></div>' +
       '<div class="cfg-actions">' +
       '<button class="btn primary" data-act="music-save">保存并连接</button>' +
       '<button class="btn" data-act="music-demo">改用演示音源</button>' +
