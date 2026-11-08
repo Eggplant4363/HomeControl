@@ -11,7 +11,10 @@
   var MUSIC_KEY = 'hc.music';        /* localStorage：面板里改过的音乐设置 */
   var MUSIC_FILE = '/sdcard/HomeControl/music.json';  /* 部署时写一次即可 */
   var VOL_KEY = 'hc.music.vol';
-  var MODE_KEY = 'hc.music.mode';    /* {shuffle, repeat} —— 随机/循环的持久化 */
+  var MODE_KEY = 'hc.music.mode';
+  var LIB_PAGE = 120;      /* 所有歌曲一次装 120 行 */
+  var LIB_MAX_ROWS = 1500; /* 列表最多渲染这么多行，再多就靠随机 */
+  var RECENT_MAX = 240;    /* 随机去重窗口：最近播过的 id 不再从随机批次里出现 */    /* {shuffle, repeat} —— 随机/循环的持久化 */
 
   var S = {
     cfg: null,
@@ -32,6 +35,13 @@
     queue: [],
     qi: -1,
     order: [],            /* 播放顺序（曲目下标）：随机时是洗牌后的顺序 */
+    src: '',              /* '' = 歌单，'lib' = 所有歌曲 */
+    lib: { total: 0, items: [] },
+    libBusy: false,
+    randQ: [],            /* 随机批次：服务端给的随机曲目，用完再拿一批 */
+    randBusy: false,
+    recent: {},           /* 最近播过的 id，随机批次里滤掉，避免连着重播 */
+    hist: [],             /* 随机模式的播放历史，上一首从这里退 */
     shuffle: false,
     repeat: 'off',        /* off | all | one */
     track: null,
@@ -341,6 +351,34 @@
     cb(null, out);
   };
 
+  MockBackend.prototype.libTracks = function (skip, take, cb) {
+    var all = [];
+    for (var i = 0; i < MOCK_PLAYLISTS.length; i++) {
+      var list = MOCK_TRACKS[MOCK_PLAYLISTS[i].id] || [];
+      for (var j = 0; j < list.length; j++) {
+        var t = list[j];
+        all.push({ id: t.id, title: t.title, artist: t.artist, album: t.album, duration: t.duration, cover: mockCover(j, t.title), rate: t.rate, mock: true });
+      }
+    }
+    cb(null, { total: all.length, items: all.slice(skip, skip + take) });
+  };
+
+  MockBackend.prototype.randomBatch = function (cb) {
+    var all = [];
+    for (var i = 0; i < MOCK_PLAYLISTS.length; i++) {
+      var list = MOCK_TRACKS[MOCK_PLAYLISTS[i].id] || [];
+      for (var j = 0; j < list.length; j++) {
+        var t = list[j];
+        all.push({ id: t.id, title: t.title, artist: t.artist, album: t.album, duration: t.duration, cover: mockCover(j, t.title), rate: t.rate, mock: true });
+      }
+    }
+    for (var k = all.length - 1; k > 0; k--) {
+      var r = Math.floor(Math.random() * (k + 1));
+      var tmp = all[k]; all[k] = all[r]; all[r] = tmp;
+    }
+    cb(null, all);
+  };
+
   MockBackend.prototype.streamUrl = function (t, cb) {
     /* mock 用同一段合成音；rate 决定听起来的高低（演示用，别当音质） */
     cb(null, toneUri(), t.rate || 1);
@@ -582,6 +620,14 @@
       for (var i = 0; i < items.length; i++) {
         var t = items[i] && items[i].track ? items[i].track : items[i];
         if (!t || !t.id) continue;
+        out.push(self.mapTrack(t));
+      }
+      cb(null, out);
+    });
+  };
+
+  /* 一条曲目 -> 面板内部形状（歌单曲目和全库曲目同一套字段） */
+  DaoliyuBackend.prototype.mapTrack = function (t) {
         var artists = '';
         /* 道理鱼已经拼好艺术家串（artistLabel 形如「杨坤 / 郭采洁」），优先用它 */
         if (t.artistLabel) {
@@ -600,7 +646,7 @@
         }
         /* 曲目封面常和专辑同一张：曲目没挂封面时退回专辑的封面路径 */
         var alb = t.album || {};
-        out.push({
+        return {
           id: String(t.id), title: t.title || '未命名', artist: artists,
           album: (alb.title || alb.name) || '',
           duration: num(t.durationSeconds, 0),
@@ -611,10 +657,7 @@
           },
           format: String(t.fileFormat || '').toLowerCase(),
           rate: 1, raw: t
-        });
-      }
-      cb(null, out);
-    });
+        };
   };
 
   DaoliyuBackend.prototype.streamUrl = function (t, cb) {
@@ -631,6 +674,42 @@
       }
       /* FLAC/ape 一首几十 MB，平板既放不动也可能解不了码：让服务器转 mp3 */
       cb(null, self.base + '/api/tracks/' + id + '/transcode' + q + '&format=mp3&bitrate=192', 1);
+    });
+  };
+
+  /* 全库曲目：GET /api/tracks?skip=&take= -> {items,total,skip,take}（实测 total=5002，分页正常） */
+  DaoliyuBackend.prototype.libTracks = function (skip, take, cb) {
+    var self = this;
+    this.api('GET', '/api/tracks?skip=' + skip + '&take=' + take, '', function (err, text) {
+      if (err) { cb(err); return; }
+      var o = safeJson(text) || {};
+      var items = o.items || [];
+      var out = [];
+      for (var i = 0; i < items.length; i++) {
+        var t = items[i] && items[i].track ? items[i].track : items[i];
+        if (!t || !t.id) continue;
+        out.push(self.mapTrack(t));
+      }
+      cb(null, { total: num(o.total, 0), items: out });
+    });
+  };
+
+  /* 服务端随机：GET /api/tracks/random —— 实测不管 count 给多少都回 100 条随机曲目。
+     这正是业界（Spotify/Apple Music）处理大库随机的做法：不把 5000 首拉下来再洗牌，
+     而是让服务器给一批随机曲目，用完这批再拿下一批。 */
+  DaoliyuBackend.prototype.randomBatch = function (cb) {
+    var self = this;
+    this.api('GET', '/api/tracks/random?count=100', '', function (err, text) {
+      if (err) { cb(err); return; }
+      var o = safeJson(text) || {};
+      var items = o.items || [];
+      var out = [];
+      for (var i = 0; i < items.length; i++) {
+        var t = items[i] && items[i].track ? items[i].track : items[i];
+        if (!t || !t.id) continue;
+        out.push(self.mapTrack(t));
+      }
+      cb(null, out);
     });
   };
 
@@ -866,7 +945,9 @@
   function playTrack(track, queue, index) {
     if (!track) return;
     if (queue) { S.queue = queue; S.qi = index >= 0 ? index : 0; }
-    buildOrder(S.qi >= 0 ? S.qi : 0);
+    if (libMode() && S.shuffle) { S.order = []; } else { buildOrder(S.qi >= 0 ? S.qi : 0); }
+    if (track) { S.hist.push(track); if (S.hist.length > 60) S.hist.shift(); }
+    markRecent(track && track.id);
     S.track = track;
     S.lyrics = null; S.lyricIdx = -1; paintLyrics();
     paintNow();
@@ -905,6 +986,7 @@
   function toggle() {
     var a = ensureAudio();
     if (!S.track && S.queue.length) { playTrack(S.queue[0], S.queue, 0); return; }
+    if (!S.track && libMode() && S.shuffle) { randomPick(function (t) { if (t) playTrack(t, null, -1); else toast('随机曲目没拿到'); }); return; }
     if (!S.track) { toast('先去右侧歌单里点一首'); return; }
     if (a.paused) {
       var p = a.play();
@@ -916,6 +998,10 @@
 
   /** 按 S.order 走下一首：循环关 = 走到头停下；列表循环 = 回到第一首 */
   function next() {
+    if (libMode() && S.shuffle) {
+      randomPick(function (t) { if (t) playTrack(t, null, -1); else setStatus('ok', '随机曲目没拿到'); });
+      return;
+    }
     if (!S.order.length) return;
     var pos = S.order.indexOf(S.qi);
     if (pos < 0) pos = 0;
@@ -926,6 +1012,11 @@
   }
 
   function prev() {
+    if (libMode() && S.shuffle) {
+      if (S.hist.length > 1) { S.hist.pop(); playTrack(S.hist[S.hist.length - 1], null, -1); }
+      else if (S.audio) { try { S.audio.currentTime = 0; } catch (e) { } }
+      return;
+    }
     if (!S.order.length) return;
     if (S.audio && S.audio.currentTime > 3) { S.audio.currentTime = 0; return; }
     var pos = S.order.indexOf(S.qi);
@@ -955,8 +1046,8 @@
 
   function openQueueView() {
     if (S.view === 'queue') {
-      S.view = S.tracks ? 'tracks' : 'pl';
-      S.crumb = S.tracks ? (playlistName() || '歌单') : '歌单';
+      S.view = libMode() ? 'lib' : (S.tracks ? 'tracks' : 'pl');
+      S.crumb = libMode() ? '所有歌曲' : (S.tracks ? (playlistName() || '歌单') : '歌单');
     } else {
       S.view = 'queue';
       S.crumb = '播放列表';
@@ -969,6 +1060,84 @@
   function playlistName() {
     for (var i = 0; i < S.playlists.length; i++) if (S.playlists[i].id === S.curPlaylist) return S.playlists[i].name;
     return '';
+  }
+
+  /* ---------------- 所有歌曲：分页装 + 服务端随机 ---------------- */
+  function libMode() { return S.src === 'lib'; }
+
+  function loadLibPage(skip) {
+    if (S.libBusy || !S.backend || !S.backend.libTracks) return;
+    if (skip >= S.lib.total) return;
+    S.libBusy = true;
+    S.backend.libTracks(skip, LIB_PAGE, function (err, res) {
+      S.libBusy = false;
+      if (err) { setStatus('error', '所有歌曲没加载出来：' + err); paintList(); return; }
+      S.lib.total = num(res.total, S.lib.total);
+      var items = res.items || [];
+      for (var i = 0; i < items.length; i++) S.lib.items.push(items[i]);
+      paintList();
+    });
+  }
+
+  function openLibView() {
+    S.view = 'lib';
+    S.src = 'lib';
+    S.tracks = null;
+    S.curPlaylist = '';
+    S.crumb = '所有歌曲';
+    paintCrumb();
+    if (!S.lib.items.length) {
+      paintList('正在加载第一页…');
+      loadLibPage(0);
+    } else paintList();
+  }
+
+  function markRecent(id) {
+    S.recent[String(id)] = 1;
+    var c = 0;
+    for (var k in S.recent) { if (S.recent.hasOwnProperty(k)) c++; }
+    if (c > RECENT_MAX) S.recent = {};
+  }
+
+  /** 随机取一首：先吃手里这批，用完向服务器再要一批（滤掉最近播过的） */
+  function randomPick(cb) {
+    if (S.randQ.length) { cb(S.randQ.shift()); return; }
+    if (S.randBusy || !S.backend || !S.backend.randomBatch) { cb(null); return; }
+    S.randBusy = true;
+    S.backend.randomBatch(function (err, list) {
+      S.randBusy = false;
+      if (err || !list || !list.length) { toast('随机曲目拿不到：' + (err || '空返回')); return; }
+      for (var i = 0; i < list.length; i++) {
+        var id = String(list[i].id);
+        if (S.recent[id]) continue;
+        S.randQ.push(list[i]);
+        markRecent(id);
+      }
+      if (S.randQ.length) cb(S.randQ.shift());
+    });
+  }
+
+  function libRowHtml(t, i) {
+    var on = S.track && t.id === S.track.id ? ' on' : '';
+    return '<button class="m-song' + on + '" data-mact="libtrack" data-idx="' + i + '">' +
+      '<span class="m-song-ico">' + svg(on && S.audio && !S.audio.paused ? 'wave' : 'play') + '</span>' +
+      '<span class="m-song-main"><span class="m-song-t">' + esc(t.title || '未命名') + '</span>' +
+      '<span class="m-song-a">' + esc((t.artist || '') + (t.album ? ' · ' + t.album : '')) + '</span></span>' +
+      '<span class="m-song-d">' + fmtTime(t.duration) + '</span></button>';
+  }
+
+  function paintLib() {
+    var e = S.el;
+    var items = S.lib.items;
+    var rows = Math.min(items.length, LIB_MAX_ROWS);
+    var h = '';
+    for (var i = 0; i < rows; i++) h += libRowHtml(items[i], i);
+    if (items.length < S.lib.total) {
+      h += '<div class="m-lib-more" data-mact="lib-more">还有 ' + (S.lib.total - items.length) + ' 首没装进来 · 点这里再装 ' + LIB_PAGE + ' 首</div>';
+    } else {
+      h += '<div class="m-lib-tip">全部 ' + S.lib.total + ' 首都已装好 · 开「随机」时不用装完，服务器直接给随机曲目</div>';
+    }
+    e.list.innerHTML = h;
   }
 
   function setVol(v) {
@@ -1004,6 +1173,11 @@
       }
       S.playlists = list || [];
       S.ready = true;
+      if (S.backend.libTracks && !S.lib.total) {
+        S.backend.libTracks(0, 1, function (e3, res) {
+          if (!e3 && res) { S.lib.total = num(res.total, 0); paintList(); }
+        });
+      }
       setStatus(S.status === 'mock' ? 'mock' : 'ok',
         S.status === 'mock' ? '演示音源 · ' + S.playlists.length + ' 个歌单' : '已连接 · ' + S.playlists.length + ' 个歌单');
       paintList();
@@ -1032,6 +1206,7 @@
 
   function backToPlaylists() {
     S.tracks = null;
+    S.src = '';
     S.view = 'pl';
     S.crumb = '歌单';
     paintCrumb();
@@ -1186,13 +1361,32 @@
   function paintCrumb() {
     var e = S.el;
     if (!e.crumb) return;
-    e.crumb.innerHTML = (S.view !== 'pl' ? '<button class="m-back" data-mact="back">' + svg('back') + '<span>' + esc(S.view === 'queue' ? (playlistName() || '歌单') : '歌单') + '</span></button>' : '') +
+    e.crumb.innerHTML = (S.view !== 'pl' ? '<button class="m-back" data-mact="back">' + svg('back') + '<span>' + esc(S.view === 'queue' ? (libMode() ? '所有歌曲' : (playlistName() || '歌单')) : '歌单') + '</span></button>' : '') +
       '<span class="m-crumb-t">' + esc(S.crumb) + '</span>';
   }
 
   /** 「正在播放列表」：当前曲在最前，后面是按随机/循环算出的播放顺序 */
   function paintQueue() {
     var e = S.el;
+    if (libMode() && S.shuffle) {
+      if (!S.track) { e.list.innerHTML = '<div class="m-empty">还没有开始播放<br><span class="m-empty-d">开随机后点播放键，服务器会给你一批随机曲目</span></div>'; return; }
+      var hq = '<button class="m-song on" data-mact="noop">' +
+        '<span class="m-song-ico">' + svg(S.audio && !S.audio.paused ? 'wave' : 'play') + '</span>' +
+        '<span class="m-song-main"><span class="m-song-t">' + esc(S.track.title || '未命名') + '</span>' +
+        '<span class="m-song-a">' + esc((S.track.artist || '') + (S.track.album ? ' · ' + S.track.album : '')) + '</span></span>' +
+        '<span class="m-song-d">正在播</span></button>';
+      var shown = Math.min(S.randQ.length, 40);
+      for (var q = 0; q < shown; q++) {
+        var rt = S.randQ[q];
+        hq += '<button class="m-song" data-mact="noop"><span class="m-song-ico"><span class="m-q-n">' + (q + 1) + '</span></span>' +
+          '<span class="m-song-main"><span class="m-song-t">' + esc(rt.title || '未命名') + '</span>' +
+          '<span class="m-song-a">' + esc((rt.artist || '') + (rt.album ? ' · ' + rt.album : '')) + '</span></span>' +
+          '<span class="m-song-d">' + fmtTime(rt.duration) + '</span></button>';
+      }
+      if (!shown) hq += '<div class="m-lib-tip">这批随机曲目快用完了，会自动再拿一批</div>';
+      e.list.innerHTML = hq;
+      return;
+    }
     if (!S.order.length) {
       e.list.innerHTML = '<div class="m-empty">还没有开始播放<br><span class="m-empty-d">回歌单里点一首，这里就会出现播放列表</span></div>';
       return;
@@ -1224,6 +1418,7 @@
       return;
     }
     if (S.view === 'queue') { paintQueue(); return; }
+    if (S.view === 'lib') { paintLib(); return; }
     if (S.tracks) {
       if (!S.tracks.length) { e.list.innerHTML = '<div class="m-empty">这个歌单是空的</div>'; return; }
       var h = '';
@@ -1244,7 +1439,11 @@
       e.list.innerHTML = '<div class="m-empty">还没有歌单<br><span class="m-empty-d">在音乐服务里建一个歌单，这里就会出现</span></div>';
       return;
     }
-    var out = '';
+    var out = '<button class="m-pl" data-mact="all">' +
+      '<span class="m-pl-cover">' + svg('music') + '</span>' +
+      '<span class="m-pl-main"><span class="m-pl-n">所有歌曲</span>' +
+      '<span class="m-pl-c">' + (S.lib.total ? S.lib.total + ' 首 · 分页加载' : '全部歌单里的歌') + '</span></span>' +
+      '<span class="m-pl-go">' + svg('chev') + '</span></button>';
     for (var j = 0; j < S.playlists.length; j++) {
       var p = S.playlists[j];
       out += '<button class="m-pl" data-mact="pl" data-id="' + esc(p.id) + '">' +
@@ -1436,6 +1635,13 @@
       return;
     }
     if (a === 'pl') { openPlaylist(btn.getAttribute('data-id')); return; }
+    if (a === 'all') { openLibView(); act('music open all songs'); return; }
+    if (a === 'lib-more') { loadLibPage(S.lib.items.length); return; }
+    if (a === 'libtrack') {
+      var li = num(btn.getAttribute('data-idx'), -1);
+      if (li >= 0 && S.lib.items[li]) playTrack(S.lib.items[li], S.lib.items, li);
+      return;
+    }
     if (a === 'track') {
       var i = num(btn.getAttribute('data-idx'), -1);
       if (i >= 0 && S.tracks) playTrack(S.tracks[i], S.tracks, i);
@@ -1535,6 +1741,13 @@
     buildBackend();
 
     page.addEventListener('click', onPageClick, false);
+    if (e.list) {
+      e.list.addEventListener('scroll', function () {
+        if (S.view !== 'lib' || S.libBusy) return;
+        if (S.lib.items.length >= LIB_MAX_ROWS || S.lib.items.length >= S.lib.total) return;
+        if (e.list.scrollTop + e.list.clientHeight >= e.list.scrollHeight - 140) loadLibPage(S.lib.items.length);
+      }, false);
+    }
     bindBars();
     /* 页面自己的触摸：只用来「左滑收起」，落点在按钮/滑条上时不抢 */
     page.addEventListener('touchstart', function (ev) {
@@ -1601,6 +1814,8 @@
     repeat: function () { return S.repeat; },
     queueList: function () { return S.order.map(function (i) { return S.queue[i]; }); },
     openQueue: openQueueView, toggleShuffle: toggleShuffle, cycleRepeat: cycleRepeat,
-    next: next, prev: prev, togglePlay: toggle
+    next: next, prev: prev, togglePlay: toggle,
+    openAll: function () { open(true); openLibView(); },
+    libInfo: function () { return { view: S.view, src: S.src, loaded: S.lib.items.length, total: S.lib.total, randLeft: S.randQ.length, hist: S.hist.length } }
   };
 })();
