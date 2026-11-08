@@ -238,7 +238,10 @@
     try {
       var o = JSON.parse(localStorage.getItem(MODE_KEY) || '');
       if (o && typeof o === 'object') {
-        return { shuffle: !!o.shuffle, repeat: o.repeat === 'all' ? 'all' : (o.repeat === 'one' ? 'one' : 'off') };
+        var rep = o.repeat === 'all' ? 'all' : (o.repeat === 'one' ? 'one' : 'off');
+        /* 旧版两个按钮时代可能存过「随机+循环」的组合；一键四态里随机时循环必为 off */
+        if (o.shuffle) rep = 'off';
+        return { shuffle: !!o.shuffle, repeat: rep };
       }
     } catch (e) { }
     return { shuffle: false, repeat: 'off' };
@@ -1027,6 +1030,26 @@
   }
 
   /* ---------------- 播放模式 ---------------- */
+  function modeLabel() {
+    if (S.shuffle) return '播放模式：随机';
+    if (S.repeat === 'one') return '播放模式：单曲循环';
+    if (S.repeat === 'all') return '播放模式：列表循环';
+    return '播放模式：顺序播放（点击切换）';
+  }
+
+  /** 一个按钮四态循环：顺序 → 列表循环 → 单曲循环 → 随机 → 顺序 */
+  function cycleMode() {
+    if (!S.shuffle && S.repeat === 'off') { S.repeat = 'all'; }
+    else if (S.repeat === 'all') { S.repeat = 'one'; }
+    else if (S.repeat === 'one') { S.repeat = 'off'; S.shuffle = true; }
+    else { S.shuffle = false; }
+    if (S.queue.length) buildOrder(S.qi >= 0 ? S.qi : 0);
+    saveMode();
+    paintTransport();
+    toast(modeLabel());
+    act('mode ' + (S.shuffle ? 'shuffle' : S.repeat));
+  }
+
   function toggleShuffle() {
     S.shuffle = !S.shuffle;
     if (S.queue.length) buildOrder(S.qi >= 0 ? S.qi : 0);
@@ -1317,9 +1340,13 @@
     e.play.className = 'm-btn m-play' + (playing ? ' on' : '');
     e.songWrap.className = 'm-meta' + (playing ? ' playing' : '');
     if (e.queueBtn) { e.queueBtn.className = 'm-btn m-mini' + (S.view === 'queue' ? ' on' : ''); e.queueBtn.innerHTML = svg('list'); }
-    /* 随机 / 顺序是同一个按钮的两态：点亮=随机，压暗=顺序 */
-    if (e.shuffleBtn) { e.shuffleBtn.className = 'm-btn m-mini' + (S.shuffle ? ' on' : ''); e.shuffleBtn.innerHTML = svg('shuffle'); }
-    if (e.repeatBtn) { e.repeatBtn.className = 'm-btn m-mini' + (S.repeat === 'off' ? '' : ' on'); e.repeatBtn.innerHTML = svg(S.repeat === 'one' ? 'repeatOne' : 'repeat'); }
+    /* 播放模式一键四态：顺序（压暗的循环图标）→ 列表循环 → 单曲循环 → 随机 */
+    if (e.modeBtn) {
+      var onMode = S.shuffle || S.repeat !== 'off';
+      e.modeBtn.className = 'm-btn m-mini' + (onMode ? ' on' : '');
+      e.modeBtn.innerHTML = svg(S.shuffle ? 'shuffle' : (S.repeat === 'one' ? 'repeatOne' : 'repeat'));
+      e.modeBtn.setAttribute('aria-label', modeLabel());
+    }
   }
 
   function setFill(fill, knob, pct) {
@@ -1652,6 +1679,7 @@
     if (a === 'next') { next(); return; }
     if (a === 'prev') { prev(); return; }
     if (a === 'queue') { openQueueView(); return; }
+    if (a === 'mode') { cycleMode(); return; }
     if (a === 'shuffle') { toggleShuffle(); return; }
     if (a === 'repeat') { cycleRepeat(); return; }
     if (a === 'qtrack') {
@@ -1762,7 +1790,7 @@
     e.pos = $('mPos'); e.dur = $('mDur');
     e.play = $('mPlay');
     e.prev = $('mPrev'); e.next = $('mNext');
-    e.queueBtn = $('mQueue'); e.shuffleBtn = $('mShuffle'); e.repeatBtn = $('mRepeat');
+    e.queueBtn = $('mQueue'); e.modeBtn = $('mMode');
     e.lyrics = $('mLyrics');
     e.vol = $('mVol'); e.volFill = $('mVolFill'); e.volKnob = $('mVolKnob'); e.volPct = $('mVolPct');
     e.crumb = $('mCrumb'); e.list = $('mList');
@@ -1846,7 +1874,8 @@
     shuffle: function () { return S.shuffle; },
     repeat: function () { return S.repeat; },
     queueList: function () { return S.order.map(function (i) { return S.queue[i]; }); },
-    openQueue: openQueueView, toggleShuffle: toggleShuffle, cycleRepeat: cycleRepeat,
+    openQueue: openQueueView, toggleShuffle: toggleShuffle, cycleRepeat: cycleRepeat, cycleMode: cycleMode,
+    mode: function () { return { shuffle: S.shuffle, repeat: S.repeat, label: modeLabel() }; },
     next: next, prev: prev, togglePlay: toggle,
     openAll: function () { open(true); openLibView(); },
     libInfo: function () { return { view: S.view, src: S.src, loaded: S.lib.items.length, total: S.lib.total, randLeft: S.randQ.length, hist: S.hist.length } }
