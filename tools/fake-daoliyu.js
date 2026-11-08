@@ -33,6 +33,20 @@ const TRACKS = {
   ]
 };
 
+function findTrack(id) {
+  for (const k in TRACKS) {
+    const list = TRACKS[k];
+    for (const t of list) if (t.id === id) return t;
+  }
+  return null;
+}
+
+/* LRC 时间戳 [mm:ss.xx] */
+function stamp(sec) {
+  const mm = Math.floor(sec / 60), ss = Math.floor(sec % 60), cs = Math.floor(sec * 100 % 100);
+  return String(mm).padStart(2, '0') + ':' + String(ss).padStart(2, '0') + '.' + String(cs).padStart(2, '0');
+}
+
 function wav(seconds, freq) {
   const rate = 22050, n = Math.floor(rate * seconds), buf = Buffer.alloc(44 + n * 2);
   buf.write('RIFF', 0); buf.writeUInt32LE(36 + n * 2, 4); buf.write('WAVE', 8);
@@ -113,6 +127,16 @@ const server = http.createServer((req, res) => {
     const path = u.searchParams.get('path') || '';
     const hue = path.includes('night') ? 222 : path.includes('jazz') ? 268 : 12;
     return send(res, 200, 'image/svg+xml', COVER(hue, path.split('/').pop() || 'cover'));
+  }
+
+  m = p.match(/^\/api\/tracks\/([^/]+)\/lyrics$/);
+  if (m) {
+    const t = findTrack(m[1]);
+    const dur = t ? (t.durationSeconds || 6) : 6;
+    const verse = [t ? t.title : '演示', '第一行 演示歌词', '第二行 跟着时间轴走', '第三行 再往下一点', '第四行 快收尾了', '结束'];
+    const step = dur / verse.length;
+    const lrc = verse.map((s, i) => '[' + stamp(i * step) + ']' + s).join('\n');
+    return json(res, 200, { trackId: m[1], candidates: [{ id: 'DEMO', sourceCode: 'DEMO', syncType: 'SYNCED', lyrics: lrc }] });
   }
 
   m = p.match(/^\/api\/tracks\/([^/]+)\/(stream|transcode)$/);

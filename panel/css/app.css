@@ -686,6 +686,18 @@ body::before {
 }
 .m-artist { font-size: 14px; color: #9aa9be; margin-top: 7px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .m-album { font-size: 12px; color: #61718a; margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.m-lyrics {
+  width: 100%; max-width: 320px; flex: 1 1 auto; min-height: 0; overflow-y: auto;
+  margin-top: 14px; padding: 4px 0; text-align: center; -webkit-overflow-scrolling: touch;
+}
+.m-lyrics.hide { display: none; }
+.m-lr {
+  font-size: 15px; line-height: 1.72; color: rgba(226,238,248,.28);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.m-lr-soon { color: rgba(226,238,248,.5); }
+.m-lr.on { color: #cfe0ff; font-weight: 600; font-size: 16px; }
+.m-lrc-tip { font-size: 12px; color: #55677f; }
 .m-progress { width: 100%; max-width: 320px; margin-top: 20px; }
 .m-bar {
   position: relative; height: 26px; border-radius: 13px; background: rgba(255,255,255,.075);
