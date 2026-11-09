@@ -7,6 +7,7 @@
      文本层级按 Material 的 white/.92 / .72 / .55 / .42，强调色走 tone 档（暗皮肤 tone 78）。 */
   --bg: #121212; --bg-rgb: 18,18,18; --bg-deep: #0e0e10; --bg-deep-rgb: 14,14,16;
   --card-a: 1; --glyph-on: rgb(var(--bg-rgb));
+  --ctl-on: 63,208,138; --ctl-bar: 255,183,90;
   --bg-2: #202024; --bg-3: #27272a; --bg-4: #303036;
   --card-rgb: 24,24,27; --card-2-rgb: 31,31,34; --line-rgb: 63,63,70;
   --surf: 255,255,255;
@@ -22,8 +23,8 @@
   --warn: #ff9860; --warn-rgb: 255,152,96; --warn-soft: #ffb585;
   --err: #ff7d88; --err-rgb: 255,125,136; --err-soft: #ffa4a7;
   --lyric-rgb: 236,236,241;
-  --accent: 118,202,255; --track: #2b2b30; --knob: rgb(var(--accent)); --bar-fill: var(--accent);
-  --knob-border: rgba(var(--card-rgb),.92);
+  --accent: 118,202,255; --track: #2b2b30; --knob: #ffffff; --bar-fill: var(--ctl-bar);
+  --knob-border: rgba(255,255,255,.28);
   --shadow: 0 2px 2px 0 rgba(0,0,0,.28), 0 1px 2px 0 rgba(0,0,0,.36);
 }
 
@@ -36,6 +37,7 @@ html.hc-light {
   --bg-2: #f3f7f0; --bg-3: #dde5d9; --bg-4: #c9d6c2;
   --card-rgb: 255,255,255; --card-2-rgb: 248,251,246; --card-a: .82; --line-rgb: 206,218,204;
   --glyph-on: #ffffff;
+  --ctl-on: 34,142,95; --ctl-bar: 246,166,66;
   --surf: 24,24,27;
   --text-hi: #212820; --text-1: #2b3129; --text-2: #4c5347; --text-3: #6b7266;
   --text-4: #7d8578; --text-5: #9aa294;
@@ -225,7 +227,7 @@ body::before {
 }
 .t-icon svg { width: 21px; height: 21px; }
 /* 开着的卡片：只有图标变成实心强调色圆钮（照米家），卡片底保持平面 */
-.tile.on .t-icon { background: rgb(var(--accent)); color: var(--glyph-on); }
+.tile.on .t-icon { background: rgb(var(--ctl-on)); color: var(--glyph-on); }
 
 .tile-room {
   margin-left: auto; font-size: 11px; color: var(--text-4);
@@ -240,7 +242,7 @@ body::before {
 
 .tile-mid { flex: 1; display: flex; flex-direction: column; justify-content: center; min-height: 0; }
 .t-val { font-size: 42px; font-weight: 200; line-height: 1.02; letter-spacing: -1px; color: var(--text-2); }
-.t-val.lit { color: rgb(var(--accent)); }
+.t-val.lit { color: var(--text-1); }
 .t-val.muted { font-size: 24px; letter-spacing: 0; color: var(--text-4); }
 .t-val .u { font-size: 15px; font-weight: 400; letter-spacing: 0; color: var(--text-4); margin-left: 3px; }
 .t-val.small { font-size: 30px; }
@@ -279,7 +281,7 @@ body::before {
 .t-bar i {
   position: absolute; left: 0; top: 0; bottom: 0; width: var(--pct);
   border-radius: inherit; border-top-right-radius: 0; border-bottom-right-radius: 0;
-  background: rgb(var(--bar-fill));
+  background: rgb(var(--ctl-bar));
   transition: width .22s;
 }
 .t-bar b {
