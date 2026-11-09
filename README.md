@@ -55,7 +55,9 @@ powershell -ExecutionPolicy Bypass -File tools\deploy.ps1 -SkipApk   # 只改了
 
 它会依次做：adb 在线检查（离线时直接告诉你「长按电源键 10 秒」而不是抛异常）→ 装 APK → 推 `panel\` 到 `/sdcard/HomeControl/panel/` → 改写 `url.txt` → force-stop + 启动 → 校验 `page finished` / 无脚本错误 / 前台是壳 App，最后打印 DEPLOY OK。
 
-版本号随构建更新：`versionName 0.7.8` / `versionCode 45`，诊断页第一行就能看到「版本 0.7.3 · MI PAD 2」。
+版本号随构建更新：`versionName 0.7.9` / `versionCode 46`，诊断页第一行就能看到「版本 0.7.9 · MI PAD 2」。
+
+面板把自己也注册进 Home Assistant（0.7.9）：走 `POST /api/states/<entity_id>`（实测 201，不存在就新建，不需要 MQTT），每分钟报一次 `sensor.homecontrol_panel`（在线状态、型号、App 版本、IP/SSID、皮肤、电量、充电、`last_seen`）、`binary_sensor.homecontrol_panel_connected`、`sensor.homecontrol_panel_battery`、`binary_sensor.homecontrol_panel_charging`、`switch.homecontrol_panel_dark_mode`。那个开关是双向的：面板写自己的皮肤，HA 里把开关拨了，面板跟着换皮肤（`selfWritten` 用来区分「HA 那边改了」和「我们自己写的」，不会自己跟自己打架）。注意 HA 的 REST 建的是实体，不是设备注册表里的设备，所以在 HA 界面上它们归在「未分配设备」下。
 ## 构建与部署
 
 ```powershell
@@ -272,6 +274,25 @@ powershell -ExecutionPolicy Bypass -File .\tools\push.ps1 -Mock -Restart
 实测（同一台机器、同样 5 次滑动）：修前 `32 帧 / Janky 50% / Slow draw 16`，
 修后 `28~30 帧 / Janky 50% / Slow draw 14~15`。剩下的抖动是设备自身上限，
 上面的修法削掉的是「跟着背后网格一起重绘」那部分额外开销。
+
+### 状态推送：从「每次全量」改成「只回一个实体」（2026-11-09）
+
+真 HA 有 1254 个实体、稳态 4.2 条 `state_changed`/秒。原来 `backend.js` 每收到一条事件都把**全部**
+states 复制一份回调给面板，面板再整屏 `renderGrid()`。在模拟器（Android 11 / WebView 83）上用 CDP
+Profiler 量，空闲时 JS 非 idle 约 7.4%（740ms/10s），self-time 热点是 `num` / `toneOf` / `prefs` /
+`querySelector`。
+
+改法（`panel/js/backend.js` + `panel/js/app.js`）：
+
+- `HABackend` 新增 `onEntity(cb)`：`state_changed` 只回这一个实体的浅拷贝；初次 `get_states` / REST 兜底仍走 `emitStates()` 全量
+- 面板 `onState(id, st)` 只更新 `S.states[id]`、对应那张卡（`updateByEntity`）和天气/住户条；设置页正开着就刷新当前卡
+- `prefs()` / `hiddenRooms()` 按 `localStorage` 原始串缓存；`toneOf()` 颜色映射记忆化（上限 512 条）；`tick()` 只在时间/日期文本真的变了才写 DOM
+- 设置页/弹层打开时（`body.sheet-open`）`camPaint()`（每 8 秒拉摄像头缩略图）与 `sparkPaint()`（每 20 秒拉历史曲线）直接跳过，关掉后自动恢复
+
+实测（同一模拟器、同一个真 HA，10 秒）：非 idle 7.4% → 3.4%（约 -54%），`updateTile` / `num` /
+`toneOf` 从 self-time 排行里消失；面板自报 `renders` 3 次 / `entityEvents` 50 条（改造前约每条事件
+一次整屏渲染），单实体连推 200 次共 11ms。复测工具：`node tools/perf-profile.js 10`（CDP Profiler +
+WebSocket 帧统计）。注意这是模拟器数字，Chromium 57 真机还没有重测（平板离线中）。
 
 想再快一点，按收益排序：
 

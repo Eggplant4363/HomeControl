@@ -1,5 +1,6 @@
 /* 数据层：真实 Home Assistant WebSocket 与本地模拟实现，对外接口一致
      backend.onStates(cb)   cb(statesMap)      entity_id -> { entity_id, state, attributes }
+     backend.onEntity(cb)   cb(entity_id, st)  只有 HABackend 有：单实体增量
      backend.onStatus(cb)   cb({connected,text})
      backend.call(domain, service, data) -> Promise
      backend.start()
@@ -17,6 +18,7 @@
     this.pending = {};
     this.states = {};
     this.stateCb = null;
+    this.entityCb = null;      /* 增量回调：只回单个实体，避免每次推送复制全部 1000+ 实体 */
     this.statusCb = null;
     this.tries = 0;
     this.pingTimer = null;
@@ -27,6 +29,9 @@
   }
 
   HABackend.prototype.onStates = function (cb) { this.stateCb = cb; };
+  /* 面板如果注册了 onEntity，state_changed 就走增量（只发这一个实体）；
+     没注册时退回全量，兼容老页面/单测 */
+  HABackend.prototype.onEntity = function (cb) { this.entityCb = cb; };
   HABackend.prototype.onStatus = function (cb) { this.statusCb = cb; };
   HABackend.prototype.start = function () { this.stopped = false; this.connect(); };
   HABackend.prototype.stop = function () {
@@ -173,9 +178,21 @@
       if (!data) return;
       if (data.new_state && data.new_state.entity_id) {
         this.states[data.new_state.entity_id] = data.new_state;
-        this.emitStates();
+        if (this.entityCb) this.emitEntity(data.new_state);
+        else this.emitStates();
       }
     }
+  };
+
+  /* 增量推送：浅拷贝单个实体，避免每次事件都遍历 states 建全量副本（1254 实体 × 4 次/秒 = 大量垃圾） */
+  HABackend.prototype.emitEntity = function (st) {
+    if (!this.entityCb) return;
+    this.entityCb(st.entity_id, {
+      entity_id: st.entity_id,
+      state: st.state,
+      attributes: st.attributes || {},
+      last_changed: st.last_changed
+    });
   };
 
   HABackend.prototype.startPing = function () {
