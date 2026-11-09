@@ -886,6 +886,8 @@ var COLOR_PRESETS = [
     try { localStorage.setItem(PREFS_KEY, JSON.stringify(p)); } catch (e) { }
     actLog('pref ' + key + '=' + val);
     applyPrefs();
+    /* 皮肤换了就把 HA 那个夜间开关立刻同步出去，不用等 60 秒的定时上报 */
+    if (key === 'theme') reportSelf();
   }
 
   function resetPrefs() {
