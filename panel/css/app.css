@@ -233,8 +233,20 @@ body::before {
   margin-left: auto; font-size: 11px; color: var(--text-4);
   padding: 3px 8px; border-radius: 8px; background: rgba(var(--surf),.045);
 }
+.t-power {
+  /* 米家那颗电源圆钮：开着=绿实心白字，关着=灰描边 */
+  margin-left: auto; width: 34px; height: 34px; padding: 0;
+  border: 1px solid rgba(var(--surf),.14); border-radius: 50%;
+  background: rgba(var(--surf),.05); color: var(--text-4);
+  display: flex; align-items: center; justify-content: center;
+  transition: background .2s, color .2s, border-color .2s;
+}
+.t-power svg { width: 17px; height: 17px; }
+.t-power:active { transform: scale(.92); }
+.tile.on .t-power { background: rgb(var(--ctl-on)); border-color: rgb(var(--ctl-on)); color: var(--glyph-on); }
+.tile.na .t-power { opacity: .45; }
 .t-more {
-  margin-left: auto; width: 28px; height: 28px; padding: 0; border: 0;
+  margin-left: 8px; width: 28px; height: 28px; padding: 0; border: 0;
   border-radius: 9px; background: rgba(var(--surf),.045); color: var(--text-4);
   display: flex; align-items: center; justify-content: center;
 }

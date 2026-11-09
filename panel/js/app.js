@@ -397,19 +397,18 @@ var COLOR_PRESETS = [
     }
     if (tile.type === 'light') {
       if (isNa(st)) return '离线';
-      if (st !== 'on') return '关';
-      return hasBrightness(attrs) ? lightPct(attrs) + '<span class="u">%</span>' : '开';
+      /* 开/关不写文字：电源钮就是状态；只有亮度这种真数值才显示 */
+      return st === 'on' && hasBrightness(attrs) ? lightPct(attrs) + '<span class="u">%</span>' : '';
     }
     if (tile.type === 'switch') {
       if (isNa(st)) return '离线';
       if (isAuto(tile)) return st === 'on' ? '启用' : '禁用';
-      if (st !== 'on') return '关';
-      if (attrs.power != null) return Math.round(num(attrs.power, 0)) + '<span class="u">W</span>';
-      return '开';
+      /* 同上：开着且有功率才显示数值 */
+      return st === 'on' && attrs.power != null ? Math.round(num(attrs.power, 0)) + '<span class="u">W</span>' : '';
     }
     if (tile.type === 'climate') {
       if (isNa(st)) return '离线';
-      if (st === 'off') return '关';
+      if (st === 'off') return '';
       var dt = dualTarget(attrs);
       if (dt) return fmtTemp(dt.low) + '–' + fmtTemp(dt.high) + '<span class="u">°C</span>';
       var caps = climateTempCaps(attrs);
@@ -418,7 +417,7 @@ var COLOR_PRESETS = [
     }
     if (tile.type === 'cover') {
       if (st === 'unavailable') return '—';
-      if (!hasPosition(attrs)) return (st === 'closed' ? '关' : '开');
+      if (!hasPosition(attrs)) return '';
       return Math.round(num(attrs.current_position, st === 'closed' ? 0 : 100)) + '<span class="u">%</span>';
     }
     if (st === 'unavailable') return '—';
@@ -444,13 +443,13 @@ var COLOR_PRESETS = [
     if (isNa(st)) return '不可用';
     if (isAuto(tile)) return '点按触发';
     if (tile.type === 'camera') return '摄像头 · ' + (CAM_STATE[st] || st);
-    if (tile.type === 'light') return st === 'on' ? '已开启' : '已关闭';
+    if (tile.type === 'light') return '';
     if (tile.type === 'switch') {
-      if (st !== 'on') return st === 'unavailable' ? '不可用' : '已关闭';
-      return attrs.power != null ? '功率 ' + Math.round(num(attrs.power, 0)) + ' W' : '已开启';
+      if (st !== 'on') return st === 'unavailable' ? '不可用' : '';
+      return attrs.power != null ? '功率 ' + Math.round(num(attrs.power, 0)) + ' W' : '';
     }
     if (tile.type === 'climate') {
-      if (st === 'off') return '已关闭';
+      if (st === 'off') return '';
       var cur = attrs.current_temperature;
       return (HVAC[st] || st) + (cur != null ? ' · ' + num(cur, 0).toFixed(1) + '°' : '');
     }
@@ -578,6 +577,8 @@ var COLOR_PRESETS = [
   /* 卡片缩略图：8 秒刷新一次（只在真实模式下有后端可拉） */
   function camPaint() {
     if (!el.grid || !el.grid.querySelectorAll) return;
+    /* 设置页/弹层打开时网格整块 visibility:hidden，刷新缩略图只会白下载、白解码 */
+    if (document.body && document.body.className.indexOf('sheet-open') > -1) return;
     var nodes = el.grid.querySelectorAll('.cam-thumb');
     for (var i = 0; i < nodes.length; i++) {
       var box = nodes[i];
@@ -631,6 +632,8 @@ var COLOR_PRESETS = [
 
   function sparkPaint() {
     if (!el.grid || !el.grid.querySelectorAll) return;
+    /* 同上：隐藏网格时不必每 20 秒给每张卡发一次历史请求 */
+    if (document.body && document.body.className.indexOf('sheet-open') > -1) return;
     S.sparkCache = S.sparkCache || {};
     S.sparkBusy = S.sparkBusy || {};
     var nodes = el.grid.querySelectorAll('.t-spark');
@@ -709,7 +712,10 @@ var COLOR_PRESETS = [
       (item.room ? '<div class="tile-room">' + esc(item.room) + '</div>' : '') +
       (S.editing
         ? ''
-        : '<button class="t-more" data-act="sheet">' + svg('dots') + '</button>') +
+        : (powerable(tile)
+            ? '<button class="t-power" data-act="toggle" title="开关">' + svg('power') + '</button>'
+            : '') +
+          '<button class="t-more" data-act="sheet">' + svg('dots') + '</button>') +
       '</div>' +
       (S.editing
         ? '<div class="t-tools">' +
@@ -738,9 +744,9 @@ var COLOR_PRESETS = [
     var tcls = 'tile type-' + tile.type + (isOn(tile) ? ' on' : '') + (isNa(st) ? ' na' : '') + (sp > 1 ? ' span-' + sp : '') + (rw > 1 ? ' rows-' + rw : '');
     if (S.tileSel === node && node.className.indexOf('selected') >= 0) tcls += ' selected';
     if (node.className !== tcls) node.className = tcls;
-    var tacc = themeAcc(accentFor(tile));
+    var raw3 = accentFor(tile);
+    var tacc = themeAcc(raw3);
     if (node.getAttribute('data-accent') !== tacc) {
-      var raw3 = accentFor(tile);
       node.setAttribute('data-accent', tacc);
       node.style.setProperty('--accent', tacc);
       node.style.setProperty('--acc-c', accContainer(raw3));
@@ -823,33 +829,46 @@ var COLOR_PRESETS = [
 
   /* ---- 房间可见性：墙上只看常用的几个房间，其余在设置里关掉 ---- */
   var HIDDEN_KEY = 'hc.hidden';
+  /* 缓存：这两个函数在每次状态推送里会被调很多次，localStorage 读+JSON.parse 不必每次都做 */
+  var hiddenRaw = null, hiddenList = null;
 
   function hiddenRooms() {
     try {
-      var raw = localStorage.getItem(HIDDEN_KEY);
+      var raw = localStorage.getItem(HIDDEN_KEY) || '';
+      if (raw === hiddenRaw && hiddenList) return hiddenList;
       var arr = raw ? JSON.parse(raw) : [];
-      return Array.isArray(arr) ? arr : [];
+      hiddenRaw = raw;
+      hiddenList = Array.isArray(arr) ? arr : [];
+      return hiddenList;
     } catch (e) { return []; }
   }
 
   function saveHidden(list) {
+    hiddenRaw = null;
+    hiddenList = null;
     try { localStorage.setItem(HIDDEN_KEY, JSON.stringify(list || [])); } catch (e) { }
   }
 
   /* ---------------- 面板设置（显示/交互/屏幕） ---------------- */
   var PREFS_KEY = 'hc.prefs';
   var PREF_DEF = { cols: 4, allCards: false, size: 'md', sensors: true, offline: false, tap: 'toggle', undo: 5, autoDim: true, bright: 100, night: true, burn: true, theme: 'dark' };
+  /* prefs() 同样按 localStorage 原始串缓存：改设置 → 串变了 → 自动重算 */
+  var prefsRaw = null, prefsObj = null;
 
   function prefs() {
+    var raw = '';
+    try { raw = localStorage.getItem(PREFS_KEY) || ''; } catch (e) { }
+    if (raw === prefsRaw && prefsObj) return prefsObj;
     var out = {}, k;
     for (k in PREF_DEF) out[k] = PREF_DEF[k];
     try {
-      var raw = localStorage.getItem(PREFS_KEY);
       var o = raw ? JSON.parse(raw) : null;
       if (o && typeof o === 'object') {
         for (k in PREF_DEF) if (o[k] !== undefined && o[k] !== null) out[k] = o[k];
       }
     } catch (e) { }
+    prefsRaw = raw;
+    prefsObj = out;
     return out;
   }
 
@@ -902,6 +921,80 @@ var COLOR_PRESETS = [
     renderGrid(true);
   }
 
+  /* ---------------- 把自己挂进 Home Assistant ---------------- */
+  /* HA 的 REST 允许 POST /api/states/<entity_id>（实测 201：不存在就新建），所以面板
+      不用 MQTT 也能上报自己：主状态 + 连接 + 电量 + 充电 + 夜间模式开关。
+      夜间开关是双向的：面板写自己的皮肤，HA 那边把开关拨了，面板跟着换皮肤。 */
+  var SELF = {
+    main: 'sensor.homecontrol_panel',
+    conn: 'binary_sensor.homecontrol_panel_connected',
+    batt: 'sensor.homecontrol_panel_battery',
+    charg: 'binary_sensor.homecontrol_panel_charging',
+    dark: 'switch.homecontrol_panel_dark_mode'
+  };
+  var selfWritten = {};      /* 我们最后写出去的值；只有 HA 那边改了它才动皮肤 */
+
+  function selfInfo() {
+    var b = window.AndroidBridge;
+    var out = { model: 'MI PAD 2', ver: '?', sdk: 0, ip: '', ssid: '', theme: isLight() ? 'light' : 'dark', battery: -1, charging: false };
+    if (b && b.info) {
+      try { var i = JSON.parse(b.info()); if (i.model) out.model = i.model; if (i.ver) out.ver = i.ver; out.sdk = i.sdk || 0; } catch (e) { }
+    }
+    if (b && b.netInfo) { try { var n = JSON.parse(b.netInfo()); out.ip = n.ip || ''; out.ssid = n.ssid || ''; } catch (e) { } }
+    if (b && b.battery) { try { var bt = JSON.parse(b.battery()); out.battery = bt.level; out.charging = !!bt.charging; } catch (e) { } }
+    return out;
+  }
+
+  function selfPost(ent, state, attrs) {
+    if (!S.real || !S.backend || !S.backend.rest) return;
+    selfWritten[ent] = state;
+    S.backend.rest('POST', '/api/states/' + ent, { state: state, attributes: attrs || {} }, function (ok, code) {
+      if (!ok) actLog('self ' + ent + ' 写入失败 ' + (code || '网络'));
+    });
+  }
+
+  function reportSelf() {
+    if (!S.real) return;
+    var info = selfInfo();
+    var online = !!(S.status && S.status.connected);
+    var seen = new Date().toISOString();
+    var name = 'HomeControl 面板（' + info.model + '）';
+    selfPost(SELF.main, online ? 'online' : 'offline', {
+      friendly_name: name, model: info.model, app_version: info.ver, sdk: info.sdk,
+      ip: info.ip, ssid: info.ssid, theme: info.theme, battery: info.battery,
+      charging: info.charging, last_seen: seen, by: 'panel'
+    });
+    selfPost(SELF.conn, online ? 'on' : 'off', {
+      friendly_name: name + ' · 连接', device_class: 'connectivity', last_seen: seen, by: 'panel'
+    });
+    if (info.battery >= 0) {
+      selfPost(SELF.batt, String(info.battery), {
+        friendly_name: name + ' · 电量', device_class: 'battery', unit_of_measurement: '%',
+        charging: info.charging, last_seen: seen, by: 'panel'
+      });
+      selfPost(SELF.charg, info.charging ? 'on' : 'off', {
+        friendly_name: name + ' · 充电', device_class: 'charging', last_seen: seen, by: 'panel'
+      });
+    }
+    selfPost(SELF.dark, isLight() ? 'off' : 'on', {
+      friendly_name: name + ' · 夜间模式', last_seen: seen, by: 'panel'
+    });
+  }
+
+  /* HA 那边拨了开关就跟着换皮肤（selfWritten 让我们不把自己的写入当成外部指令） */
+  function selfFollow(states) {
+    var sw = states && states[SELF.dark];
+    if (!sw || selfWritten[SELF.dark] === undefined) return;
+    if (sw.state === selfWritten[SELF.dark]) return;
+    var want = sw.state === 'on' ? 'dark' : 'light';
+    selfWritten[SELF.dark] = sw.state;
+    if (prefs().theme !== want) {
+      actLog('HA 改夜间模式 → ' + want);
+      setPref('theme', want);
+      reportSelf();
+    }
+  }
+
   /* 按 CIELAB 把实体强调色映射到当前皮肤的 tone 档（Material 3 的做法：
       亮皮肤用 tone 42 档、暗皮肤用 tone 78 档，色相与饱和度方向保持不变，
       超出 sRGB 色域就收缩 chroma）。灰（chroma < 6）只换亮度不动色相。 */
@@ -919,23 +1012,35 @@ var COLOR_PRESETS = [
     return [lin(3.2406 * X - 1.5349 * Y - 0.4902 * Z), lin(-0.9689 * X + 1.8758 * Y + 0.0719 * Z), lin(0.0762 * X - 0.2151 * Y + 1.0796 * Z)];
   }
   function srgbLin(c) { c /= 255; return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); }
-  /* 保色相、定 tone，色域外二分收缩 chroma */
+  /* 保色相、定 tone，色域外二分收缩 chroma。结果按 triple+tone+chroma 记忆化：
+     一次整屏渲染 70 张卡要算 3×70 次，每次 22 轮 Lab 往返，缓存后同一配色只算一次。 */
+  var toneCache = {}, toneCacheN = 0;
   function toneOf(triple, tone, chromaScale) {
+    var cs = chromaScale === undefined ? 1 : chromaScale;
+    var key = triple + '|' + tone + '|' + cs;
+    var hit = toneCache[key];
+    if (hit !== undefined) return hit;
     var p = String(triple).split(',');
     if (p.length < 3) return triple;
     var lab = labOf(num(p[0], 0), num(p[1], 0), num(p[2], 0));
-    var cs = chromaScale === undefined ? 1 : chromaScale;
     var C = Math.sqrt(lab[1] * lab[1] + lab[2] * lab[2]) * cs;
     var h = Math.atan2(lab[2], lab[1]);
     var L = tone;
-    if (C < 6) { var g0 = labOut(L, 0, 0); return g0[0] + ',' + g0[1] + ',' + g0[2]; }
-    var lo = 0, hi = C, best = labOut(L, 0, 0);
-    for (var i = 0; i < 22; i++) {
-      var mid = (lo + hi) / 2, c = labOut(L, mid * Math.cos(h), mid * Math.sin(h));
-      var ok = c[0] >= 0 && c[0] <= 255 && c[1] >= 0 && c[1] <= 255 && c[2] >= 0 && c[2] <= 255;
-      if (ok) { lo = mid; best = c; } else { hi = mid; }
+    var res;
+    if (C < 6) { var g0 = labOut(L, 0, 0); res = g0[0] + ',' + g0[1] + ',' + g0[2]; }
+    else {
+      var lo = 0, hi = C, best = labOut(L, 0, 0);
+      for (var i = 0; i < 22; i++) {
+        var mid = (lo + hi) / 2, c = labOut(L, mid * Math.cos(h), mid * Math.sin(h));
+        var ok = c[0] >= 0 && c[0] <= 255 && c[1] >= 0 && c[1] <= 255 && c[2] >= 0 && c[2] <= 255;
+        if (ok) { lo = mid; best = c; } else { hi = mid; }
+      }
+      res = best[0] + ',' + best[1] + ',' + best[2];
     }
-    return best[0] + ',' + best[1] + ',' + best[2];
+    if (toneCacheN >= 512) { toneCache = {}; toneCacheN = 0; }
+    toneCache[key] = res;
+    toneCacheN++;
+    return res;
   }
   function themeAcc(triple) {
     return toneOf(triple, isLight() ? 42 : 78, 1);
@@ -1946,6 +2051,13 @@ var COLOR_PRESETS = [
     return String(st) + (attrs.unit_of_measurement ? ' ' + attrs.unit_of_measurement : '');
   }
 
+  /** 米家式电源钮：灯/开关/温控用一颗圆钮表达开/关（自动化和窗帘不放，语义不同） */
+  function powerable(tile) {
+    if (tile.type === 'light' || tile.type === 'climate') return true;
+    if (tile.type === 'switch') return !isAuto(tile);
+    return false;
+  }
+
   /** 自动化：这里只做「执行 / 启用 / 禁用」，不做开关，避免把「禁用自动化」当成关灯 */
   function automationSheet(tile, id, st, attrs) {
     var on = st === 'on';
@@ -2225,9 +2337,12 @@ var COLOR_PRESETS = [
     S.tickCount = (S.tickCount || 0) + 1;
     if (S.tickCount % 600 === 0) checkMemGuard(false);
     var d = new Date();
-    if (el.dimTime) el.dimTime.textContent = pad(d.getHours()) + ':' + pad(d.getMinutes());
-    el.time.textContent = pad(d.getHours()) + ':' + pad(d.getMinutes());
-    el.date.textContent = (d.getMonth() + 1) + '月' + d.getDate() + '日 · ' + WD[d.getDay()];
+    var hm = pad(d.getHours()) + ':' + pad(d.getMinutes());
+    /* 同一分钟内不要重复写 textContent：每秒一次 DOM 写入会白白触发排版/合成 */
+    if (el.dimTime && el.dimTime.textContent !== hm) el.dimTime.textContent = hm;
+    if (el.time.textContent !== hm) el.time.textContent = hm;
+    var ds = (d.getMonth() + 1) + '月' + d.getDate() + '日 · ' + WD[d.getDay()];
+    if (el.date.textContent !== ds) el.date.textContent = ds;
     maybeNightlyReload();
   }
 
@@ -2400,11 +2515,30 @@ var COLOR_PRESETS = [
       actLog('first states ' + (S.firstStatesAt - BOOT_T0) + 'ms · 实体 ' + countStates(states));
     }
     S.states = states;
+    selfFollow(states);
     renderWeather();
     renderWho();
     if (S.real && !S.layoutReady) { applyAutoLayout(); return; }
     renderGrid(false);
     refreshSheet();
+  }
+
+  /* 增量状态：真实 HA 每来一条 state_changed 只更新对应的那张卡。
+     以前是全量副本 + 整屏 70 张卡 pass，4 次/秒，在 Chromium 57 平板上持续占 CPU。 */
+  function onState(id, st) {
+    if (!id || !st) return;
+    S.entityEvents = (S.entityEvents || 0) + 1;
+    var prev = S.states[id];
+    var wasNa = prev ? isNa(prev.state) : true;
+    S.states[id] = st;
+    if (!S.real || !S.layoutReady) return;   /* 布局就绪前只存状态，等 onStates 全量渲染 */
+    if (id.indexOf('weather.') === 0) renderWeather();
+    else if (id.indexOf('person.') === 0) renderWho();
+    updateByEntity(id);
+    if (S.sheetEntity === id) refreshSheet();
+    /* 离线过滤开着时，「可用/不可用」翻转会改变这张卡该不该显示 */
+    if (prefs().offline && wasNa !== isNa(st.state)) renderGrid(false);
+    selfFollow(S.states);
   }
 
   /* ---------------- 上墙省电：空闲变暗 / 夜间调暗（防烧屏，也避免半夜刺眼） ---------------- */
@@ -3796,10 +3930,15 @@ function boot() {
       ? new window.HABackend({ url: ha.url, token: ha.token })
       : new window.MockBackend(cfg);
     S.backend.onStates(onStates);
+    /* 真实 HA 走增量；MockBackend 没有 onEntity，仍然每 tick 全量 */
+    if (S.backend.onEntity) S.backend.onEntity(onState);
     S.backend.onStatus(setStatus);
     S.backend.start();
 
     setInterval(heartbeat, 4000);
+    /* 每分钟向 HA 报一次自己的状态；连上后 3 秒先报一次（这时实体才齐） */
+    setInterval(reportSelf, 60000);
+    setTimeout(reportSelf, 3000);
     watchReload();
     applyPrefs();
   bindDim();
@@ -3822,6 +3961,17 @@ function boot() {
     personList: personList, whoState: whoState, avatarUrl: avatarUrl, whoInitial: whoInitial,
     whoHtml: whoHtml, renderWho: renderWho,
     setStates: function (o) { S.states = o || {}; },
+    /* 测试用：模拟一条增量推送 / 读当前状态表（tools 里的 UI 测试会用） */
+    pushState: onState,
+    statesRef: function () { return S.states || {}; },
+    stats: function () {
+      return {
+        renders: S.renderCount || 0,
+        entityEvents: S.entityEvents || 0,
+        tiles: (S.items || []).length,
+        entities: countStates(S.states || {})
+      };
+    },
     normalizeHa: normalizeHa, haHttpBase: haHttpBase, normalizeToken: normalizeToken,
     camLiveUrl: camLiveUrl, camSrc: camSrc, camStamp: camStamp, cfgRef: cfg,
     displayName: displayName, setName: setName, clearNames: clearNames, namesFor: namesFor,

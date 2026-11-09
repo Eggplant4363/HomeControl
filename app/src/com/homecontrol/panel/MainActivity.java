@@ -459,6 +459,26 @@ public class MainActivity extends Activity {
             return "{\"ip\":\"" + ip + "\",\"ssid\":\"" + ssid + "\"}";
         }
 
+        /** 电池状态：注册成 HA 实体时上报电量。sticky intent，不用注册 receiver */
+        @JavascriptInterface
+        public String battery() {
+            int level = -1, scale = 100, status = 0;
+            try {
+                android.content.Intent bi = getApplicationContext().registerReceiver(
+                        null, new android.content.IntentFilter(android.content.Intent.ACTION_BATTERY_CHANGED));
+                if (bi != null) {
+                    level = bi.getIntExtra("level", -1);
+                    scale = bi.getIntExtra("scale", 100);
+                    status = bi.getIntExtra("status", 0);
+                }
+            } catch (Throwable t) { }
+            int pct = (level < 0 || scale <= 0) ? -1 : Math.round(level * 100f / scale);
+            boolean charging = status == android.os.BatteryManager.BATTERY_STATUS_CHARGING
+                    || status == android.os.BatteryManager.BATTERY_STATUS_FULL;
+            return "{\"level\":" + pct + ",\"charging\":" + (charging ? "true" : "false") + "}";
+        }
+
+
         @JavascriptInterface
         public String devUrl() {
             SharedPreferences sp = getSharedPreferences(PREFS, MODE_PRIVATE);
