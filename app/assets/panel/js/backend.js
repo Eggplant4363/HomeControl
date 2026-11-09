@@ -22,6 +22,7 @@
     this.statusCb = null;
     this.tries = 0;
     this.pingTimer = null;
+    this.restTimer = null;   /* WS 不通时定时重拉 /api/states（HA 那边改的东西才看得见） */
     this.stopped = false;
     this.statesLoaded = false;
     this.restTried = false;
@@ -37,6 +38,8 @@
   HABackend.prototype.stop = function () {
     this.stopped = true;
     clearInterval(this.pingTimer);
+    clearInterval(this.restTimer);
+    this.restTimer = null;
     if (this.ws) this.ws.close();
   };
 
@@ -72,7 +75,7 @@
     }
     this.ws = ws;
 
-    ws.onopen = function () { clearTimeout(self.connectTimer); self.status(false, '认证中…'); };
+    ws.onopen = function () { clearTimeout(self.connectTimer); clearInterval(self.restTimer); self.restTimer = null; self.status(false, '认证中…'); };
     ws.onmessage = function (ev) { self.handle(ev.data); };
     ws.onerror = function () { };
     clearTimeout(this.connectTimer);
@@ -191,7 +194,8 @@
       entity_id: st.entity_id,
       state: st.state,
       attributes: st.attributes || {},
-      last_changed: st.last_changed
+      last_changed: st.last_changed,
+      last_updated: st.last_updated || st.last_changed
     });
   };
 
@@ -209,7 +213,7 @@
     var copy = {}, id, s;
     for (id in this.states) {
       s = this.states[id];
-      copy[id] = { entity_id: id, state: s.state, attributes: s.attributes || {}, last_changed: s.last_changed };
+      copy[id] = { entity_id: id, state: s.state, attributes: s.attributes || {}, last_changed: s.last_changed, last_updated: s.last_updated || s.last_changed };
     }
     this.stateCb(copy);
   };
@@ -312,6 +316,12 @@
         self.restOk = true;
         self.status(false, 'REST 兜底 · 无实时推送');
         self.emitStates();
+        /* 没有推送就自己定时重拉：HA 那边拨了开关，面板 15 秒内能看见 */
+        if (!self.restTimer) {
+          self.restTimer = setInterval(function () {
+            if (!self.stopped && (!self.ws || self.ws.readyState !== 1)) self.restLoadStates();
+          }, 15000);
+        }
       } else if (code === 401 || code === 403) {
         self.status(false, '令牌无效 · 长按右上角修改');
       } else if (code === 0) {

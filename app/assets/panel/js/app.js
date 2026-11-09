@@ -925,14 +925,22 @@ var COLOR_PRESETS = [
   /* HA 的 REST 允许 POST /api/states/<entity_id>（实测 201：不存在就新建），所以面板
       不用 MQTT 也能上报自己：主状态 + 连接 + 电量 + 充电 + 夜间模式开关。
       夜间开关是双向的：面板写自己的皮肤，HA 那边把开关拨了，面板跟着换皮肤。 */
+  /* 每台屏各写各的实体：实体 id 带设备型号后缀，否则平板和测试机互相覆盖对方的电量。
+     型号里的空格/点换成下划线，全小写；拿不到型号就用 'panel' 兜底。 */
+  function selfSlug() {
+    var m = (selfInfo().model || '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+    return m || 'panel';
+  }
   var SELF = {
-    main: 'sensor.homecontrol_panel',
-    conn: 'binary_sensor.homecontrol_panel_connected',
-    batt: 'sensor.homecontrol_panel_battery',
-    charg: 'binary_sensor.homecontrol_panel_charging',
-    dark: 'switch.homecontrol_panel_dark_mode'
+    get main() { return 'sensor.homecontrol_panel_' + selfSlug(); },
+    get conn() { return 'binary_sensor.homecontrol_panel_' + selfSlug() + '_connected'; },
+    get batt() { return 'sensor.homecontrol_panel_' + selfSlug() + '_battery'; },
+    get charg() { return 'binary_sensor.homecontrol_panel_' + selfSlug() + '_charging'; },
+    get dark() { return 'switch.homecontrol_panel_' + selfSlug() + '_dark_mode'; }
   };
-  var selfWritten = {};      /* 我们最后写出去的值；只有 HA 那边改了它才动皮肤 */
+  var selfWritten = {};      /* 我们最后写出去的值 */
+  var selfWriteAt = {};      /* 写出去的时刻：HA 的值比这晚 2 秒以上才算「别人改的」，
+                                不然会把我们自己的回声当成指令（曾经两个设备互相打摆子） */
 
   function selfInfo() {
     var b = window.AndroidBridge;
@@ -948,9 +956,25 @@ var COLOR_PRESETS = [
   function selfPost(ent, state, attrs) {
     if (!S.real || !S.backend || !S.backend.rest) return;
     selfWritten[ent] = state;
+    selfWriteAt[ent] = Date.now();
     S.backend.rest('POST', '/api/states/' + ent, { state: state, attributes: attrs || {} }, function (ok, code) {
       if (!ok) actLog('self ' + ent + ' 写入失败 ' + (code || '网络'));
     });
+  }
+
+  /* HA 那边真改了开关才换皮肤：看 last_updated 是不是比我们上次写出去晚 2 秒以上。
+     只看值不看时间的话，别的设备（或我们自己）刚写出去的值会被当成外部指令，
+     两边立刻互相来回拨——模拟器上实测过这个打摆子。 */
+  function followHa(sw) {
+    if (!sw || !sw.state || !sw.last_updated) return;
+    var t = new Date(sw.last_updated).getTime();
+    if (t <= (selfWriteAt[SELF.dark] || 0) + 2000) return;
+    var want = sw.state === 'on' ? 'dark' : 'light';
+    selfWritten[SELF.dark] = sw.state;
+    if (prefs().theme !== want) {
+      actLog('HA 改夜间模式 → ' + want);
+      setPref('theme', want);
+    }
   }
 
   function reportSelf() {
@@ -976,23 +1000,16 @@ var COLOR_PRESETS = [
         friendly_name: name + ' · 充电', device_class: 'charging', last_seen: seen, by: 'panel'
       });
     }
+    /* 写之前先看 HA 现在的值：外部刚改的就先跟上再写，写出去的就是跟上后的值 */
+    followHa(S.states && S.states[SELF.dark]);
     selfPost(SELF.dark, isLight() ? 'off' : 'on', {
       friendly_name: name + ' · 夜间模式', last_seen: seen, by: 'panel'
     });
   }
 
-  /* HA 那边拨了开关就跟着换皮肤（selfWritten 让我们不把自己的写入当成外部指令） */
+  /* 状态刷新时也跟一次（不等 60 秒的定时上报） */
   function selfFollow(states) {
-    var sw = states && states[SELF.dark];
-    if (!sw || selfWritten[SELF.dark] === undefined) return;
-    if (sw.state === selfWritten[SELF.dark]) return;
-    var want = sw.state === 'on' ? 'dark' : 'light';
-    selfWritten[SELF.dark] = sw.state;
-    if (prefs().theme !== want) {
-      actLog('HA 改夜间模式 → ' + want);
-      setPref('theme', want);
-      reportSelf();
-    }
+    followHa(states && states[SELF.dark]);
   }
 
   /* 按 CIELAB 把实体强调色映射到当前皮肤的 tone 档（Material 3 的做法：
