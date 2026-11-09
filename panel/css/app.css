@@ -206,8 +206,7 @@ body::before {
 }
 .tile:active { transform: scale(.985); }
 .tile.on {
-  background: rgb(var(--acc-c));
-  border-color: rgba(var(--acc-line), .75);
+  /* 开着的卡片不铺背景（用户要求）：只有图标变强调色 */
 }
 .tile.on::after { display: none; }
 
@@ -219,7 +218,8 @@ body::before {
   transition: background .2s, color .2s;
 }
 .t-icon svg { width: 21px; height: 21px; }
-.tile.on .t-icon { background: rgba(var(--accent), .16); color: rgb(var(--accent)); }
+/* 开着的卡片：只有图标变强调色（tone 档实体色，对卡片底 ≥4.5:1） */
+.tile.on .t-icon { color: rgb(var(--accent)); }
 
 .tile-room {
   margin-left: auto; font-size: 11px; color: var(--text-4);
