@@ -132,6 +132,11 @@ public class MainActivity extends Activity {
         if (Build.VERSION.SDK_INT >= 21) {
             s.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
         }
+        // Android 9+ 的 WebView 在系统夜间模式下会「强制变暗」（force dark），把我们的明亮皮肤
+        // 直接画成深色（模拟器 Android 11 实测）。皮肤由面板自己管，所以关掉它。
+        if (Build.VERSION.SDK_INT >= 28) {
+            try { s.setForceDark(WebSettings.FORCE_DARK_OFF); } catch (Throwable t) { }
+        }
         if (Build.VERSION.SDK_INT >= 19) {
             try { WebView.setWebContentsDebuggingEnabled(true); } catch (Throwable t) { }
         }
