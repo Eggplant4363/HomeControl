@@ -1,37 +1,61 @@
 /* ---------------- 皮肤（两套主题） ---------------- */
 /* 深色为默认；html.hc-light 换成明亮皮肤。所有颜色走变量，改皮肤只改这两个块。
    （皮肤类挂在 <html> 上，body 的 className 会被弹层/负一屏来回改写）
-   --accent 由 JS 按实体类型逐卡片设成三元组（r,g,b），不要在这里定义它。 */
+   --accent 这里只给皮肤默认值；JS 会按实体类型逐卡片把它设成三元组（r,g,b）覆盖掉。 */
 :root {
-  --bg: #06090f; --bg-rgb: 6,9,15; --bg-deep: #03060b; --bg-deep-rgb: 3,6,11;
-  --bg-2: #0b1017; --bg-3: #111824; --bg-4: #16233c;
-  --card-rgb: 14,20,32; --card-2-rgb: 22,29,42; --line-rgb: 120,150,190;
+  /* 深色皮肤：中性色阶 = Tailwind zinc 阶（950/900/800/700…），
+     文本层级按 Material 的 white/.92 / .72 / .55 / .42，强调色走 tone 档（暗皮肤 tone 78）。 */
+  --bg: #121212; --bg-rgb: 18,18,18; --bg-deep: #0e0e10; --bg-deep-rgb: 14,14,16;
+  --card-a: 1; --glyph-on: rgb(var(--bg-rgb));
+  --ctl-on: 63,208,138; --ctl-bar: 255,183,90;
+  --bg-2: #202024; --bg-3: #27272a; --bg-4: #303036;
+  --card-rgb: 24,24,27; --card-2-rgb: 31,31,34; --line-rgb: 63,63,70;
   --surf: 255,255,255;
-  --text-hi: #ffffff; --text-1: #f2f6fc; --text-2: #dce6f2; --text-3: #c2d2e8;
-  --text-4: #7c8ba3; --text-5: #61718a;
-  --accent-hex: #5d8cff; --accent-rgb: 93,140,255; --accent-soft: #8fc3ff; --accent-soft-rgb: 143,195,255;
-  --wash-a: .30; --wash-border-a: .40; --wash-glow-a: .34; --wash-icon-a: .22;
-  --badge-a: .78; --badge-border-a: .45;
-  --ok: #3ddc84; --ok-rgb: 61,220,132; --ok-soft: #7ff0b0; --ok-tint-rgb: 16,46,32;
-  --warn: #f0a04b; --warn-rgb: 240,160,75; --warn-soft: #cbb08a;
-  --err: #ff6b6b; --err-rgb: 255,107,107; --err-soft: #ff9b9b;
-  --lyric-rgb: 226,238,248;
+  --text-hi: #ffffff; --text-1: #ececf1; --text-2: #b4b6bd; --text-3: #8b8d95;
+  --text-4: #6b6d76; --text-5: #52545d;
+  --accent-hex: #76caff; --accent-rgb: 118,202,255;
+  --accent-soft: #9ce0ff; --accent-soft-rgb: 156,224,255;
+  --acc-ink: #002451;
+  --acc-c: 27,65,107; --acc-line: 114,144,193;
+  --wash-a: .14; --wash-border-a: .55; --wash-glow-a: .08; --wash-icon-a: .16;
+  --badge-a: .18; --badge-border-a: .38;
+  --ok: #e6ba94; --ok-rgb: 230,186,148; --ok-soft: #f7d2b3; --ok-tint-rgb: 70,55,41;
+  --warn: #ff9860; --warn-rgb: 255,152,96; --warn-soft: #ffb585;
+  --err: #ff7d88; --err-rgb: 255,125,136; --err-soft: #ffa4a7;
+  --lyric-rgb: 236,236,241;
+  --accent: 118,202,255; --track: #2b2b30; --knob: #ffffff; --bar-fill: var(--ctl-bar);
+  --knob-border: rgba(255,255,255,.28);
+  --shadow: 0 2px 2px 0 rgba(0,0,0,.28), 0 1px 2px 0 rgba(0,0,0,.36);
 }
+
 html.hc-light {
-  --bg: #eef3f9; --bg-rgb: 238,243,249; --bg-deep: #f3f7fc; --bg-deep-rgb: 243,247,252;
-  --bg-2: #e4eaf3; --bg-3: #dbe4f0; --bg-4: #c9d6e8;
-  --card-rgb: 240,244,250; --card-2-rgb: 233,239,247; --line-rgb: 70,92,120;
-  --surf: 24,38,56;
-  --text-hi: #101827; --text-1: #16202c; --text-2: #2b3a4c; --text-3: #47586b;
-  --text-4: #55667a; --text-5: #6d7f93;
-  --accent-hex: #1c62c9; --accent-rgb: 28,98,201; --accent-soft: #24659f; --accent-soft-rgb: 36,101,159;
-  --wash-a: .17; --wash-border-a: .34; --wash-glow-a: .18; --wash-icon-a: .14;
-  --badge-a: .55; --badge-border-a: .38;
-  --ok: #178f52; --ok-rgb: 23,143,82; --ok-soft: #178f52; --ok-tint-rgb: 205,234,218;
-  --warn: #b0722a; --warn-rgb: 176,114,42; --warn-soft: #a07340;
-  --err: #cf4747; --err-rgb: 207,71,71; --err-soft: #c14a4a;
-  --lyric-rgb: 32,46,62;
+  /* 明亮皮肤：照米家（Mi Home）的明亮模式——页面底是淡绿调，卡片是半透明白，
+     开着的控件是实心强调色圆钮（白字），亮度条走暖黄。
+     色阶取自米家截图：底 #eef3ea / 卡白 .82 / 文本墨灰 #2b3129~#7d8578 /
+     强调绿 #2e9e6b（米家的开=绿），暖黄 #e08a1e 走亮度条。 */
+  --bg: #eef3ea; --bg-rgb: 238,243,234; --bg-deep: #e7ede5; --bg-deep-rgb: 231,237,229;
+  --bg-2: #f3f7f0; --bg-3: #dde5d9; --bg-4: #c9d6c2;
+  --card-rgb: 255,255,255; --card-2-rgb: 248,251,246; --card-a: .82; --line-rgb: 206,218,204;
+  --glyph-on: #ffffff;
+  --ctl-on: 34,142,95; --ctl-bar: 246,166,66;
+  --surf: 24,24,27;
+  --text-hi: #212820; --text-1: #2b3129; --text-2: #4c5347; --text-3: #6b7266;
+  --text-4: #7d8578; --text-5: #9aa294;
+  --accent-hex: #2e9e6b; --accent-rgb: 46,158,107;
+  --accent-soft: #27895c; --accent-soft-rgb: 39,137,92;
+  --acc-ink: #ffffff;
+  --acc-c: 214,238,226; --acc-line: 150,190,168;
+  --wash-a: .10; --wash-border-a: .50; --wash-glow-a: .05; --wash-icon-a: .12;
+  --badge-a: .16; --badge-border-a: .35;
+  --ok: #276b47; --ok-rgb: 39,107,71; --ok-soft: #276b47; --ok-tint-rgb: 224,242,232;
+  --warn: #b5441a; --warn-rgb: 181,68,26; --warn-soft: #b5441a;
+  --err: #cc2935; --err-rgb: 204,41,53; --err-soft: #cc2935;
+  --lyric-rgb: 24,24,27;
+  --accent: 46,158,107; --track: #dce5db; --knob: #ffffff; --bar-fill: 246,166,66;
+  --knob-border: rgba(24,24,27,.16);
+  --shadow: 0 2px 2px 0 rgba(0,0,0,.05), 0 1px 2px 0 rgba(0,0,0,.10);
 }
+
 
 /* ---------------- 整页设置视图 ----------------
    老 WebView 里 position:fixed + transform 的弹层一旦滚动就整屏重绘（实测 ~19 帧），
@@ -183,37 +207,46 @@ body::before {
 .tile {
   position: relative; display: flex; flex-direction: column;
   padding: 15px 16px 13px; border-radius: 20px; overflow: hidden;
-  background: linear-gradient(158deg, rgba(var(--card-2-rgb),.96), rgba(var(--card-rgb),.96));
-  border: 1px solid rgba(var(--surf),.055);
+  background: rgba(var(--card-rgb), var(--card-a));
+  border: 1px solid rgba(var(--line-rgb),.5);
+  box-shadow: var(--shadow);
   transition: background .22s, border-color .22s, transform .08s;
 }
 .tile:active { transform: scale(.985); }
 .tile.on {
-  background: linear-gradient(158deg, rgba(var(--accent), var(--wash-a)), rgba(var(--card-rgb),.97) 68%);
-  border-color: rgba(var(--accent), var(--wash-border-a));
+  /* 开着的卡片不铺背景（用户要求）：只有图标变强调色 */
 }
-.tile.on::after {
-  content: ''; position: absolute; right: -52px; top: -52px; width: 160px; height: 160px;
-  border-radius: 50%; pointer-events: none;
-  background: radial-gradient(circle, rgba(var(--accent), var(--wash-glow-a)), rgba(var(--accent), 0) 68%);
-}
+.tile.on::after { display: none; }
 
 .tile-head { display: flex; align-items: flex-start; flex: 0 0 auto; }
 .t-icon {
-  width: 38px; height: 38px; border-radius: 12px;
+  width: 38px; height: 38px; border-radius: 50%;
   display: flex; align-items: center; justify-content: center;
   background: rgba(var(--surf),.055); color: var(--text-4);
   transition: background .2s, color .2s;
 }
 .t-icon svg { width: 21px; height: 21px; }
-.tile.on .t-icon { background: rgba(var(--accent), var(--wash-icon-a)); color: rgb(var(--accent)); }
+/* 开着的卡片：只有图标变成实心强调色圆钮（照米家），卡片底保持平面 */
+.tile.on .t-icon { background: rgb(var(--ctl-on)); color: var(--glyph-on); }
 
 .tile-room {
   margin-left: auto; font-size: 11px; color: var(--text-4);
   padding: 3px 8px; border-radius: 8px; background: rgba(var(--surf),.045);
 }
+.t-power {
+  /* 米家那颗电源圆钮：开着=绿实心白字，关着=灰描边 */
+  margin-left: auto; width: 34px; height: 34px; padding: 0;
+  border: 1px solid rgba(var(--surf),.14); border-radius: 50%;
+  background: rgba(var(--surf),.05); color: var(--text-4);
+  display: flex; align-items: center; justify-content: center;
+  transition: background .2s, color .2s, border-color .2s;
+}
+.t-power svg { width: 17px; height: 17px; }
+.t-power:active { transform: scale(.92); }
+.tile.on .t-power { background: rgb(var(--ctl-on)); border-color: rgb(var(--ctl-on)); color: var(--glyph-on); }
+.tile.na .t-power { opacity: .45; }
 .t-more {
-  margin-left: auto; width: 28px; height: 28px; padding: 0; border: 0;
+  margin-left: 8px; width: 28px; height: 28px; padding: 0; border: 0;
   border-radius: 9px; background: rgba(var(--surf),.045); color: var(--text-4);
   display: flex; align-items: center; justify-content: center;
 }
@@ -221,7 +254,7 @@ body::before {
 
 .tile-mid { flex: 1; display: flex; flex-direction: column; justify-content: center; min-height: 0; }
 .t-val { font-size: 42px; font-weight: 200; line-height: 1.02; letter-spacing: -1px; color: var(--text-2); }
-.t-val.lit { color: rgb(var(--accent)); }
+.t-val.lit { color: var(--text-1); }
 .t-val.muted { font-size: 24px; letter-spacing: 0; color: var(--text-4); }
 .t-val .u { font-size: 15px; font-weight: 400; letter-spacing: 0; color: var(--text-4); margin-left: 3px; }
 .t-val.small { font-size: 30px; }
@@ -244,8 +277,8 @@ body::before {
    touch-action:none 让在条上滑动不再触发页面滚动（Chromium 57 支持）。 */
 .t-bar {
   position: relative; flex: none; height: 22px; margin-top: 12px; border-radius: 11px;
-  background: rgba(var(--surf),.085);
-  box-shadow: inset 0 1px 2px rgba(0,0,0,.28);
+  background: var(--track);
+  box-shadow: inset 0 1px 2px rgba(0,0,0,.18);
   touch-action: none; -webkit-user-select: none; user-select: none;
   --pct: 0%;
   transition: opacity .2s;
@@ -260,13 +293,13 @@ body::before {
 .t-bar i {
   position: absolute; left: 0; top: 0; bottom: 0; width: var(--pct);
   border-radius: inherit; border-top-right-radius: 0; border-bottom-right-radius: 0;
-  background: rgb(var(--accent));
+  background: rgb(var(--ctl-bar));
   transition: width .22s;
 }
 .t-bar b {
   position: absolute; top: 50%; left: var(--pct); width: 22px; height: 22px;
   margin: -11px 0 0 -11px; border-radius: 50%;
-  background: var(--text-2); box-shadow: 0 2px 7px rgba(0,0,0,.38);
+  background: var(--knob); box-shadow: 0 2px 7px rgba(0,0,0,.38);
   transition: left .22s;
 }
 /* 拖动中不要缓动，条要跟手 */
@@ -377,7 +410,7 @@ body::before {
 .slider::-webkit-slider-thumb {
   -webkit-appearance: none; appearance: none;
   width: 30px; height: 30px; margin-top: -11px; border-radius: 50%;
-  background: var(--text-hi); box-shadow: 0 3px 10px rgba(0,0,0,.45);
+  background: var(--knob); box-shadow: 0 3px 10px rgba(0,0,0,.45);
 }
 
 .opts { display: flex; flex: 1; }
@@ -724,7 +757,7 @@ body::before {
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .m-lr-soon { color: rgba(var(--lyric-rgb),.5); }
-.m-lr.on { color: var(--accent-soft); font-weight: 600; font-size: 16px; }
+.m-lr.on { color: rgb(var(--ctl-on)); font-weight: 600; font-size: 16px; }
 .m-lrc-tip { font-size: 12px; color: var(--text-5); }
 .m-q-n { font-size: 12px; color: var(--text-5); }
 .m-progress { width: 100%; max-width: 320px; margin-top: 20px; }
@@ -734,11 +767,11 @@ body::before {
 }
 .m-bar .m-fill {
   position: absolute; left: 0; top: 8px; bottom: 8px; width: 0; border-radius: 5px 0 0 5px;
-  background: linear-gradient(90deg, var(--accent-hex), var(--accent-soft));
+  background: rgb(var(--bar-fill));
 }
 .m-bar .m-knob {
   position: absolute; top: 50%; left: 0; width: 22px; height: 22px; margin: -11px 0 0 -11px;
-  border-radius: 50%; background: var(--text-2); box-shadow: 0 2px 7px rgba(0,0,0,.42);
+  border-radius: 50%; background: var(--knob); box-shadow: 0 2px 7px rgba(0,0,0,.35);
 }
 .m-times { display: flex; justify-content: space-between; margin-top: 6px; font-size: 12px; color: var(--text-4); }
 .m-ctl { display: flex; align-items: center; justify-content: center; margin-top: 14px; }
@@ -749,13 +782,13 @@ body::before {
 }
 .m-btn svg { width: 23px; height: 23px; }
 .m-btn:active { transform: scale(.95); background: rgba(var(--surf),.1); }
-.m-btn.on { background: rgba(var(--accent-rgb),.26); border-color: rgba(var(--accent-rgb),.55); color: var(--text-2); }
+.m-btn.on { background: rgba(var(--ctl-on),.20); border-color: rgba(var(--ctl-on),.5); color: rgb(var(--ctl-on)); }
 .m-mini { width: 42px; height: 42px; margin: 0 5px; opacity: .55; }
 .m-mini svg { width: 19px; height: 19px; }
 .m-mini.on { opacity: 1; }
-.m-play { width: 66px; height: 66px; background: rgba(var(--accent-rgb),.22); border-color: rgba(var(--accent-rgb),.5); color: var(--text-2); }
+.m-play { width: 66px; height: 66px; background: rgba(var(--surf),.07); border-color: rgba(var(--surf),.16); color: var(--text-2); }
 .m-play svg { width: 29px; height: 29px; }
-.m-play.on { background: rgba(var(--accent-rgb),.34); border-color: rgba(var(--accent-soft-rgb),.68); }
+.m-play.on { background: rgb(var(--ctl-on)); border-color: rgb(var(--ctl-on)); color: var(--glyph-on); }
 .m-vol { display: flex; align-items: center; width: 100%; max-width: 320px; margin-top: 14px; }
 .m-vol-ico { color: var(--text-4); margin-right: 11px; display: flex; }
 .m-vol-ico svg { width: 20px; height: 20px; }
@@ -763,10 +796,10 @@ body::before {
   position: relative; flex: 1; height: 22px; border-radius: 11px;
   background: rgba(var(--surf),.075); touch-action: none;
 }
-.m-vbar .m-fill { position: absolute; left: 0; top: 7px; bottom: 7px; width: 0; border-radius: 4px 0 0 4px; background: rgba(var(--line-rgb),.6); }
+.m-vbar .m-fill { position: absolute; left: 0; top: 7px; bottom: 7px; width: 0; border-radius: 4px 0 0 4px; background: rgb(var(--bar-fill)); }
 .m-vbar .m-knob {
   position: absolute; top: 50%; left: 0; width: 18px; height: 18px; margin: -9px 0 0 -9px;
-  border-radius: 50%; background: var(--text-2); box-shadow: 0 2px 6px rgba(0,0,0,.4);
+  border-radius: 50%; background: var(--knob); box-shadow: 0 2px 6px rgba(0,0,0,.32);
 }
 .m-vol-pct { width: 42px; text-align: right; font-size: 12px; color: var(--text-4); }
 
@@ -803,14 +836,14 @@ body::before {
   border: 0; border-bottom: 1px solid rgba(var(--surf),.05);
   background: transparent; text-align: left;
 }
-.m-song.on { background: rgba(var(--accent-rgb),.13); border-radius: 13px; border-bottom-color: transparent; }
+.m-song.on { background: rgba(var(--ctl-on),.12); border-radius: 13px; border-bottom-color: transparent; }
 .m-song-ico {
   width: 34px; height: 34px; border-radius: 10px; flex: 0 0 auto;
   display: flex; align-items: center; justify-content: center;
   background: rgba(var(--surf),.055); color: var(--text-4);
 }
 .m-song-ico svg { width: 16px; height: 16px; }
-.m-song.on .m-song-ico { background: rgba(var(--accent-rgb),.24); color: var(--accent-soft); }
+.m-song.on .m-song-ico { background: rgba(var(--ctl-on),.22); color: rgb(var(--ctl-on)); }
 .m-song-main { margin-left: 13px; min-width: 0; flex: 1; display: flex; flex-direction: column; }
 .m-song-t { font-size: 15px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .m-song.on .m-song-t { color: var(--text-hi); }
