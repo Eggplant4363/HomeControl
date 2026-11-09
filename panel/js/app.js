@@ -740,8 +740,11 @@ var COLOR_PRESETS = [
     if (node.className !== tcls) node.className = tcls;
     var tacc = themeAcc(accentFor(tile));
     if (node.getAttribute('data-accent') !== tacc) {
+      var raw3 = accentFor(tile);
       node.setAttribute('data-accent', tacc);
       node.style.setProperty('--accent', tacc);
+      node.style.setProperty('--acc-c', accContainer(raw3));
+      node.style.setProperty('--acc-line', accLine(raw3));
     }
 
     /* 图标与数值只在真的变了才写 DOM：每 6 秒一次的状态推送不该反复重建节点 */
@@ -899,10 +902,53 @@ var COLOR_PRESETS = [
     renderGrid(true);
   }
 
-  /** 明亮皮肤下把卡片强调色改成「墨色」版（浅色实体色在白底上又淡又糊）。
-      入参是 'r,g,b' 三元组：保住色相，把亮度压到 0.36、饱和度抬到至少 0.55，
-      于是暖光从浑浊的棕黄变成深琥珀、蓝从淡蓝变成深靛。灰（饱和 < 0.18）不动。 */
+  /* 按 CIELAB 把实体强调色映射到当前皮肤的 tone 档（Material 3 的做法：
+      亮皮肤用 tone 42 档、暗皮肤用 tone 78 档，色相与饱和度方向保持不变，
+      超出 sRGB 色域就收缩 chroma）。灰（chroma < 6）只换亮度不动色相。 */
+  function labOf(r, g, b) {
+    var R = srgbLin(r), G = srgbLin(g), B = srgbLin(b);
+    var X = 0.4122 * R + 0.7152 * G + 0.0722 * B, Y = 0.2126 * R + 0.7152 * G + 0.0722 * B, Z = 0.0193 * R + 0.2358 * G + 1.0888 * B;
+    var f = function (t) { return t > 0.008856 ? Math.pow(t, 1 / 3) : 7.787 * t + 16 / 116; };
+    return [116 * f(Y) - 16, 500 * (f(X / 0.95047) - f(Y)), 200 * (f(Y) - f(Z / 1.08883))];
+  }
+  function labOut(L, a, bb) {
+    var fy = (L + 16) / 116, fx = fy + a / 500, fz = fy - bb / 200;
+    var g = function (t) { return t > 0.206893 ? t * t * t : (116 * t - 16) / 903.296; };
+    var X = g(fx) * 0.95047, Y = g(fy), Z = g(fz) * 1.08883;
+    var lin = function (c) { var v = c <= 0.0031308 ? c * 12.92 : 1.055 * Math.pow(c, 1 / 2.4) - 0.055; return Math.round(Math.max(0, Math.min(255, v * 255))); };
+    return [lin(3.2406 * X - 1.5349 * Y - 0.4902 * Z), lin(-0.9689 * X + 1.8758 * Y + 0.0719 * Z), lin(0.0762 * X - 0.2151 * Y + 1.0796 * Z)];
+  }
+  function srgbLin(c) { c /= 255; return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); }
+  /* 保色相、定 tone，色域外二分收缩 chroma */
+  function toneOf(triple, tone, chromaScale) {
+    var p = String(triple).split(',');
+    if (p.length < 3) return triple;
+    var lab = labOf(num(p[0], 0), num(p[1], 0), num(p[2], 0));
+    var cs = chromaScale === undefined ? 1 : chromaScale;
+    var C = Math.sqrt(lab[1] * lab[1] + lab[2] * lab[2]) * cs;
+    var h = Math.atan2(lab[2], lab[1]);
+    var L = tone;
+    if (C < 6) { var g0 = labOut(L, 0, 0); return g0[0] + ',' + g0[1] + ',' + g0[2]; }
+    var lo = 0, hi = C, best = labOut(L, 0, 0);
+    for (var i = 0; i < 22; i++) {
+      var mid = (lo + hi) / 2, c = labOut(L, mid * Math.cos(h), mid * Math.sin(h));
+      var ok = c[0] >= 0 && c[0] <= 255 && c[1] >= 0 && c[1] <= 255 && c[2] >= 0 && c[2] <= 255;
+      if (ok) { lo = mid; best = c; } else { hi = mid; }
+    }
+    return best[0] + ',' + best[1] + ',' + best[2];
+  }
   function themeAcc(triple) {
+    return toneOf(triple, isLight() ? 42 : 78, 1);
+  }
+  /* 选中/亮态的容器色与描边色（亮皮肤 tone 92 / 暗皮肤 tone 26，chroma 压到一半） */
+  function accContainer(triple) {
+    return toneOf(triple, isLight() ? 92 : 26, 0.5);
+  }
+  function accLine(triple) {
+    return toneOf(triple, isLight() ? 62 : 58, 0.5);
+  }
+  /* 旧实现（明亮皮肤把亮度压到 0.36）保留成死代码会被 lint 抱怨，这里直接删掉后续分支 */
+  function legacyThemeAcc(triple) {
     if (!isLight()) return triple;
     var p = String(triple).split(',');
     if (p.length < 3) return triple;
@@ -2109,7 +2155,10 @@ var COLOR_PRESETS = [
       '<button class="sheet-close" data-act="close">' + svg('close') + '</button></div>' +
       '<div class="sheet-body">' + body + '</div>';
 
-    el.sheet.style.setProperty('--accent', themeAcc(accentFor(tile)));
+    var rawA = accentFor(tile);
+    el.sheet.style.setProperty('--accent', themeAcc(rawA));
+    el.sheet.style.setProperty('--acc-c', accContainer(rawA));
+    el.sheet.style.setProperty('--acc-line', accLine(rawA));
     bindSheetInputs();
   }
 

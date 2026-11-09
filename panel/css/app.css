@@ -3,40 +3,48 @@
    （皮肤类挂在 <html> 上，body 的 className 会被弹层/负一屏来回改写）
    --accent 这里只给皮肤默认值；JS 会按实体类型逐卡片把它设成三元组（r,g,b）覆盖掉。 */
 :root {
-  /* 深色皮肤（HA dark 取值） */
-  --bg: #181818; --bg-rgb: 24,24,24; --bg-deep: #111111; --bg-deep-rgb: 17,17,17;
-  --bg-2: #212121; --bg-3: #2b2b2b; --bg-4: #333333;
-  --card-rgb: 40,40,40; --card-2-rgb: 44,44,44; --line-rgb: 68,68,68;
+  /* 深色皮肤：中性色阶 = Tailwind zinc 阶（950/900/800/700…），
+     文本层级按 Material 的 white/.92 / .72 / .55 / .42，强调色走 tone 档（暗皮肤 tone 78）。 */
+  --bg: #121212; --bg-rgb: 18,18,18; --bg-deep: #0e0e10; --bg-deep-rgb: 14,14,16;
+  --bg-2: #202024; --bg-3: #27272a; --bg-4: #303036;
+  --card-rgb: 24,24,27; --card-2-rgb: 31,31,34; --line-rgb: 63,63,70;
   --surf: 255,255,255;
-  --text-hi: #ffffff; --text-1: #e0e0e0; --text-2: #c9c9c9; --text-3: #a0a0a0;
-  --text-4: #808080; --text-5: #6f6f6f;
-  --accent-hex: #0d7ec0; --accent-rgb: 13,126,192; --accent-soft: #5fbde6; --accent-soft-rgb: 95,189,230;
+  --text-hi: #ffffff; --text-1: #ececf1; --text-2: #b4b6bd; --text-3: #8b8d95;
+  --text-4: #6b6d76; --text-5: #52545d;
+  --accent-hex: #76caff; --accent-rgb: 118,202,255;
+  --accent-soft: #9ce0ff; --accent-soft-rgb: 156,224,255;
+  --acc-ink: #002451;
+  --acc-c: 27,65,107; --acc-line: 114,144,193;
   --wash-a: .14; --wash-border-a: .55; --wash-glow-a: .08; --wash-icon-a: .16;
-  --badge-a: .22; --badge-border-a: .40;
-  --ok: #4caf50; --ok-rgb: 76,175,80; --ok-soft: #81c784; --ok-tint-rgb: 30,58,32;
-  --warn: #ffa726; --warn-rgb: 255,167,38; --warn-soft: #ffcc80;
-  --err: #ef5350; --err-rgb: 239,83,80; --err-soft: #ff8a80;
-  --lyric-rgb: 224,224,224;
-  --accent: 13,126,192; --track: #3a3a3a; --knob: #ffffff;
-  --shadow: 0 2px 2px 0 rgba(0,0,0,.2), 0 1px 2px 0 rgba(0,0,0,.3);
+  --badge-a: .18; --badge-border-a: .38;
+  --ok: #e6ba94; --ok-rgb: 230,186,148; --ok-soft: #f7d2b3; --ok-tint-rgb: 70,55,41;
+  --warn: #ff9860; --warn-rgb: 255,152,96; --warn-soft: #ffb585;
+  --err: #ff7d88; --err-rgb: 255,125,136; --err-soft: #ffa4a7;
+  --lyric-rgb: 236,236,241;
+  --accent: 118,202,255; --track: #2b2b30; --knob: rgb(var(--accent));
+  --shadow: 0 2px 2px 0 rgba(0,0,0,.28), 0 1px 2px 0 rgba(0,0,0,.36);
 }
 
 html.hc-light {
-  /* 明亮皮肤（HA light 取值） */
-  --bg: #fafafa; --bg-rgb: 250,250,250; --bg-deep: #f2f2f2; --bg-deep-rgb: 242,242,242;
-  --bg-2: #efefef; --bg-3: #e6e6e6; --bg-4: #dedede;
-  --card-rgb: 255,255,255; --card-2-rgb: 252,252,252; --line-rgb: 224,224,224;
-  --surf: 26,26,26;
-  --text-hi: #000000; --text-1: #1a1a1a; --text-2: #3f3f3f; --text-3: #595959;
-  --text-4: #757575; --text-5: #8a8a8a;
-  --accent-hex: #03a9f4; --accent-rgb: 3,169,244; --accent-soft: #0277b6; --accent-soft-rgb: 2,119,182;
+  /* 明亮皮肤：中性色阶 = Tailwind zinc 阶（50/100/200/300/400…），
+     文本层级按 Material 的 black/.87 / .54 / .38 思路，强调色走 tone 档（亮皮肤 tone 42）。 */
+  --bg: #fafafa; --bg-rgb: 250,250,250; --bg-deep: #f4f4f5; --bg-deep-rgb: 244,244,245;
+  --bg-2: #f4f4f5; --bg-3: #e4e4e7; --bg-4: #d4d4d8;
+  --card-rgb: 255,255,255; --card-2-rgb: 250,250,251; --line-rgb: 228,228,231;
+  --surf: 24,24,27;
+  --text-hi: #09090b; --text-1: #18181b; --text-2: #3f3f46; --text-3: #52525b;
+  --text-4: #71717a; --text-5: #a1a1aa;
+  --accent-hex: #006cc7; --accent-rgb: 0,108,199;
+  --accent-soft: #0059b0; --accent-soft-rgb: 0,89,176;
+  --acc-ink: #ffffff;
+  --acc-c: 208,238,255; --acc-line: 124,155,204;
   --wash-a: .10; --wash-border-a: .50; --wash-glow-a: .05; --wash-icon-a: .12;
   --badge-a: .16; --badge-border-a: .35;
-  --ok: #2e7d32; --ok-rgb: 46,125,50; --ok-soft: #2e7d32; --ok-tint-rgb: 207,233,210;
-  --warn: #b26a00; --warn-rgb: 178,106,0; --warn-soft: #9a5b00;
-  --err: #c62828; --err-rgb: 198,40,40; --err-soft: #a92a2a;
-  --lyric-rgb: 26,26,26;
-  --accent: 3,169,244; --track: #dedede; --knob: rgb(var(--accent));
+  --ok: #7b5e40; --ok-rgb: 123,94,64; --ok-soft: #7b5e40; --ok-tint-rgb: 250,232,214;
+  --warn: #b5441a; --warn-rgb: 181,68,26; --warn-soft: #b5441a;
+  --err: #cc2935; --err-rgb: 204,41,53; --err-soft: #cc2935;
+  --lyric-rgb: 24,24,27;
+  --accent: 0,108,199; --track: #d4d4d8; --knob: rgb(var(--accent));
   --shadow: 0 2px 2px 0 rgba(0,0,0,.05), 0 1px 2px 0 rgba(0,0,0,.12);
 }
 
@@ -198,14 +206,10 @@ body::before {
 }
 .tile:active { transform: scale(.985); }
 .tile.on {
-  background: rgba(var(--card-rgb),1);
-  border-color: rgba(var(--accent), var(--wash-border-a));
+  background: rgb(var(--acc-c));
+  border-color: rgba(var(--acc-line), .75);
 }
-.tile.on::after {
-  content: ''; position: absolute; right: -52px; top: -52px; width: 160px; height: 160px;
-  border-radius: 50%; pointer-events: none;
-  background: radial-gradient(circle, rgba(var(--accent), var(--wash-glow-a)), rgba(var(--accent), 0) 68%);
-}
+.tile.on::after { display: none; }
 
 .tile-head { display: flex; align-items: flex-start; flex: 0 0 auto; }
 .t-icon {
@@ -215,7 +219,7 @@ body::before {
   transition: background .2s, color .2s;
 }
 .t-icon svg { width: 21px; height: 21px; }
-.tile.on .t-icon { background: rgba(var(--accent), var(--wash-icon-a)); color: rgb(var(--accent)); }
+.tile.on .t-icon { background: rgba(var(--accent), .16); color: rgb(var(--accent)); }
 
 .tile-room {
   margin-left: auto; font-size: 11px; color: var(--text-4);
@@ -275,7 +279,7 @@ body::before {
 .t-bar b {
   position: absolute; top: 50%; left: var(--pct); width: 22px; height: 22px;
   margin: -11px 0 0 -11px; border-radius: 50%;
-  background: var(--knob); box-shadow: 0 2px 7px rgba(0,0,0,.38); border: 2px solid rgba(var(--card-rgb),.85);
+  background: var(--knob); box-shadow: 0 2px 7px rgba(0,0,0,.38); border: 2px solid rgba(var(--card-rgb),.92);
   transition: left .22s;
 }
 /* 拖动中不要缓动，条要跟手 */
