@@ -186,9 +186,10 @@ body::before { content: none; }
 .tab.active { color: var(--text-1); background: rgba(var(--surf),.07); font-weight: 600; }
 
 /* ---------------- 卡片网格 ---------------- */
+/* 1×1 卡片是正方形：行高由 JS 按列宽算好写到内联样式上（老 WebView 没有 aspect-ratio） */
 .grid {
   flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(4, 1fr);
-  grid-auto-rows: minmax(186px, 1fr);
+  grid-auto-rows: 186px;
   grid-column-gap: 12px; grid-row-gap: 12px;
   overflow-y: auto; padding: 16px 0 4px; align-content: start;
 }
@@ -283,7 +284,7 @@ body::before { content: none; }
   transition: opacity .14s;
 }
 .tile:not(.on) .t-bar { opacity: .5; }   /* 关着也看得见：点一下就能把灯点亮 */
-/* 填充的裁剪层：跟着轨道圆角走。填充右端保持直角，让橙色正好停在钮的中心线上，
+/* 填充的裁剪层：跟着轨道圆角走。填充右端保持直角，让填充正好停在钮的中心线上，
    圆头由白色钮自己给出 —— 否则填充末端的半圆圆心会比钮中心左移半个条高。 */
 .t-bar .t-fill {
   position: absolute; left: 0; right: 0; top: 0; bottom: 0;
@@ -292,7 +293,8 @@ body::before { content: none; }
 .t-bar i {
   position: absolute; left: 0; top: 0; bottom: 0; width: var(--pct);
   border-radius: inherit; border-top-right-radius: 0; border-bottom-right-radius: 0;
-  background: rgb(var(--ctl-bar));
+  /* 亮度只是一个数值，不是一个「开着的状态」：轨道用中性灰，别把整条染成橙色 */
+  background: rgba(var(--surf),.28);
   transition: width .14s;
 }
 .t-bar b {
@@ -619,12 +621,34 @@ body::before { content: none; }
 .sheet-rename { margin-right: 8px; width: 40px; height: 40px; border-radius: 10px; border: 0; background: rgba(var(--surf),.07); color: rgba(var(--surf),.66); display: flex; align-items: center; justify-content: center; }
 .sheet-rename svg { width: 17px; height: 17px; }
 
-/* 设置：每行卡片数 / 卡片大小 */
-.grid.size-sm { grid-auto-rows: minmax(150px, 1fr); }
-.grid.size-lg { grid-auto-rows: minmax(228px, 1fr); }
+/* 设置：每行卡片数 / 卡片大小（行高统一由 JS 按方形算，这里只调字号） */
 .grid.size-sm .t-val { font-size: 34px; }
 .grid.size-md .t-val { font-size: 40px; }
 .grid.size-lg .t-val { font-size: 48px; }
+
+/* ---------- 卡片尺寸：1×1 / 2×1 / 1×2 / 2×2 ---------- */
+/* 1×1 只留四格里的 A+B+C（图标、名称、主数值）；控制条、曲线、画面从 2×1 起才出现 */
+.tile:not(.span-2) .t-bar,
+.tile:not(.span-2) .t-spark,
+.tile:not(.span-2) .cam-thumb { display: none; }
+/* 方格里头部（图标+名称+电源钮）垂直居中，卡片才不会显得上方堆字、下面一大片空 */
+.tile:not(.span-2):not(.rows-2) .tile-head { flex: 1 1 auto; align-items: center; }
+.tile:not(.span-2):not(.rows-2) .tile-mid { flex: 0 0 auto; }
+/* 宽卡：数值在上、控制条/曲线在下，条占满卡片宽度（照米家的灯卡读法） */
+.tile.span-2 .tile-mid { flex-direction: column; align-items: stretch; justify-content: center; min-height: 0; }
+.tile.span-2 .tile-mid > .t-val { flex: 0 0 auto; }
+.tile.span-2 .t-bar { flex: 0 0 auto; margin: 12px 0 0; }
+.tile.span-2 .t-ctl { flex: 0 0 auto; margin: 12px 0 0; justify-content: flex-start; }
+.tile.span-2 .t-ctl .t-set { flex: 0 0 auto; padding: 0 14px; }
+.tile.span-2 .t-midrow { flex: 0 0 auto; }
+.tile.span-2 .t-midrow .t-spark { max-width: none; }
+/* 高卡：内容垂直居中；摄像头画面把剩下的高度吃掉 */
+.tile.rows-2 .tile-mid { justify-content: center; }
+.tile.span-2.rows-2 .tile-mid { flex-direction: column; align-items: stretch; }
+.tile.span-2.rows-2 .t-bar { margin: 12px 0 0; }
+.tile.span-2.rows-2 .cam-thumb { flex: 1 1 auto; height: auto; min-height: 0; }
+/* 2×2 的温湿度计：两个读数并排，数字再大一号 */
+.tile.span-2.rows-2 .t-val { font-size: 52px; }
 
 /* 设置页 */
 .set-sec { margin: 20px 0 4px; font-size: 12px; letter-spacing: .5px; color: var(--text-4); contain: layout style paint; }

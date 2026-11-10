@@ -701,7 +701,8 @@ var COLOR_PRESETS = [
     var tile = item.tile;
     var naCls = isNa(stateOf(tile.entity)) ? ' na' : '';
     var span = cardSpan(tile.entity, num(prefs().cols, 4));
-    var rows = S.editing ? rowSpan(tile.entity) : 1;
+    /* 行跨度不再是编辑态专属：默认尺寸也会让摄像头/温湿度计占两行 */
+    var rows = rowSpan(tile.entity);
     var notAdded = S.editing && !cardVisible(tile.entity);
     var grabbable = S.editing && !notAdded;
     return '<div class="tile' + naCls + (notAdded ? ' not-added' : '') + (span > 1 ? ' span-' + span : '') + (rows > 1 ? ' rows-' + rows : '') + '" data-entity="' + esc(tile.entity) + '"' +
@@ -1155,29 +1156,62 @@ var COLOR_PRESETS = [
     return !!editState().added[entity];
   }
 
-  /** 卡片横跨几列（1~3），编辑里可改；列数不够时自动压到当前列数 */
+  /** 卡片横跨几列（1~N），编辑里可改；没改过的按设备类型给默认值（照米家） */
   function cardSpan(entity, cols) {
-    var n = num(editState().span[entity], 1);
+    var ex = editState().span[entity];
+    var n = ex === undefined ? defaultCellW(tileByEntity(entity)) : num(ex, 1);
     if (n < 1) n = 1;
     if (cols && n > cols) n = cols;
     return n;
   }
 
-  /** 卡片宽度的可选项：1× ~ N×（N = 当前每行卡片数），最后一档显示「整行」 */
-  /** 卡片占几行（1~2），磁贴式拉伸用 */
-  function rowSpan(entity) {
-    var n = num(editState().rows && editState().rows[entity], 1);
+  /* 默认尺寸（照米家）：摄像头、温湿度计是 2×2 大件；能调光的灯是 2×1（读数 + 亮度条）；
+     其余（开关、按钮、场景、普通传感器）都是 1×1 方格。用户在编辑里改过则以用户为准。 */
+  function defaultCellW(tile) {
+    if (!tile) return 1;
+    if (tile.type === 'camera' || tile.type === 'climate') return 2;
+    if (tile.type === 'light') {
+      /* 亮度条要靠实时属性判断：首屏渲染时 tile.attributes 可能还是空的 */
+      var la = attrsOf(tile.entity);
+      if (la && la.supported_color_modes == null && la.brightness == null) la = tile.attributes || {};
+      if (hasBrightness(la || {})) return 2;
+    }
+    return 1;
+  }
+  function defaultCellH(tile) {
+    if (!tile) return 1;
+    if (tile.type === 'camera' || tile.type === 'climate') return 2;
+    return 1;
+  }
+
+  function tileByEntity(entity) {
+    var list = S.items || [];
+    for (var i = 0; i < list.length; i++) {
+      if (list[i].tile && list[i].tile.entity === entity) return list[i].tile;
+    }
+    return null;
+  }
+
+  /** 卡片占几行（1~2）：编辑里改过就按改的，没改过按设备类型默认 */
+  function cellRows(tile) {
+    var ex = editState().rows && editState().rows[tile.entity];
+    var n = ex === undefined ? defaultCellH(tile) : num(ex, 1);
     if (n < 1) n = 1;
     if (n > 2) n = 2;
     return n;
   }
+  function rowSpan(entity) {
+    return cellRows(tileByEntity(entity));
+  }
 
+  /** 宽度档位：1× / 2× / 整行（照米家的两档 + 一整行，不再铺 3× 4× 长条） */
   function spanOptions(cols) {
     var n = num(cols, 4);
     if (n < 1) n = 1;
     if (n > 6) n = 6;
-    var out = [];
-    for (var i = 1; i <= n; i++) out.push({ v: i, t: i === n ? (n === 1 ? '1×' : '整行') : (i + '×') });
+    var out = [{ v: 1, t: '1×' }];
+    if (n >= 2) out.push({ v: 2, t: '2×' });
+    if (n > 2) out.push({ v: n, t: '整行' });
     return out;
   }
 
@@ -1228,15 +1262,23 @@ var COLOR_PRESETS = [
   }
 
   /** 每行几张：直接用内联样式写死列数，不依赖 .cols-N 类（跨列卡让网格列数卡住时也不至于塌） */
-  /** 卡片大小 → 行高（老 WebView 下 grid-auto-rows 会被内联样式覆盖，所以这里必须同步写死） */
-  function rowHeight() {
-    var sz = prefs().size;
-    return sz === 'sm' ? 150 : (sz === 'lg' ? 228 : 186);
+  /** 卡片大小 → 行高。照米家：1×1 是正方形，行高 = 列宽（老 WebView 没有 aspect-ratio，
+      只能按网格实际宽度算一次；窗口尺寸/列数变了再算）。 */
+  function rowHeight(cols) {
+    var c = num(cols, num(prefs().cols, 4));
+    if (c < 1) c = 4;
+    var gap = 12;
+    var w = el.grid ? el.grid.clientWidth : 0;
+    if (!w) w = (window.innerWidth || 1024) - 48;
+    var h = Math.floor((w - gap * (c - 1)) / c);
+    if (h < 120) h = 120;
+    if (h > 420) h = 420;
+    return h;
   }
 
   function setColumns(node, cols) {
     if (!node) return;
-    var h = rowHeight() + 'px';
+    var h = rowHeight(cols) + 'px';
     node.style.gridTemplateColumns = 'repeat(' + cols + ', minmax(0, 1fr))';
     node.style.gridAutoFlow = 'row';
     node.style.gridAutoRows = h;
@@ -1261,7 +1303,7 @@ var COLOR_PRESETS = [
     S.renderCount = (S.renderCount || 0) + 1;
     var items = itemsFor(S.room);
     var sig = S.room + '|' + (S.editing ? 'E' : 'N') + '|' + items.map(function (it) {
-      return it.tile.entity + ':' + cardSpan(it.tile.entity, num(prefs().cols, 4));
+      return it.tile.entity + ':' + cardSpan(it.tile.entity, num(prefs().cols, 4)) + 'x' + cellRows(it.tile);
     }).join(',');
     S.items = items;
     if (!force && sig === S.sig) {
@@ -1303,6 +1345,8 @@ var COLOR_PRESETS = [
     el.grid.innerHTML = html;
     S.tileEls = [];
     setColumns(el.grid, cols);
+    /* 首帧网格可能还没量到真实宽度，下一拍按列宽再算一次正方形行高 */
+    setTimeout(function () { if (el.grid) setColumns(el.grid, cols); }, 0);
     for (var j = 0; j < el.grid.children.length; j++) {
       if (el.grid.children[j].id === 'addTile') continue;
       S.tileEls.push(el.grid.children[j]);
@@ -3491,6 +3535,12 @@ function bindDim() {
   function bindEvents() {
     document.addEventListener('click', onEditBarClick, false);
     document.addEventListener('click', onTileBarClick, false);
+    /* 窗口尺寸变了（旋转/分屏）重算方形行高：只改网格内联样式，不重建卡片 */
+    var rzTimer = null;
+    window.addEventListener('resize', function () {
+      if (rzTimer) clearTimeout(rzTimer);
+      rzTimer = setTimeout(function () { rzTimer = null; gridClassOnly(); }, 180);
+    });
     if (false) {
       el.editBar.addEventListener('click', function (ev) {
         actLog('EB ' + (ev.target && ev.target.getAttribute ? ev.target.getAttribute('data-act') : '?'));
