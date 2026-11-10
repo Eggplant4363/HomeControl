@@ -582,6 +582,8 @@ body::before { content: none; }
   font-size: 12px; color: rgba(var(--surf),.45); text-align: center;
 }
 .cam-thumb.dead::after { content: '无画面（离线或拉流失败）'; }
+/* 拉流失败时别让浏览器把破图图标画在角上 */
+.cam-thumb.dead img { display: none; }
 .cam-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .cam-thumb { position: relative; }
 .cam-thumb.live::before {
