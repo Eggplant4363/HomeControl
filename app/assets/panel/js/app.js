@@ -391,6 +391,9 @@ var COLOR_PRESETS = [
   }
 
   function valHtml(tile, st, attrs) {
+    /* 离线：读数位置留一个「—」，状态词由卡片下方 meta 里的「离线」负责，
+       否则大数字位置会出现一个跟 meta 重复的「离线」。摄像头除外，它用占位画面。 */
+    if (isNa(st) && tile.type !== 'camera') return '—';
     if (tile.type === 'camera') {
       if (isNa(st)) return '离线';
       return CAM_STATE[st] || '待机';

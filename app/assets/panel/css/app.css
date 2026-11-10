@@ -517,8 +517,8 @@ body::before { content: none; }
   word-break: break-all; white-space: normal; line-height: 1.35;
 }
 /* 设备离线：卡片不再整块压暗（压暗后字也跟着糊了）。
-   名称/「房间 · 离线」留在头部，中间留空——用排版说明它现在不工作。 */
-.tile.na .tile-mid { display: none; }
+   名字和「房间 · 离线」就够说明状态；读数位置留一个「—」，别把整块中间挖掉。 */
+.tile.na .t-val { color: var(--text-5); }
 .tile.na .t-name { color: var(--text-3); }
 .tile.na .t-icon { background: rgba(var(--surf),.035); color: var(--text-5); }
 .tile.na .t-step, .tile.na .t-bar, .tile.na .t-ctl { display: none; }
@@ -631,9 +631,33 @@ body::before { content: none; }
 .tile:not(.span-2) .t-bar,
 .tile:not(.span-2) .t-spark,
 .tile:not(.span-2) .cam-thumb { display: none; }
-/* 方格里头部（图标+名称+电源钮）垂直居中，卡片才不会显得上方堆字、下面一大片空 */
-.tile:not(.span-2):not(.rows-2) .tile-head { flex: 1 1 auto; align-items: center; }
-.tile:not(.span-2):not(.rows-2) .tile-mid { flex: 0 0 auto; }
+
+/* 1×1 按设备类型分两套读法，一排方格里既有「仪表」也有「按钮」，不会 70 格一个样：
+   ① 读数型（传感器 / 窗帘 / 空调）：名字在上、数值落底，像一只小仪表；
+   ② 动作型（灯 / 开关 / 摄像头）：图标+名称+电源钮一行居中，图标就是状态。 */
+.tile:not(.span-2):not(.rows-2) { padding: 14px; }
+.tile:not(.span-2):not(.rows-2) .tile-head { flex: 0 0 auto; align-items: flex-start; }
+.tile:not(.span-2):not(.rows-2) .tile-mid { flex: 1 1 auto; justify-content: flex-end; }
+
+/* ① 读数型：数值是主角。温湿度、功率这类普通传感器 40px；人体/门磁这类状态词 34px */
+.tile:not(.span-2):not(.rows-2).type-sensor .t-val,
+.tile:not(.span-2):not(.rows-2).type-cover .t-val,
+.tile:not(.span-2):not(.rows-2).type-climate .t-val { font-size: 40px; line-height: 1; }
+.tile:not(.span-2):not(.rows-2) .t-val.small { font-size: 34px; }
+.tile:not(.span-2):not(.rows-2) .t-ctl { display: none; }   /* 方格里塞不下 ± 按钮，点开弹层调 */
+
+/* ② 动作型：动作行垂直居中；灯/开关不塞数值（要看亮度就用 2×1） */
+.tile:not(.span-2):not(.rows-2).type-light .tile-head,
+.tile:not(.span-2):not(.rows-2).type-switch .tile-head,
+.tile:not(.span-2):not(.rows-2).type-camera .tile-head { flex: 1 1 auto; align-items: center; }
+.tile:not(.span-2):not(.rows-2).type-light .tile-mid,
+.tile:not(.span-2):not(.rows-2).type-switch .tile-mid,
+.tile:not(.span-2):not(.rows-2).type-camera .tile-mid { display: none; }
+
+/* 1×2 竖卡：头在上，数值居中再大一号（读数型卡片放大字号，不靠拉宽） */
+.tile.rows-2:not(.span-2) .tile-mid { justify-content: center; }
+.tile.rows-2:not(.span-2) .t-val { font-size: 48px; }
+
 /* 宽卡：数值在上、控制条/曲线在下，条占满卡片宽度（照米家的灯卡读法） */
 .tile.span-2 .tile-mid { flex-direction: column; align-items: stretch; justify-content: center; min-height: 0; }
 .tile.span-2 .tile-mid > .t-val { flex: 0 0 auto; }
