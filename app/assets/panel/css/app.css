@@ -344,7 +344,7 @@ body::before { content: none; }
    原因：本身是 position:fixed + 渐变色 + 圆角 + 阴影，让它自己滚动时
    老 WebView 每一帧都得整屏重绘；换成纯色底 + 内层滚动后走快路径。 */
 .sheet {
-  position: fixed; left: 0; right: 0; bottom: 0; z-index: 21;
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 40;
   transform: translate3d(0, 104%, 0);
   transition: transform .26s cubic-bezier(.22,1,.36,1);
   background: var(--bg-2);
@@ -711,6 +711,8 @@ body::before { content: none; }
 .ed-name { flex: 1; font-size: 15px; }
 .ed-row.on .ed-name { color: var(--accent-soft); contain: layout style paint; }
 .ed-id { max-width: 46%; font-size: 11px; color: var(--text-5); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* 列数不够时（比如 3 列选不了 2×2 里的宽档）置灰不可点 */
+.ed-row[disabled] { opacity: .38; }
 
 /* ---------- 编辑模式：每张卡都变成可编辑的（顺序 / 宽度 / 移除） ---------- */
 .tile.type-light, .tile.type-switch, .tile.type-climate, .tile.type-cover,
@@ -917,6 +919,8 @@ body::before { content: none; }
 .tile-bar.show { display: block; }
 .tb-name { margin-bottom: 10px; font-size: 15px; color: var(--text-2); }
 .tile-bar .t-tool { height: 40px; min-width: 46px; font-size: 15px; }
+/* 「尺寸 1×1」这类带数值的工具按钮：数值加重，中文标签别抢 */
+.tile-bar .t-span b { margin-left: 3px; font-weight: 600; letter-spacing: 0; }
 
 /* 遮罩：不要用 rgba 半透明色 + transition，老机器上每次都得分层合成；
    纯黑底 + 独立合成层的渐隐 = HwUI 的颜色快路径 */

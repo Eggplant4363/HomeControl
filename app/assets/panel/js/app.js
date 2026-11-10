@@ -1510,6 +1510,46 @@ var COLOR_PRESETS = [
     actLog('span sheet open ' + item.tile.entity);
   }
 
+  /* 卡片尺寸档位：1×1 正方形、2×1、1×2、2×2（照米家的方格 + 拉伸两套） */
+  function sizeSheetHtml(item) {
+    var cols = num(prefs().cols, 4);
+    var curC = Math.min(num(cardSpan(item.tile.entity, 99), 1), cols);
+    var curR = rowSpan(item.tile.entity);
+    var defs = [
+      { c: 1, r: 1, t: '1×1', d: '一个方格：图标、名称与主数值' },
+      { c: 2, r: 1, t: '2×1', d: '横着两格：多一条亮度条或曲线' },
+      { c: 1, r: 2, t: '1×2', d: '竖着两格：数值更大' },
+      { c: 2, r: 2, t: '2×2', d: '四格：摄像头画面或两个读数' }
+    ];
+    var h = '<div class="cfg-head">卡片尺寸</div>' +
+      '<div class="cfg-desc">' + esc(displayName(item.tile)) + ' 现在是 ' + curC + '×' + curR +
+      '。1×1 是正方形；尺寸只改这张卡。</div><div class="ed-list">';
+    defs.forEach(function (d) {
+      var on = d.c === curC && d.r === curR;
+      var off = d.c > cols;
+      h += '<button class="ed-row' + (on ? ' on' : '') + '" data-act="card-size-set:' + d.c + ':' + d.r + '"' + (off ? ' disabled' : '') + '>' +
+        '<span class="ed-box">' + (on ? '✓' : '') + '</span>' +
+        '<span class="ed-name">' + d.t + '</span>' +
+        '<span class="ed-id">' + esc(d.d) + '</span></button>';
+    });
+    h += '</div><div class="cfg-actions"><button class="btn primary" data-act="span-close">返回</button></div>';
+    return h;
+  }
+
+  function openSizeSheet(item) {
+    if (!item) return;
+    S.sheetShow = 'size';
+    S.sheetItem = item;
+    S.sheetEntity = item.tile.entity;
+    el.sheetInner.innerHTML = sizeSheetHtml(item);
+    if (el.sheetInner) el.sheetInner.scrollTop = 0;
+    S.sheetOpenedAt = Date.now();
+    freezeGrid(true);
+    el.mask.className = 'mask show';
+    el.sheet.className = 'sheet show';
+    actLog('size sheet open ' + item.tile.entity);
+  }
+
   function openAddSheet() {
     S.sheetShow = 'add';
     S.sheetItem = null;
@@ -1688,7 +1728,9 @@ var COLOR_PRESETS = [
     bar.innerHTML = '<div class="tb-name">' + esc(displayName(item.tile)) + '</div>' +
       '<button class="t-tool" data-act="card-move-left">◀</button>' +
       '<button class="t-tool" data-act="card-move-right">▶</button>' +
-      '<button class="t-tool t-span" data-act="card-span" data-hold="card-span-list">' + spanLabel(item.tile.entity) + '</button>' +
+      '<button class="t-tool t-span" data-act="card-size">尺寸 <b>' +
+        Math.min(num(cardSpan(item.tile.entity, 99), 1), num(prefs().cols, 4)) + '×' + rowSpan(item.tile.entity) +
+      '</b></button>' +
       '<button class="t-tool t-del" data-act="card-remove">✕ 移除</button>';
     bar.className = 'tile-bar show';
     actLog('select ' + item.tile.entity);
@@ -1977,6 +2019,13 @@ var COLOR_PRESETS = [
     if (act === 'card-remove') { addToggle(item.tile.entity); toast('已移除 · ' + displayName(item.tile)); return; }
     if (act === 'card-move-left') { moveCard(item.tile.entity, -1); return; }
     if (act === 'card-move-right') { moveCard(item.tile.entity, 1); return; }
+    if (act === 'card-size') { openSizeSheet(item); return; }
+    if (act.indexOf('card-size-set:') === 0) {
+      var parts = act.slice(14).split(':');
+      resizeCard(item.tile.entity, num(parts[0], 1), num(parts[1], 1));
+      if (S.sheetShow === 'size' && S.sheetItem) el.sheetInner.innerHTML = sizeSheetHtml(S.sheetItem);
+      return;
+    }
     if (act === 'card-span') {
       var cCols = num(prefs().cols, 4);
       var cNow = num(cardSpan(item.tile.entity, 99), 1);
