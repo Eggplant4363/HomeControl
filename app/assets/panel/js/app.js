@@ -1515,6 +1515,10 @@ var COLOR_PRESETS = [
     var cols = num(prefs().cols, 4);
     var curC = Math.min(num(cardSpan(item.tile.entity, 99), 1), cols);
     var curR = rowSpan(item.tile.entity);
+    var esp = editState();
+    var explicit = esp.span[item.tile.entity] !== undefined || esp.rows[item.tile.entity] !== undefined;
+    var dw = Math.min(defaultCellW(item.tile), cols);
+    var dh = defaultCellH(item.tile);
     var defs = [
       { c: 1, r: 1, t: '1×1', d: '一个方格：图标、名称与主数值' },
       { c: 2, r: 1, t: '2×1', d: '横着两格：多一条亮度条或曲线' },
@@ -1525,13 +1529,17 @@ var COLOR_PRESETS = [
       '<div class="cfg-desc">' + esc(displayName(item.tile)) + ' 现在是 ' + curC + '×' + curR +
       '。1×1 是正方形；尺寸只改这张卡。</div><div class="ed-list">';
     defs.forEach(function (d) {
-      var on = d.c === curC && d.r === curR;
+      var on = explicit && d.c === curC && d.r === curR;
       var off = d.c > cols;
       h += '<button class="ed-row' + (on ? ' on' : '') + '" data-act="card-size-set:' + d.c + ':' + d.r + '"' + (off ? ' disabled' : '') + '>' +
         '<span class="ed-box">' + (on ? '✓' : '') + '</span>' +
         '<span class="ed-name">' + d.t + '</span>' +
         '<span class="ed-id">' + esc(d.d) + '</span></button>';
     });
+    h += '<button class="ed-row' + (!explicit ? ' on' : '') + '" data-act="card-size-default">' +
+      '<span class="ed-box">' + (!explicit ? '✓' : '') + '</span>' +
+      '<span class="ed-name">跟随默认</span>' +
+      '<span class="ed-id">' + dw + '×' + dh + '（按设备类型给）</span></button>';
     h += '</div><div class="cfg-actions"><button class="btn primary" data-act="span-close">返回</button></div>';
     return h;
   }
@@ -1600,16 +1608,28 @@ var COLOR_PRESETS = [
     renderGrid(true);
   }
 
-  /** 磁贴式拉伸：一次写入列跨度（1..N）与行跨度（1..2） */
+  /** 磁贴式拉伸：一次写入列跨度（1..N）与行跨度（1..2）。
+      1 也要写进去——「显式选了 1×1」和「从没选过、走设备类型默认」是两回事，
+      否则把可调光灯（默认 2×1）改成 1×1 会被默认表又拉回 2×1。 */
   function resizeCard(entity, c, r) {
     var e = editState();
     var cols = num(prefs().cols, 4);
     var cv = num(c, 1); if (cv < 1) cv = 1; if (cv > cols) cv = cols;
     var rv = num(r, 1); if (rv < 1) rv = 1; if (rv > 2) rv = 2;
-    if (cv <= 1) delete e.span[entity]; else e.span[entity] = cv;
-    if (rv <= 1) delete e.rows[entity]; else e.rows[entity] = rv;
+    e.span[entity] = cv;
+    e.rows[entity] = rv;
     writeEdit(e);
     actLog('resize ' + entity + ' ' + cv + 'x' + rv);
+    renderGrid(true);
+  }
+
+  /** 清掉这张卡的显式尺寸，回到按设备类型的默认（灯 2×1、摄像头 2×2、其余 1×1） */
+  function resetCardSize(entity) {
+    var e = editState();
+    delete e.span[entity];
+    delete e.rows[entity];
+    writeEdit(e);
+    actLog('resize default ' + entity);
     renderGrid(true);
   }
 
@@ -2023,6 +2043,11 @@ var COLOR_PRESETS = [
     if (act.indexOf('card-size-set:') === 0) {
       var parts = act.slice(14).split(':');
       resizeCard(item.tile.entity, num(parts[0], 1), num(parts[1], 1));
+      if (S.sheetShow === 'size' && S.sheetItem) el.sheetInner.innerHTML = sizeSheetHtml(S.sheetItem);
+      return;
+    }
+    if (act === 'card-size-default') {
+      resetCardSize(item.tile.entity);
       if (S.sheetShow === 'size' && S.sheetItem) el.sheetInner.innerHTML = sizeSheetHtml(S.sheetItem);
       return;
     }
