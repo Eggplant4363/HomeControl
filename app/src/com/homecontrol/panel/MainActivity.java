@@ -4,6 +4,7 @@ import android.app.Activity;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.graphics.Color;
+import android.graphics.Rect;
 import android.media.AudioManager;
 import android.net.Uri;
 import android.net.http.SslError;
@@ -36,6 +37,7 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.security.SecureRandom;
 import java.security.cert.X509Certificate;
+import java.util.Collections;
 import javax.net.ssl.HostnameVerifier;
 import javax.net.ssl.HttpsURLConnection;
 import javax.net.ssl.SSLContext;
@@ -95,6 +97,7 @@ public class MainActivity extends Activity {
 
         setContentView(root);
         initWebView();
+        applyGestureExclusion();
         maybeStartMockHa();
         loadPanel();
         startWatchdog();
@@ -188,6 +191,33 @@ public class MainActivity extends Activity {
         });
 
         web.addJavascriptInterface(new Bridge(), "AndroidBridge");
+    }
+
+    /**
+     * 负一屏（音乐页）是「从左边缘往右滑」拉出来的，但 Android 10+ 的手势导航把左边缘
+     * 那一条留给了系统返回，平板 5（Android 13）上从边上滑就成了返回。这里把左侧一条
+     * 56dp 宽的竖带排除在系统手势之外，滑动就会落到 WebView 里交给面板自己判断。
+     * 返回手势在右边缘仍然可用；老系统（MI PAD 2 的 5.1）没有这个 API，跳过。
+     */
+    private void applyGestureExclusion() {
+        if (Build.VERSION.SDK_INT < 29 || web == null) return;
+        web.addOnLayoutChangeListener(new View.OnLayoutChangeListener() {
+            @Override
+            public void onLayoutChange(View v, int left, int top, int right, int bottom,
+                                       int oldLeft, int oldTop, int oldRight, int oldBottom) {
+                int band = (int) (56 * getResources().getDisplayMetrics().density);
+                // 系统对每个边缘允许排除的区域有上限（200dp），超出会被忽略。
+                int cap = (int) (200 * getResources().getDisplayMetrics().density);
+                if (band > cap) band = cap;
+                if (band <= 0 || bottom <= 0) return;
+                try {
+                    web.setSystemGestureExclusionRects(
+                            Collections.singletonList(new Rect(0, 0, band, bottom)));
+                } catch (Throwable t) {
+                    Log.w(TAG, "gesture exclusion failed: " + t.getMessage());
+                }
+            }
+        });
     }
 
     /** bundled panel by default; an http URL in /sdcard/HomeControl/url.txt overrides it (dev mode) */

@@ -109,7 +109,7 @@ powershell -ExecutionPolicy Bypass -File .\tools\push.ps1 -Restart
 
 ## 负一屏（屏幕左边缘往右滑 · 音乐）
 
-从**屏幕左边缘**（手指出手点在左边 28px 以内）往右滑拉出负一屏音乐页：左边是正在播放（封面 / 歌名 / 歌手 / 专辑 / 三行歌词 / 进度条 / 播放暂停·上下首·播放列表·随机·循环 / 音量），右边是歌单和曲目（点一首就播）。左滑、点左上角返回、或点弹层外收起；在歌单里点返回回歌单列表，在「播放列表」里点返回回上一屏。
+从**屏幕左边缘**（手指出手点在左边 64px 以内）往右滑拉出负一屏音乐页：左边是正在播放（封面 / 歌名 / 歌手 / 专辑 / 三行歌词 / 进度条 / 播放暂停·上下首·播放列表·随机·循环 / 音量），右边是歌单和曲目（点一首就播）。左滑、点左上角返回、或点弹层外收起；在歌单里点返回回歌单列表，在「播放列表」里点返回回上一屏。
 
 - **歌词**：走道理鱼 `GET /api/tracks/{id}/lyrics`（带 Bearer），只显示当前行 ±1 共三行，当前行高亮；有时间轴的跟随进度，纯文本歌词按进度比例大致定位并标「纯文本歌词（没有时间轴）」，没有歌词就不占位。
 - **播放列表 / 随机 / 循环**：下一首右边三个小按钮。播放列表把右列换成按播放顺序排的队列（当前曲在最前，带序号，点任意一首直接切）；随机打乱顺序（当前曲排最前）；循环按钮三档——关 / 整个列表循环 / 单曲循环。三个状态存在 localStorage `hc.music.mode`，重启后保持。上一首在播放超过 3 秒时先回到本曲开头。
@@ -143,7 +143,7 @@ adb push music.json /sdcard/HomeControl/music.json
 - 曲库是 FLAC（一首 85MB，平板放不动）：按曲目格式选流 —— mp3/m4a/aac/wav/ogg 直接 `/api/tracks/{id}/stream?token=`，其余走 `/api/tracks/{id}/transcode?token=&format=mp3&bitrate=192`；万一播放失败再退一次转码
 - `WebViewClient.onReceivedSslError` 直接 `proceed()`：Android 5.1 的 WebView（Chromium 57）信任库里没有 Let's Encrypt 的 ISRG 根证书，音频流走 WebView 自己的网络栈（Java 桥的 `trustAll()` 管不到它），不放行就播不出歌。中控屏只连自己的服务器
 - 拖动时页面**不**先置 `open`，松手后按位移/速度一次性决定开或收（早期版本先置 `open` → 后半段手势被守卫丢掉，右滑打不开）
-- 手势只从左边 28px 内起手才算拉出（`EDGE_PULL`），另外落点落在 `.t-bar`（卡片亮度条）、`input`/`.slider`（设置滑条）、`.toolbar`（场景/房间横滚）、`.sheet`/`.mask`/`.view` 这些控件上时直接放弃，避免和它们抢横滑
+- 手势只从左边 64px 内起手才算拉出（`EDGE_PULL`），另外落点落在 `.t-bar`（卡片亮度条）、`input`/`.slider`（设置滑条）、`.toolbar`（场景/房间横滚）、`.sheet`/`.mask`/`.view` 这些控件上时直接放弃，避免和它们抢横滑。Android 10+ 手势导航会把屏幕左边缘留给系统返回，所以 MainActivity 在 API 29+ 用 `setSystemGestureExclusionRects` 把左侧 56dp 宽的竖带排除在系统手势之外（返回手势在右边缘仍可用）——小米平板 5（Android 13）上从边缘滑不出音乐页就是这条在起作用。
 
 本地联调不需要真的道理鱼：`node tools\fake-daoliyu.js 8099` 起一个零依赖假服务器（登录 → 歌单 → 曲目 → 封面 → WAV 音频），模拟器里地址填 `http://10.0.2.2:8099` 即可跑通全链路。
 
