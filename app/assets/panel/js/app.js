@@ -440,12 +440,12 @@ var COLOR_PRESETS = [
   }
 
   function subText(tile, st, attrs) {
-    if (isNa(st)) return '不可用';
+    if (isNa(st)) return '离线';
     if (isAuto(tile)) return '点按触发';
     if (tile.type === 'camera') return '摄像头 · ' + (CAM_STATE[st] || st);
     if (tile.type === 'light') return '';
     if (tile.type === 'switch') {
-      if (st !== 'on') return st === 'unavailable' ? '不可用' : '';
+      if (st !== 'on') return st === 'unavailable' ? '离线' : '';
       return attrs.power != null ? '功率 ' + Math.round(num(attrs.power, 0)) + ' W' : '';
     }
     if (tile.type === 'climate') {
