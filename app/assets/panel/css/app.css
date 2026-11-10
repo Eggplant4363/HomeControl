@@ -26,6 +26,8 @@
   --accent: 143,199,168; --track: #26262a; --knob: #f2f2f4; --bar-fill: var(--ctl-bar);
   --knob-border: rgba(255,255,255,.22);
   --shadow: 0 1px 2px rgba(0,0,0,.34), 0 1px 1px rgba(0,0,0,.22);
+  /* 浮起来的东西（封面、大图）用这一档「抬起」，亮色皮肤下要浅得多，不能是一团黑影 */
+  --lift: 0 12px 30px rgba(0,0,0,.40), 0 1px 2px rgba(0,0,0,.3);
 }
 
 html.hc-light {
@@ -52,6 +54,7 @@ html.hc-light {
   --accent: 46,158,107; --track: #dfe7db; --knob: #ffffff; --bar-fill: 226,153,66;
   --knob-border: rgba(24,28,24,.14);
   --shadow: 0 1px 2px rgba(22,28,22,.06), 0 1px 1px rgba(22,28,22,.04);
+  --lift: 0 10px 24px rgba(22,28,22,.10), 0 1px 2px rgba(22,28,22,.05);
 }
 
 
@@ -742,7 +745,7 @@ body::before { content: none; }
   width: 232px; height: 232px; border-radius: 16px; overflow: hidden; position: relative;
   display: flex; align-items: center; justify-content: center; flex: 0 0 auto;
   background: rgba(var(--surf),.05);
-  box-shadow: 0 12px 32px rgba(0,0,0,.42);
+  box-shadow: var(--lift);
 }
 .m-cover img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .m-cover-ph { color: rgba(var(--surf),.18); }

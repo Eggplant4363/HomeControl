@@ -1221,7 +1221,10 @@
     S.backend.playlists(function (err, list) {
       S.loading = false;
       if (err) {
-        setStatus('error', '连不上：' + err);
+        /* 墙上的屏不给人看 UnknownHostException：状态只写「连不上音乐服务」，
+           具体异常留给开发者控制台。 */
+        if (window.console && console.warn) console.warn('[music] ' + err);
+        setStatus('error', '连不上音乐服务');
         S.playlists = [];
         S.ready = true;
         paintList();
@@ -1471,8 +1474,8 @@
     if (!e.list) return;
     if (loadingText) { e.list.innerHTML = '<div class="m-empty">' + esc(loadingText) + '</div>'; return; }
     if (S.status === 'error' && !S.playlists.length) {
-      e.list.innerHTML = '<div class="m-empty"><div class="m-empty-t">没有连上音乐服务器</div>' +
-        '<div class="m-empty-d">' + esc(S.statusText) + '</div>' +
+      e.list.innerHTML = '<div class="m-empty"><div class="m-empty-t">音乐服务没连上</div>' +
+        '<div class="m-empty-d">检查「音乐设置」里的服务器地址，再点重试</div>' +
         '<button class="btn" data-mact="retry">重试</button>' +
         '<button class="btn" data-mact="open-cfg">音乐设置</button></div>';
       return;
