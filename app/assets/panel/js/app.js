@@ -446,7 +446,8 @@ var COLOR_PRESETS = [
     if (tile.type === 'light') return '';
     if (tile.type === 'switch') {
       if (st !== 'on') return st === 'unavailable' ? '离线' : '';
-      return attrs.power != null ? '功率 ' + Math.round(num(attrs.power, 0)) + ' W' : '';
+      /* 照米家：开着的开关在名字下面写一个「开」；有功率就写功率 */
+      return attrs.power != null ? '功率 ' + Math.round(num(attrs.power, 0)) + ' W' : '开';
     }
     if (tile.type === 'climate') {
       if (st === 'off') return '';
@@ -709,13 +710,12 @@ var COLOR_PRESETS = [
       (S.editing
         ? '<div class="t-ico-wrap"><div class="t-edit-ico" data-role="ico" data-icon="' + esc(iconFor(tile)) + '">' + svg(iconFor(tile)) + '</div></div>'
         : '<div class="t-ico-wrap"><div class="t-icon" data-role="ico" data-icon="' + esc(iconFor(tile)) + '">' + svg(iconFor(tile)) + '</div></div>') +
-      (item.room ? '<div class="tile-room">' + esc(item.room) + '</div>' : '') +
-      (S.editing
+      /* 左图标、中间名称、右边电源钮（照米家）：名称下那行是「房间 · 状态」 */
+      '<div class="t-id"><div class="t-name">' + esc(displayName(tile)) + '</div>' +
+      '<div class="t-sub" data-role="sub"></div></div>' +
+      (S.editing || !powerable(tile)
         ? ''
-        : (powerable(tile)
-            ? '<button class="t-power" data-act="toggle" title="开关">' + svg('power') + '</button>'
-            : '') +
-          '<button class="t-more" data-act="sheet">' + svg('dots') + '</button>') +
+        : '<button class="t-power" data-act="toggle" title="开关">' + svg('power') + '</button>') +
       '</div>' +
       (S.editing
         ? '<div class="t-tools">' +
@@ -724,8 +724,6 @@ var COLOR_PRESETS = [
           '</div>'
         : '') +
       '<div class="tile-mid">' + midHtml(tile) + '</div>' +
-      '<div class="tile-foot"><div class="t-name">' + esc(displayName(tile)) + '</div>' +
-      '<div class="t-sub" data-role="sub"></div></div>' +
       (grabbable ? '<div class="t-grip" data-grip="' + esc(tile.entity) + '"></div>' : '') +
       '</div>';
   }
@@ -802,9 +800,11 @@ var COLOR_PRESETS = [
     var sub = node.querySelector('[data-role="sub"]');
     if (sub) {
       var stxt = subText(tile, st, attrs);
-      /* 名称与状态现在同一行：传感器那种「人体感应 | 人体感应」的重复就没必要了 */
+      /* 名称下面那行是「房间 · 状态」；单房间视图里 item.room 为空，就只留状态。
+         传感器那种「人体感应 | 人体感应」和名称重复的写法直接省掉。 */
       if (stxt && stxt === displayName(tile)) stxt = '';
-      if (sub.textContent !== stxt) sub.textContent = stxt;
+      var meta = item.room ? (stxt ? item.room + ' · ' + stxt : item.room) : stxt;
+      if (sub.textContent !== meta) sub.textContent = meta;
     }
 
     var set = node.querySelector('[data-role="set"]');

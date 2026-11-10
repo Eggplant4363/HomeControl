@@ -194,7 +194,9 @@ body::before { content: none; }
 }
 
 /* 图标外层：整行卡片里也要靠左，且不吃卡片的 flex 拉伸 */
-.t-ico-wrap { flex: 0 0 auto; align-self: flex-start; }
+/* 卡片头部：左图标、中间名称+状态、右边电源钮（照米家的卡片读法） */
+.t-ico-wrap { flex: 0 0 auto; }
+.t-id { flex: 1 1 auto; min-width: 0; margin-left: 10px; }
 
 .tile {
   position: relative; display: flex; flex-direction: column;
@@ -210,7 +212,7 @@ body::before { content: none; }
 }
 .tile.on::after { display: none; }
 
-.tile-head { display: flex; align-items: flex-start; flex: 0 0 auto; }
+.tile-head { display: flex; align-items: center; flex: 0 0 auto; }
 .t-icon {
   width: 36px; height: 36px; border-radius: 50%;
   display: flex; align-items: center; justify-content: center;
@@ -221,13 +223,18 @@ body::before { content: none; }
 /* 开着的卡片：只有图标变成实心强调色圆钮（照米家），卡片底保持平面 */
 .tile.on .t-icon { background: rgb(var(--ctl-on)); color: var(--glyph-on); }
 
-/* 房间标签是元信息，不是徽章：一行小字，不抢眼。 */
-.tile-room {
-  margin-left: auto; margin-top: 2px; font-size: 11px; line-height: 20px; color: var(--text-5);
+/* 名字是这张卡的主语，房间/状态是它下面那行小字。 */
+.t-name {
+  font-size: 15px; font-weight: 600; line-height: 20px; color: var(--text-2);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.t-sub {
+  font-size: 12px; line-height: 16px; color: var(--text-4); margin-top: 2px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .t-power {
-  /* 米家那颗电源圆钮：开着=实心绿白字，关着=发丝线描边 */
-  margin-left: auto; width: 32px; height: 32px; padding: 0;
+  /* 米家那颗电源圆钮：开着=浅绿底绿字，关着=发丝线描边 */
+  flex: 0 0 auto; margin-left: 10px; width: 32px; height: 32px; padding: 0;
   border: 1px solid rgba(var(--surf),.12); border-radius: 50%;
   background: rgba(var(--surf),.04); color: var(--text-4);
   display: flex; align-items: center; justify-content: center;
@@ -238,14 +245,7 @@ body::before { content: none; }
 /* 电源钮是动作，不是状态：开着的时候只让图标（状态）当那一个实心绿圆，
    电源钮退成浅色描边 + 绿字形，两张卡上就不会出现两个一样的绿点。 */
 .tile.on .t-power { background: rgba(var(--ctl-on),.14); border-color: rgba(var(--ctl-on),.32); color: rgb(var(--ctl-on)); }
-.tile.na .t-power { opacity: .45; }
-.t-more {
-  margin-left: 6px; width: 32px; height: 32px; padding: 0; border: 0;
-  border-radius: 8px; background: transparent; color: var(--text-4);
-  display: flex; align-items: center; justify-content: center;
-}
-.t-more svg { width: 16px; height: 16px; }
-.t-more:active { background: rgba(var(--surf),.08); }
+.tile.na .t-power { display: none; }
 
 .tile-mid { flex: 1; display: flex; flex-direction: column; justify-content: center; min-height: 0; }
 /* 数字是主角：等宽数字，300 字重，靠尺寸而不是超细笔画拉开层级。 */
@@ -319,9 +319,8 @@ body::before { content: none; }
 .t-step:active { background: rgba(var(--surf),.11); }
 .t-set { flex: 1; min-width: 0; text-align: center; font-size: 12px; color: var(--text-4); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-.tile-foot { flex: 0 0 auto; margin-top: 10px; display: flex; align-items: baseline; justify-content: space-between; }
-.t-name { font-size: 15px; font-weight: 600; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 0 1 auto; min-width: 0; }
-.t-sub { font-size: 12px; color: var(--text-4); margin-top: 0; margin-left: 8px; flex: 0 0 auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* 名称和状态已经搬到卡片头部（照米家：左图标 / 中间名字+状态 / 右边电源钮），
+   底部不再有 foot 行。 */
 
 /* 传感器卡片数字稍小 */
 .tile.sensor .t-val { font-size: 34px; }
@@ -516,9 +515,8 @@ body::before { content: none; }
   word-break: break-all; white-space: normal; line-height: 1.35;
 }
 /* 设备离线：卡片不再整块压暗（压暗后字也跟着糊了）。
-   中间留空、名字和「离线」落到底部，用排版说明它现在不工作。 */
+   名称/「房间 · 离线」留在头部，中间留空——用排版说明它现在不工作。 */
 .tile.na .tile-mid { display: none; }
-.tile.na .tile-foot { margin-top: auto; }
 .tile.na .t-name { color: var(--text-3); }
 .tile.na .t-icon { background: rgba(var(--surf),.035); color: var(--text-5); }
 .tile.na .t-step, .tile.na .t-bar, .tile.na .t-ctl { display: none; }
@@ -647,7 +645,6 @@ body::before { content: none; }
 .grid.cols-5 .t-val { font-size: 36px; }
 .grid.cols-3 .t-val { font-size: 46px; }
 /* 5、6 列时头部只剩图标和动作：房间标签是元信息，先让它让位，名字才放得下。 */
-.grid.cols-5 .tile-room, .grid.cols-6 .tile-room, .grid.size-sm .tile-room { display: none; }
 .grid.cols-5 .tile { padding: 14px; }
 .grid.cols-6 .tile { padding: 12px; }
 .tile.span-2 { grid-column: span 2; }
@@ -699,7 +696,6 @@ body::before { content: none; }
 .t-edit-ico { width: 30px; height: 30px; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: var(--accent-soft); background: rgba(var(--accent-soft-rgb),.10); }
 .t-edit-ico svg { width: 17px; height: 17px; }
 .grid.editing .tile-head { flex-wrap: nowrap; min-width: 0; }
-.grid.editing .tile-room { display: none; }
 
 /* ---------------- 负一屏 · 音乐 ----------------
    从主屏往右滑拉出来的一整页。固定层只做位移/透明度（老机器的合成器很吃这个），
@@ -775,6 +771,8 @@ body::before { content: none; }
   position: relative; height: 24px; border-radius: 12px; background: rgba(var(--surf),.075);
   box-shadow: inset 0 1px 1px rgba(0,0,0,.2); touch-action: none;
 }
+/* 隐形命中扩展：手指稍微偏出细条也能按下/拖动（pointer 命中区扩大，视觉不变） */
+.m-bar::before { content: ''; position: absolute; left: -10px; right: -10px; top: -14px; bottom: -14px; }
 .m-bar .m-fill {
   position: absolute; left: 0; top: 7px; bottom: 7px; width: 0; border-radius: 5px 0 0 5px;
   background: rgb(var(--accent));
@@ -806,6 +804,7 @@ body::before { content: none; }
   position: relative; flex: 1; height: 20px; border-radius: 10px;
   background: rgba(var(--surf),.075); touch-action: none;
 }
+.m-vbar::before { content: ''; position: absolute; left: -6px; right: -6px; top: -12px; bottom: -12px; }
 .m-vbar .m-fill { position: absolute; left: 0; top: 7px; bottom: 7px; width: 0; border-radius: 4px 0 0 4px; background: rgba(var(--surf),.34); }
 .m-vbar .m-knob {
   position: absolute; top: 50%; left: 0; width: 18px; height: 18px; margin: -9px 0 0 -9px;
@@ -864,10 +863,6 @@ body::before { content: none; }
 .m-empty-t { font-size: 16px; color: var(--text-3); margin-bottom: 6px; }
 .m-empty-d { font-size: 12px; color: var(--text-5); margin-top: 6px; display: block; }
 .m-empty .btn { margin: 16px 6px 0; }
-.grid.editing .t-more { flex: 0 0 auto; width: 26px; height: 26px; margin-left: 4px; font-size: 12px; line-height: 1; color: var(--text-3); }
-.grid.editing .t-more.t-span { width: auto; min-width: 34px; padding: 0 7px; font-size: 12px; color: var(--accent-soft); background: rgba(var(--accent-soft-rgb),.12); }
-.grid.editing .t-more.t-del { color: var(--err-soft); background: rgba(var(--err-rgb),.10); }
-.grid.editing .t-more:active { background: rgba(var(--surf),.16); }
 .ed-help { margin: 14px 0 6px; }
 .ed-h { display: flex; align-items: center; padding: 9px 2px; border-top: 1px solid rgba(var(--surf),.05); font-size: 14px; color: var(--text-3); }
 .ed-h b { flex: 0 0 132px; font-weight: 600; color: var(--accent-soft); font-size: 13px; }
