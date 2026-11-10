@@ -55,7 +55,7 @@ powershell -ExecutionPolicy Bypass -File tools\deploy.ps1 -SkipApk   # 只改了
 
 它会依次做：adb 在线检查（离线时直接告诉你「长按电源键 10 秒」而不是抛异常）→ 装 APK → 推 `panel\` 到 `/sdcard/HomeControl/panel/` → 改写 `url.txt` → force-stop + 启动 → 校验 `page finished` / 无脚本错误 / 前台是壳 App，最后打印 DEPLOY OK。
 
-版本号随构建更新：`versionName 0.7.9` / `versionCode 46`，诊断页第一行就能看到「版本 0.7.9 · MI PAD 2」。
+版本号随构建更新：`versionName 0.7.10` / `versionCode 47`，诊断页第一行就能看到「版本 0.7.10 · MI PAD 2」。
 
 面板把自己也注册进 Home Assistant（0.7.9）：走 `POST /api/states/<entity_id>`（实测 201，不存在就新建，不需要 MQTT），每分钟报一次 `sensor.homecontrol_panel`（在线状态、型号、App 版本、IP/SSID、皮肤、电量、充电、`last_seen`）、`binary_sensor.homecontrol_panel_connected`、`sensor.homecontrol_panel_battery`、`binary_sensor.homecontrol_panel_charging`、`switch.homecontrol_panel_dark_mode`。那个开关是双向的：面板写自己的皮肤，HA 里把开关拨了，面板跟着换皮肤（`selfWritten` 用来区分「HA 那边改了」和「我们自己写的」，不会自己跟自己打架）。注意 HA 的 REST 建的是实体，不是设备注册表里的设备，所以在 HA 界面上它们归在「未分配设备」下。
 ## 构建与部署

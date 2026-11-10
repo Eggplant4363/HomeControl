@@ -1737,48 +1737,92 @@
     return clamp((clientX - r.left) / r.width, 0, 1);
   }
 
+  /* 滑条通用拖动：pointer 事件优先（触屏+鼠标一套），不支持 PointerEvent 的老 WebView 退回 touch+mouse。
+     按下即定位、拖动跟手（实时 seek，节流 220ms 免得一路狂 seek）、松手最终定位 */
+  function bindDrag(host, opt) {
+    var down = false, lastX = 0, lastScrub = 0;
+    function xOf(ev) {
+      if (ev.touches && ev.touches.length) return ev.touches[0].clientX;
+      if (ev.changedTouches && ev.changedTouches.length) return ev.changedTouches[0].clientX;
+      return ev.clientX;
+    }
+    function begin(ev) {
+      if (!opt.ok()) return;
+      down = true; lastX = xOf(ev); opt.drag(true);
+      opt.value(ratioAt(host, lastX), false);
+      ev.preventDefault();
+      if (window.PointerEvent && host.setPointerCapture && ev.pointerId !== undefined) {
+        try { host.setPointerCapture(ev.pointerId); } catch (x) { }
+      }
+    }
+    function move(ev) {
+      if (!down) return;
+      lastX = xOf(ev);
+      opt.value(ratioAt(host, lastX), false);
+      ev.preventDefault();
+    }
+    function end(ev) {
+      if (!down) return;
+      down = false;
+      opt.value(ratioAt(host, xOf(ev)), true);
+      opt.drag(false);
+    }
+    function cancel() { if (!down) return; down = false; opt.drag(false); if (opt.cancel) opt.cancel(); }
+    if (window.PointerEvent) {
+      host.addEventListener('pointerdown', begin, false);
+      host.addEventListener('pointermove', move, false);
+      host.addEventListener('pointerup', end, false);
+      host.addEventListener('pointercancel', cancel, false);
+    } else {
+      host.addEventListener('touchstart', begin, false);
+      host.addEventListener('touchmove', move, false);
+      host.addEventListener('touchend', end, false);
+      host.addEventListener('touchcancel', cancel, false);
+      host.addEventListener('mousedown', begin, false);
+      document.addEventListener('mousemove', function (ev) { if (down) move(ev); }, false);
+      document.addEventListener('mouseup', function (ev) { if (down) end(ev); }, false);
+    }
+  }
+
   function bindBars() {
     var e = S.el;
-    /* 进度条：按下即定位，拖动跟手（松手才 seek，避免一路狂 seek） */
-    if (e.bar) {
-      e.bar.addEventListener('touchstart', function (ev) {
-        if (!S.audio || !isFinite(S.audio.duration)) return;
-        S.seekDrag = true;
-        var p = ratioAt(e.bar, ev.touches[0].clientX);
-        setFill(e.fill, e.knob, p * 100);
-        ev.preventDefault();
-      }, false);
-      e.bar.addEventListener('touchmove', function (ev) {
-        if (!S.seekDrag) return;
-        var p = ratioAt(e.bar, ev.touches[0].clientX);
-        setFill(e.fill, e.knob, p * 100);
-        e.pos.textContent = fmtTime(p * (S.audio ? S.audio.duration : 0));
-        ev.preventDefault();
-      }, false);
-      e.bar.addEventListener('touchend', function (ev) {
-        if (!S.seekDrag) return;
-        S.seekDrag = false;
-        var p = ratioAt(e.bar, (ev.changedTouches && ev.changedTouches[0] ? ev.changedTouches[0].clientX : 0));
-        if (S.audio && isFinite(S.audio.duration)) {
-          try { S.audio.currentTime = p * S.audio.duration; } catch (x) { }
-        }
-        paintProgress();
-      }, false);
-      e.bar.addEventListener('touchcancel', function () { S.seekDrag = false; paintProgress(); }, false);
+    /* 进度条：实时跟随，松手定稿；host 用整行容器（.m-progress），手指稍微偏出细条也能拖 */
+    var pHost = e.bar ? (e.bar.parentNode || e.bar) : null;
+    if (pHost) {
+      var lastScrub = 0;
+      var pDur = function () {
+        if (S.audio && isFinite(S.audio.duration) && S.audio.duration > 0) return S.audio.duration;
+        /* 流式 mp3 在 Chromium 里 duration 可能一直不是有限值，用服务器给的时长兜底 */
+        return S.track ? (S.track.durationSeconds || S.track.duration || 0) : 0;
+      };
+      bindDrag(pHost, {
+        ok: function () { return !!S.audio && pDur() > 0; },
+        drag: function (v) { S.seekDrag = v; },
+        cancel: function () { paintProgress(); },
+        value: function (p, commit) {
+          var dur = pDur();
+          setFill(e.fill, e.knob, p * 100);
+          e.pos.textContent = fmtTime(p * dur);
+          if (commit) {
+            try { S.audio.currentTime = p * dur; } catch (x) { }
+            paintProgress();
+            act('进度拖动 → ' + fmtTime(p * dur));
+          } else if (Date.now() - lastScrub > 220) {
+            lastScrub = Date.now();
+            try { S.audio.currentTime = p * dur; } catch (x) { }
+          }
+        },
+      });
     }
     if (e.vol) {
-      e.vol.addEventListener('touchstart', function (ev) {
-        S.volDrag = true;
-        setVol(ratioAt(e.vol, ev.touches[0].clientX));
-        ev.preventDefault();
-      }, false);
-      e.vol.addEventListener('touchmove', function (ev) {
-        if (!S.volDrag) return;
-        setVol(ratioAt(e.vol, ev.touches[0].clientX));
-        ev.preventDefault();
-      }, false);
-      e.vol.addEventListener('touchend', function () { S.volDrag = false; }, false);
-      e.vol.addEventListener('touchcancel', function () { S.volDrag = false; }, false);
+      bindDrag(e.vol, {
+        ok: function () { return true; },
+        drag: function (v) { S.volDrag = v; },
+        value: function (p, commit) {
+          setVol(p);
+          if (commit) act('音量 → ' + Math.round(p * 100) + '%');
+        },
+      });
     }
   }
 
