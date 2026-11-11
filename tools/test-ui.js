@@ -496,6 +496,59 @@ eq(typeof api.toggleBulk, 'function', '导出 toggleBulk');
 eq(typeof api.doBulk, 'function', '导出 doBulk');
 
 console.log('');
+console.log('== 半高卡（1×½） ==');
+var halfTile = { entity: 'light.living_main', type: 'light', name: '主灯' };
+api.writeEdit({ added: {}, hidden: {}, order: [], span: {}, rows: {} });
+eq(api.cellRows({ entity: 'light.x', type: 'light' }), 1, '灯默认占一行');
+eq(api.cellRows({ entity: 'camera.x', type: 'camera' }), 2, '摄像头默认占两行');
+api.writeEdit({ added: {}, hidden: {}, order: [], span: { 'light.living_main': 1 }, rows: { 'light.living_main': 0.5 } });
+eq(api.cellRows(halfTile), 0.5, 'rows 存 0.5 → 半高');
+/* 只有三档：乱存 0.8 / 1.4 / 9 都要被收回到 0.5 / 1 / 2 */
+api.writeEdit({ added: {}, hidden: {}, order: [], span: {}, rows: { 'light.living_main': 0.8 } });
+eq(api.cellRows(halfTile), 1, '0.8 收回成 1 行');
+api.writeEdit({ added: {}, hidden: {}, order: [], span: {}, rows: { 'light.living_main': 1.4 } });
+eq(api.cellRows(halfTile), 1, '1.4 收回成 1 行');
+api.writeEdit({ added: {}, hidden: {}, order: [], span: {}, rows: { 'light.living_main': 9 } });
+eq(api.cellRows(halfTile), 2, '9 收回成 2 行');
+
+api.writeEdit({ added: { 'light.living_main': 1 }, hidden: {}, order: [], span: { 'light.living_main': 1 }, rows: { 'light.living_main': 0.5 } });
+var halfHtml = api.tileHtml({ tile: halfTile, item: {} });
+eq(halfHtml.indexOf(' half') >= 0, true, '半高卡带 half 类');
+eq(halfHtml.indexOf('t-mini') >= 0, true, '半高卡有迷你图标');
+eq(halfHtml.indexOf('t-hname') >= 0, true, '半高卡有名称');
+eq(halfHtml.indexOf('t-hval') >= 0, true, '半高卡读数位始终在（后面能补数值）');
+eq(halfHtml.indexOf('t-hval muted') >= 0, true, '没有状态时读数是压暗的破折号');
+
+/* 读数型（温湿度计）半高卡右边多一个小数值 */
+api.setStates({ 'sensor.temp_in': { entity_id: 'sensor.temp_in', state: '21.6', attributes: { unit_of_measurement: '°C', device_class: 'temperature' } } });
+api.writeEdit({ added: { 'sensor.temp_in': 1 }, hidden: {}, order: [], span: { 'sensor.temp_in': 1 }, rows: { 'sensor.temp_in': 0.5 } });
+var halfRead = api.tileHtml({ tile: { entity: 'sensor.temp_in', type: 'sensor', name: '室温' }, item: {} });
+eq(halfRead.indexOf('t-hval') >= 0, true, '读数卡半高时带 hval');
+eq(halfRead.indexOf('21.6') >= 0, true, '读数卡半高时带数值');
+api.setStates({});
+
+api.writeEdit({ added: { 'light.living_main': 1 }, hidden: {}, order: [], span: { 'light.living_main': 1 }, rows: { 'light.living_main': 2 } });
+var tallHtml = api.tileHtml({ tile: halfTile, item: {} });
+eq(tallHtml.indexOf(' half') < 0, true, '普通卡片没有 half 类');
+
+api.writeEdit({ added: {}, hidden: {}, order: [], span: { 'light.living_main': 1 }, rows: { 'light.living_main': 2 } });
+var sizeHtml = api.sizeSheetHtml({ tile: halfTile });
+eq(sizeHtml.indexOf('1×½ 半高') >= 0, true, '尺寸弹层有半高档');
+eq(sizeHtml.indexOf('card-size-set:1:0.5') >= 0, true, '半高档按钮写 1:0.5');
+eq(sizeHtml.indexOf('现在是 1×2') >= 0, true, '当前尺寸文案认双高');
+api.writeEdit({ added: {}, hidden: {}, order: [], span: { 'light.living_main': 1 }, rows: { 'light.living_main': 0.5 } });
+api.setStates({});
+eq(api.sizeSheetHtml({ tile: halfTile }).indexOf('现在是 1×½') >= 0, true, '当前尺寸文案认半高');
+
+/* 调光半高卡：开着且有亮度时右边显示百分比（和 1×1 的大数字共用 valHtml） */
+api.setStates({ 'light.living_main': { entity_id: 'light.living_main', state: 'on', attributes: { brightness: 204, supported_color_modes: ['brightness'] } } });
+api.writeEdit({ added: { 'light.living_main': 1 }, hidden: {}, order: [], span: { 'light.living_main': 1 }, rows: { 'light.living_main': 0.5 } });
+var halfLit = api.tileHtml({ tile: halfTile, item: {} });
+eq(halfLit.indexOf(' half') >= 0, true, '调光卡半高时仍是半高模板');
+eq(halfLit.indexOf('80') >= 0 && halfLit.indexOf('%') >= 0, true, '调光半高卡右边显示 80%');
+api.setStates({});
+
+console.log('');
 if (failed === 0) {
   console.log('ALL PASS (' + passed + ' checks)');
   process.exit(0);

@@ -265,14 +265,20 @@ WS.seq = 0;
   await click('#editBtn');
   await sleep(500);
   /* 选中卡片后，宽度/顺序/移除按钮在浮动 #tileBar 里 */
-  const clicked = await evalJs(`(function(){var t=document.querySelectorAll('.grid .tile[data-entity]');if(!t.length)return 0;t[0].click();return document.querySelectorAll('#tileBar [data-act="card-span"]').length;})()`);
-  check(clicked === 1, '编辑模式选中卡片后出现宽度按钮（' + clicked + '）');
-  await evalJs(`document.querySelector('#tileBar [data-act="card-span"]').click()`);
+  /* 选中卡片后，尺寸/顺序/移除按钮在浮动 #tileBar 里；尺寸现在走弹层选档 */
+  const firstEnt = await evalJs(`(function(){var t=document.querySelectorAll('.grid .tile[data-entity]');return t.length?t[0].getAttribute('data-entity'):'';})()`);
+  const clicked = await evalJs(`(function(){var t=document.querySelectorAll('.grid .tile[data-entity]');if(!t.length)return 0;t[0].click();return document.querySelectorAll('#tileBar [data-act="card-size"]').length;})()`);
+  check(clicked === 1, '编辑模式选中卡片后出现尺寸按钮（' + clicked + '）');
+  await evalJs(`document.querySelector('#tileBar [data-act="card-size"]').click()`);
   await sleep(500);
-  const spanTxt = await evalJs(`(function(){var b=document.querySelector('#tileBar [data-act="card-span"]');return b?b.textContent:'(无)';})()`);
-  check(spanTxt === '2×', '点一下宽度变成 2×（' + spanTxt + '）');
+  const sizeRows = await evalJs(`document.querySelectorAll('.sheet.show [data-act^="card-size-set:"]').length`);
+  check(sizeRows === 5, '尺寸弹层列出 5 档（含半高，实际 ' + sizeRows + '）');
+  await evalJs(`(function(){var b=document.querySelector('.sheet.show [data-act="card-size-set:2:1"]');if(b)b.click();return 1;})()`);
+  await sleep(600);
   const spanStore = await store('hc.edit');
-  check(String(spanStore).indexOf('"span"') >= 0, '跨列写入 hc.edit.span（' + String(spanStore).slice(0, 60) + '…）');
+  check(JSON.parse(spanStore || '{}').span && JSON.parse(spanStore).span[firstEnt] === 2,
+    '选 2×1 后写进 hc.edit.span（' + String(spanStore).slice(0, 70) + '…）');
+  check(await evalJs(`!!document.querySelector('.grid .tile[data-entity="${firstEnt}"].span-2')`), '网格里这张卡带上 span-2');
   /* 顺序：把第二张卡往前挪一位 */
   const before2 = await evalJs(`Array.prototype.map.call(document.querySelectorAll('.grid .tile[data-entity]'), function(e){return e.getAttribute('data-entity');}).join(',')`);
   await evalJs(`(function(){var t=document.querySelectorAll('.grid .tile[data-entity]');if(!t[1])return 0;t[1].click();var b=document.querySelector('#tileBar [data-act="card-move-left"]');if(b)b.click();return 1;})()`);

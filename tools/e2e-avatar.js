@@ -149,8 +149,16 @@ WS.seq = 0;
   check(rw && rs && rw.rr <= rs.l + 1, '住户区在「已连接」左边（不重叠）');
   check(rw && rs && Math.abs((rw.t + rw.h / 2) - (rs.t + rs.h / 2)) < 3, '与状态胶囊垂直居中对齐');
   check(rw && rs && (rs.l - rw.rr) >= 6 && (rs.l - rw.rr) <= 24, '和状态胶囊间距合理（' + (rs.l - rw.rr).toFixed(1) + 'px）');
+  /* 环的颜色跟主题的 --ok-rgb 走（浅色主题是偏灰的绿），所以断言「绿通道最大 + 2px 实环」，
+     不锁死色值；离家时是 1px 的中性描边，不该有突出的绿 */
+  const ringOf = s => {
+    const m = /rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?\)\s*0px\s*0px\s*0px\s*2px/.exec(s || '');
+    return m ? { r: +m[1], g: +m[2], b: +m[3], a: m[4] === undefined ? 1 : +m[4] } : null;
+  };
   const sh = await evalJs("getComputedStyle(document.querySelector('#who .who-av')).boxShadow");
-  check(/61,\s*220,\s*132/.test(sh || ''), '在家时头像描边是绿色', 'got ' + sh);
+  const ringHome = ringOf(sh);
+  check(!!ringHome && ringHome.g > ringHome.r + 8 && ringHome.g > ringHome.b + 8 && ringHome.a > 0.4,
+    '在家时头像有一圈绿色描边', 'got ' + sh);
   await shot('shot-who-home.png');
 
   console.log('=== 2. 离家 / 未知 / 无住户 ===');
@@ -159,7 +167,8 @@ WS.seq = 0;
   check((await text('#who .who-t')) === '离家', 'not_home → 显示「离家」');
   check((await cls('#who')).indexOf('away') >= 0, '离家时顶栏带 away 类');
   const sh2 = await evalJs("getComputedStyle(document.querySelector('#who .who-av')).boxShadow");
-  check(!/61,\s*220,\s*132/.test(sh2 || ''), '离家时描边不再是绿色', 'got ' + sh2);
+  const ringAway = ringOf(sh2);
+  check(!ringAway, '离家时没有绿色实环', 'got ' + sh2);
   await shot('shot-who-away.png');
 
   await evalJs("window.__PANEL_TEST__.setStates({ 'person.mock_owner': { entity_id:'person.mock_owner', state:'unavailable', attributes:{} } }); window.__PANEL_TEST__.renderWho(); 1");

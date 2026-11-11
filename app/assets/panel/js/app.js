@@ -743,7 +743,7 @@ var COLOR_PRESETS = [
     var naCls = isNa(stateOf(tile.entity)) ? ' na' : '';
     var span = cardSpan(tile.entity, num(prefs().cols, 4));
     /* 行跨度不再是编辑态专属：默认尺寸也会让摄像头/温湿度计占两行 */
-    var rows = rowSpan(tile.entity);
+    var rows = cellRows(tile);
     var notAdded = S.editing && !cardVisible(tile.entity);
     /* 批量选择时不做拉伸：整张卡都要能点（否则 88px 的拉伸角区把小球卡吃掉大半） */
     var grabbable = S.editing && !notAdded && !S.bulk;
@@ -751,16 +751,34 @@ var COLOR_PRESETS = [
     /* 1×1 用哪套模板只跟尺寸有关，跟编辑态无关：进编辑只多一圈虚线框和角上的尺寸标，
        图标/圆钮必须和平时一模一样，否则看起来像两套 UI */
     var tiny = span === 1 && rows === 1;
-    var cls = 'tile type-' + tile.type + ' mode-' + mode + naCls + (tiny ? ' tiny' : '') +
+    /* 半高卡（1×½）：一行只放得下「图标 + 名称」（读数卡再加一个值），像一条列表项 */
+    var half = rows < 1;
+    var cls = 'tile type-' + tile.type + ' mode-' + mode + naCls + (tiny ? ' tiny' : '') + (half ? ' half' : '') +
       (notAdded ? ' not-added' : '') + (span > 1 ? ' span-' + span : '') + (rows > 1 ? ' rows-2' : '');
     var grip = grabbable ? '<div class="t-grip" data-grip="' + esc(tile.entity) + '"></div>' : '';
-    var sizeTxt = spanLabel(tile.entity) + (rows > 1 ? ' · 高 ' + rows : '');
+    var sizeTxt = spanLabel(tile.entity) + (half ? ' · 半高' : rows > 1 ? ' · 高 ' + rows : '');
     var tools = S.editing
       ? '<div class="t-tools">' +
           (notAdded ? '<button class="t-tool t-add" data-act="card-add">+ 添加</button>' : '') +
           '<span class="t-size">' + sizeTxt + '</span>' +
         '</div>'
       : '';
+    /* 半高卡：图标 + 名称，读数卡再带一个值（够不着圆钮/大字的排版） */
+    if (half) {
+      var stH = stateOf(tile.entity), attrsH = attrsOf(tile.entity);
+      /* 半高卡右侧的小读数：真数值（传感器/温湿度/空调）以及灯亮度、开关功率。
+         灯和开关的 valHtml 在「开着且真有数值」时才吐内容，所以关着时右边是空的，不占位 */
+      var readHalf = isNumberSensor(tile, attrsH) || binarySensor(tile) ||
+        tile.type === 'light' || tile.type === 'switch' ||
+        tile.type === 'climate' || tile.type === 'weather';
+      var valHalf = readHalf
+        ? '<span class="t-hval' + (isNa(stH) ? ' muted' : '') + '" data-role="hval">' + valHtml(tile, stH, attrsH) + '</span>'
+        : '';
+      return '<div class="' + cls + '" data-entity="' + esc(tile.entity) + '">' +
+        '<span class="t-mini" data-role="ico" data-icon="' + esc(iconFor(tile)) + '">' + svg(iconFor(tile)) + '</span>' +
+        '<span class="t-hname" data-role="cardname">' + esc(displayName(tile)) + '</span>' +
+        valHalf + tools + grip + '</div>';
+    }
     /* 1×1 只有两种读法（照用户手绘）：
        控制类 = 一个圆钮放在正中（图标就是可以按的东西），下面一行「状态 · 名称」；
        传感类 = 大字读数 + 单位放在正中，下面一行只有名称。 */
@@ -808,7 +826,8 @@ var COLOR_PRESETS = [
     var sp = cardSpan(tile.entity, num(prefs().cols, 4));
     var rw = rowSpan(tile.entity);
     var tiny = sp === 1 && rw === 1;
-    var tcls = 'tile type-' + tile.type + ' mode-' + iconMode(tile) + (isNa(st) ? ' na' : '') + (tiny ? ' tiny' : '') + (isOn(tile) ? ' on' : '') + (sp > 1 ? ' span-' + sp : '') + (rw > 1 ? ' rows-' + rw : '');
+    var half = rw < 1;
+    var tcls = 'tile type-' + tile.type + ' mode-' + iconMode(tile) + (isNa(st) ? ' na' : '') + (tiny ? ' tiny' : '') + (half ? ' half' : '') + (isOn(tile) ? ' on' : '') + (sp > 1 ? ' span-' + sp : '') + (rw > 1 ? ' rows-' + rw : '');
     if (S.tileSel === node && node.className.indexOf('selected') >= 0) tcls += ' selected';
     /* 批量选择也存着：状态包一来就会重写 className，不补回来勾选就没了 */
     if (S.bulk && S.bulkSel[tile.entity]) tcls += ' picked';
@@ -828,11 +847,11 @@ var COLOR_PRESETS = [
       var icoName = iconFor(tile);
       if (ico.getAttribute('data-icon') !== icoName) {
         ico.setAttribute('data-icon', icoName);
-        /* 仪表模式的块底有一根细刻度，重建字形时要一起补回来（1×1 圆钮里没有刻度） */
-        ico.innerHTML = svg(icoName) + (iconMode(tile) === 'meter' && !tiny ? '<i><b></b></i>' : '');
+        /* 仪表模式的块底有一根细刻度，重建字形时要一起补回来（1×1 圆钮和半高条里没有刻度） */
+        ico.innerHTML = svg(icoName) + (iconMode(tile) === 'meter' && !tiny && !half ? '<i><b></b></i>' : '');
       }
       /* 刻度表示读数深浅：只在数值真的动了才写 style，不每推送都写 */
-      var lvl = tiny ? NaN : meterLevel(tile, st, attrs);
+      var lvl = (tiny || half) ? NaN : meterLevel(tile, st, attrs);
       var lvStr = isNaN(lvl) ? '0%' : Math.round(lvl * 100) + '%';
       if (ico.getAttribute('data-lvl') !== lvStr) {
         ico.setAttribute('data-lvl', lvStr);
@@ -853,6 +872,15 @@ var COLOR_PRESETS = [
       if (val.innerHTML !== vhtml) val.innerHTML = vhtml;
     }
 
+    /* 半高卡右侧的小读数 */
+    var hval = node.querySelector('[data-role="hval"]');
+    if (hval) {
+      var hcls = 't-hval' + (isNa(st) ? ' muted' : '');
+      var hhtml = valHtml(tile, st, attrs);
+      if (hval.className !== hcls) hval.className = hcls;
+      if (hval.innerHTML !== hhtml) hval.innerHTML = hhtml;
+    }
+
     /* 百分比进度条：关着就画到 0（但条还在，点一下就能把灯调亮）。
        正在被手指拖的那一条不跟服务器回包走，否则拖到一半会被拉回去。
        不支持调光的灯（onoff）把条藏掉——骨架是渲染时就画好的，所以这里只切显隐。 */
@@ -865,10 +893,11 @@ var COLOR_PRESETS = [
         if (pbar.style.display === 'none') pbar.style.display = '';
         /* 拖动中：按实体判断（DOM 可能已被重建）
            刚松手 1.2s 内：HA 会把 brightness 的过渡中间值一条条推回来，
-           照画就会出现「松手后自己往回弹」，所以给一个静默窗口 */
+           照画就会出现「松手后自己往回弹」，所以给一个静默窗口。
+           但关灯不算「中间值」——灯都关了，条必须立刻画到 0。 */
         var dragNow = S.pctDrag && S.pctDrag.entity === tile.entity;
         var holding = S.pctHold && S.pctHold.entity === tile.entity && Date.now() < S.pctHold.until;
-        if (!dragNow && !holding) setBarPct(pbar, st === 'on' ? pm.pct : 0);
+        if (!dragNow && (st !== 'on' || !holding)) setBarPct(pbar, st === 'on' ? pm.pct : 0);
       }
     }
 
@@ -1289,14 +1318,16 @@ var COLOR_PRESETS = [
     return null;
   }
 
-  /** 卡片占几行（1~2）：编辑里改过就按改的，没改过按设备类型默认 */
+  /** 卡片占几行：0.5 = 半高（只有一排图标+名称的「条」），1 = 方格，2 = 双高。
+      编辑里改过就按改的，没改过按设备类型默认 */
   function cellRows(tile) {
     /* tile 找不到（测试里没有 S.items，或实体刚消失）时按 1 行走，不抛异常 */
     if (!tile) return 1;
     var ex = editState().rows && editState().rows[tile.entity];
     var n = ex === undefined ? defaultCellH(tile) : num(ex, 1);
-    if (n < 1) n = 1;
-    if (n > 2) n = 2;
+    if (n < 0.75) n = 0.5;
+    else if (n < 1.5) n = 1;
+    else n = 2;
     return n;
   }
   function rowSpan(entity) {
@@ -1363,10 +1394,11 @@ var COLOR_PRESETS = [
   /** 每行几张：直接用内联样式写死列数，不依赖 .cols-N 类（跨列卡让网格列数卡住时也不至于塌） */
   /** 卡片大小 → 行高。照米家：1×1 是正方形，行高 = 列宽（老 WebView 没有 aspect-ratio，
       只能按网格实际宽度算一次；窗口尺寸/列数变了再算）。 */
+  var ROW_GAP = 12;
   function rowHeight(cols) {
     var c = num(cols, num(prefs().cols, 4));
     if (c < 1) c = 4;
-    var gap = 12;
+    var gap = ROW_GAP;
     var w = el.grid ? el.grid.clientWidth : 0;
     if (!w) w = (window.innerWidth || 1024) - 48;
     var h = Math.floor((w - gap * (c - 1)) / c);
@@ -1377,11 +1409,14 @@ var COLOR_PRESETS = [
 
   function setColumns(node, cols) {
     if (!node) return;
-    var h = rowHeight(cols) + 'px';
+    /* 网格的行单位是「半行」：1×1 卡跨 2 个单位，半高卡跨 1 个。
+       这样半高卡正好是 1×1 的一半（两份半高 + 一道行距 = 一个 1×1）。 */
+    var h = rowHeight(cols);
+    var unit = Math.round((h - ROW_GAP) / 2);
     node.style.gridTemplateColumns = 'repeat(' + cols + ', minmax(0, 1fr))';
     node.style.gridAutoFlow = 'row';
-    node.style.gridAutoRows = h;
-    node.style.gridTemplateRows = 'repeat(auto-fill, ' + h + ')';
+    node.style.gridAutoRows = unit + 'px';
+    node.style.gridTemplateRows = 'repeat(auto-fill, ' + unit + 'px)';
     node.setAttribute('data-cols', String(cols));
     node.setAttribute('data-size', prefs().size || 'md');
   }
@@ -1615,20 +1650,22 @@ var COLOR_PRESETS = [
   function sizeSheetHtml(item) {
     var cols = num(prefs().cols, 4);
     var curC = Math.min(num(cardSpan(item.tile.entity, 99), 1), cols);
-    var curR = rowSpan(item.tile.entity);
+    var curR = cellRows(item.tile);
     var esp = editState();
     var explicit = esp.span[item.tile.entity] !== undefined || esp.rows[item.tile.entity] !== undefined;
     var dw = Math.min(defaultCellW(item.tile), cols);
     var dh = defaultCellH(item.tile);
     var defs = [
+      { c: 1, r: 0.5, t: '1×½ 半高', d: '一条：图标、名称和一个小读数' },
       { c: 1, r: 1, t: '1×1', d: '一个方格：图标、名称与主数值' },
       { c: 2, r: 1, t: '2×1', d: '横着两格：多一条亮度条或曲线' },
       { c: 1, r: 2, t: '1×2', d: '竖着两格：数值更大' },
       { c: 2, r: 2, t: '2×2', d: '四格：摄像头画面或两个读数' }
     ];
+    var curTxt = curC + '×' + (curR < 1 ? '½' : curR);
     var h = '<div class="cfg-head">卡片尺寸</div>' +
-      '<div class="cfg-desc">' + esc(displayName(item.tile)) + ' 现在是 ' + curC + '×' + curR +
-      '。1×1 是正方形；尺寸只改这张卡。</div><div class="ed-list">';
+      '<div class="cfg-desc">' + esc(displayName(item.tile)) + ' 现在是 ' + curTxt +
+      '。1×1 是正方形，1×½ 是半高的一条；尺寸只改这张卡。</div><div class="ed-list">';
     defs.forEach(function (d) {
       var on = explicit && d.c === curC && d.r === curR;
       var off = d.c > cols;
@@ -1725,7 +1762,11 @@ var COLOR_PRESETS = [
     var e = editState();
     var cols = num(prefs().cols, 4);
     var cv = num(c, 1); if (cv < 1) cv = 1; if (cv > cols) cv = cols;
-    var rv = num(r, 1); if (rv < 1) rv = 1; if (rv > 2) rv = 2;
+    /* 行跨度只有三档：半高（0.5）/ 一格（1）/ 双高（2） */
+    var rv = num(r, 1);
+    if (rv < 0.75) rv = 0.5;
+    else if (rv < 1.5) rv = 1;
+    else rv = 2;
     e.span[entity] = cv;
     e.rows[entity] = rv;
     writeEdit(e);
@@ -1875,7 +1916,8 @@ var COLOR_PRESETS = [
       '<button class="t-tool" data-act="card-move-left">◀</button>' +
       '<button class="t-tool" data-act="card-move-right">▶</button>' +
       '<button class="t-tool t-span" data-act="card-size">尺寸 <b>' +
-        Math.min(num(cardSpan(item.tile.entity, 99), 1), num(prefs().cols, 4)) + '×' + rowSpan(item.tile.entity) +
+        Math.min(num(cardSpan(item.tile.entity, 99), 1), num(prefs().cols, 4)) + '×' +
+        (rowSpan(item.tile.entity) < 1 ? '½' : rowSpan(item.tile.entity)) +
       '</b></button>' +
       '<button class="t-tool t-del" data-act="card-remove">✕ 移除</button>';
     bar.className = 'tile-bar show';
@@ -4006,7 +4048,7 @@ function bindDim() {
         if (!entity) return;
       }
       var cols = num(prefs().cols, 4);
-      var gap = 14;
+      var gap = ROW_GAP;
       var gw = el.grid.clientWidth || 0;
       var colW = cols > 0 ? (gw - gap * (cols - 1)) / cols : 0;
       if (!(colW > 0)) colW = 120;
@@ -4014,7 +4056,8 @@ function bindDim() {
         entity: entity, el: tileEl,
         x0: pt.clientX, y0: pt.clientY,
         c0: cardSpan(entity, cols), r0: rowSpan(entity),
-        stepX: colW + gap, stepY: rowHeight() + gap,
+        /* 竖向一格 = 网格的一个半行单位（含行距），跨一格 = 0.5 行 */
+        stepX: colW + gap, stepY: (rowHeight(cols) + gap) / 2,
         cols: cols, c: cardSpan(entity, cols), r: rowSpan(entity)
       };
       S.gripFired = true;
@@ -4031,13 +4074,17 @@ function bindDim() {
       var dc = Math.round((pt.clientX - st.x0) / st.stepX);
       var dr = Math.round((pt.clientY - st.y0) / st.stepY);
       var c = st.c0 + dc; if (c < 1) c = 1; if (c > st.cols) c = st.cols;
-      var r = st.r0 + dr; if (r < 1) r = 1; if (r > 2) r = 2;
+      /* 竖向按半行走，但只落三档：半高 / 一格 / 双高 */
+      var r = st.r0 + dr * 0.5;
+      if (r < 0.75) r = 0.5;
+      else if (r < 1.5) r = 1;
+      else r = 2;
       if (c === st.c && r === st.r) { if (ev.cancelable) ev.preventDefault(); return; }
       st.c = c; st.r = r;
       st.el.style.gridColumn = 'span ' + c;
-      st.el.style.gridRow = 'span ' + r;
+      st.el.style.gridRow = 'span ' + Math.round(r * 2);
       var tag = st.el.querySelector('.t-size');
-      if (tag) tag.innerHTML = spanText(c, st.cols) + (r > 1 ? ' · 高 ' + r : '');
+      if (tag) tag.innerHTML = spanText(c, st.cols) + (r < 1 ? ' · 半高' : r > 1 ? ' · 高 ' + r : '');
       if (ev.cancelable) ev.preventDefault();
     }
     function gripUp(ev) {
@@ -4053,7 +4100,7 @@ function bindDim() {
         resizeCard(st.entity, st.c, st.r);
       } else {
         var tag = st.el.querySelector('.t-size');
-        if (tag) tag.innerHTML = spanText(st.c0, st.cols) + (st.r0 > 1 ? ' · 高 ' + st.r0 : '');
+        if (tag) tag.innerHTML = spanText(st.c0, st.cols) + (st.r0 < 1 ? ' · 半高' : st.r0 > 1 ? ' · 高 ' + st.r0 : '');
         /* 只是在那个角上点了一下、没拖动：当成点卡片本身。
            否则小卡（6 列时整张才 113px）右下 88px 角区几乎盖住整张卡，永远选不中。
            这一次的 click 会被上面 gripFired 的 400ms 立即早退挡掉，不会双触发。 */
@@ -4409,6 +4456,7 @@ function boot() {
     setReal: function (v) { S.real = !!v; },
     guideSheetHtml: guideSheetHtml, panelSheetHtml: panelSheetHtml, prefs: prefs, PREDEF: PREF_DEF,
     readEdit: readEdit, writeEdit: writeEdit, cardVisible: cardVisible, setCardVisible: setCardVisible, cardSpan: cardSpan,
+    cellRows: cellRows, rowSpan: rowSpan, resizeCard: resizeCard, sizeSheetHtml: sizeSheetHtml, spanText: spanText,
     bulkCount: bulkCount, toggleBulk: toggleBulk, doBulk: doBulk, bulk: function () { return { on: S.bulk, sel: S.bulkSel }; },
     sortCards: sortCards, editToggle: editToggle, editSpan: editSpan, editMove: editMove,
     editAddAll: editAddAll, editSheetHtml: editSheetHtml, allCards: allCards, visibleRooms: visibleRooms, hiddenRooms: hiddenRooms, hasColor: hasColor, rgbCss: rgbCss, hsvToRgb: hsvToRgb, rgbToHs: rgbToHs, colorPresets: COLOR_PRESETS

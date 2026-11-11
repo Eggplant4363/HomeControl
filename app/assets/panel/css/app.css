@@ -206,7 +206,10 @@ body::before { content: none; }
   border: 1px solid rgba(var(--line-rgb),.55);
   box-shadow: var(--shadow);
   transition: background .14s, border-color .14s, transform .08s;
+  /* 网格的行单位是「半行」：1×1 卡跨两个单位，半高卡（.half）跨一个 */
+  grid-row: span 2;
 }
+.tile.half { grid-row: span 1; }
 .tile:active { transform: scale(.985); }
 .tile.on {
   /* 开着的卡片不铺背景（用户要求）：只有图标变强调色 */
@@ -1059,7 +1062,49 @@ body::before { content: none; }
 .btn.hit, .seg.hit, .p-sw.hit { opacity: .62; }
 
 /* ---- 磁贴式拉伸：编辑态卡片右下角手柄 ---- */
-.tile.rows-2 { grid-row: span 2; }
+.tile.rows-2 { grid-row: span 4; }
+
+/* 半高卡（1×½）：一条横向的卡片，图标 + 名称，读数卡右边带一个小数值。
+   竖向居中，跟 1×1 卡左右两端对齐。 */
+.tile.half {
+  flex-direction: row; align-items: center;
+  padding: 0 14px; border-radius: 12px;
+}
+.t-mini {
+  flex: 0 0 auto; width: 30px; height: 30px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(var(--surf),.07); color: var(--text-4);
+  transition: background .14s, color .14s;
+}
+.t-mini svg { width: 16px; height: 16px; display: block; }
+.tile.half.on .t-mini { background: rgb(var(--ctl-on)); color: var(--glyph-on); }
+.tile.half.na .t-mini { background: rgba(var(--surf),.04); color: var(--text-5); }
+.tile.half.mode-frame .t-mini { background: transparent; border: 1px solid rgba(var(--surf),.14); color: var(--text-4); }
+.tile.half.mode-scene .t-mini { background: rgba(var(--surf),.12); color: var(--text-2); }
+.t-hname {
+  flex: 1 1 auto; min-width: 0; margin-left: 11px;
+  font-size: 13.5px; color: var(--text-2);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.t-hval {
+  flex: 0 0 auto; margin-left: 8px;
+  font-size: 13px; color: var(--text-3);
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.t-hval.muted { color: var(--text-5); }
+/* 编辑态：半高卡里让位给「尺寸」标签和拉伸角 */
+.grid.editing .tile.half .t-hval { display: none; }
+.grid.editing .tile.half { padding-right: 118px; }
+.tile.half .t-tools { position: absolute; right: 48px; top: 50%; margin: -11px 0 0; display: flex; }
+.tile.half .t-tools .t-tool, .tile.half .t-tools .t-size { pointer-events: auto; }
+.tile.half .t-tools .t-tool { height: 22px; min-width: 22px; padding: 0 6px; font-size: 11px; border-radius: 6px; }
+.tile.half .t-size { margin-left: 0; font-size: 11px; }
+.tile.half .t-grip { width: 42px; height: 100%; top: 0; bottom: 0; border-bottom-right-radius: 12px; }
+/* 紧凑列数下卡片内边距会变，半高条的左右内边距也跟着收一点 */
+.grid.cols-5 .tile.half { padding: 0 12px; }
+.grid.cols-6 .tile.half { padding: 0 10px; }
+.grid.cols-6 .tile.half .t-mini { width: 26px; height: 26px; }
+.grid.cols-6 .tile.half .t-mini svg { width: 14px; height: 14px; }
 .t-size { margin-left: auto; font-size: 12px; letter-spacing: .5px; color: var(--accent-soft); }
 .t-grip {
   position: absolute; right: 2px; bottom: 2px; width: 64px; height: 64px; z-index: 30;
