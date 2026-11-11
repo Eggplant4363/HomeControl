@@ -377,6 +377,32 @@ api.writeEdit(JSON.parse(windowStub.localStorage.getItem('hc.edit')));
 eq(api.cardVisible('light.living_main'), true, '编辑：勾选后可见');
 eq(api.cardVisible('light.living_strip'), false, '编辑：没勾选仍不可见');
 
+/* 「显示全部设备」下也要能移除：hidden 与 added 各管一半 */
+windowStub.localStorage.setItem('hc.prefs', JSON.stringify({ cols: 4, size: 'md', allCards: true }));
+windowStub.localStorage.setItem('hc.edit', JSON.stringify({ added: {}, hidden: { 'light.living_main': 1 } }));
+api.writeEdit(JSON.parse(windowStub.localStorage.getItem('hc.edit')));
+eq(api.prefs().allCards, true, '全部设备模式：allCards=true');
+eq(api.cardVisible('light.living_main'), false, '全部设备模式：hidden 里的卡片不可见');
+eq(api.cardVisible('light.living_strip'), true, '全部设备模式：没被 hidden 的仍可见');
+eq(api.readEdit().hidden['light.living_main'], 1, 'hidden 会被读回来');
+
+api.setCardVisible('light.living_strip', false);
+eq(api.cardVisible('light.living_strip'), false, 'setCardVisible(false) 把卡隐藏');
+eq(api.readEdit().hidden['light.living_strip'], 1, 'setCardVisible(false) 写进 hidden');
+eq(api.readEdit().added['light.living_strip'], undefined, 'setCardVisible(false) 不留在 added');
+
+api.setCardVisible('light.living_strip', true);
+eq(api.cardVisible('light.living_strip'), true, 'setCardVisible(true) 把卡放回来');
+eq(api.readEdit().hidden['light.living_strip'], undefined, 'setCardVisible(true) 清掉 hidden');
+
+/* 手动添加模式（allCards=false）移除照旧：只删 added */
+windowStub.localStorage.setItem('hc.prefs', JSON.stringify({ cols: 4, size: 'md', allCards: false }));
+windowStub.localStorage.setItem('hc.edit', JSON.stringify({ added: { 'light.living_main': 1, 'light.living_strip': 1 } }));
+api.writeEdit(JSON.parse(windowStub.localStorage.getItem('hc.edit')));
+api.setCardVisible('light.living_main', false);
+eq(api.cardVisible('light.living_main'), false, '手动模式：移除后不可见');
+eq(Object.keys(api.readEdit().added).length, 1, '手动模式：只删 added 一项');
+
 /* 顺序：切列数不影响排序（顺序只存 entities，和列数无关） */
 windowStub.localStorage.setItem('hc.edit', JSON.stringify({
   added: { b: 1, a: 1, c: 1 }, order: ['b', 'a', 'c']

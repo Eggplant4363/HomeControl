@@ -1203,9 +1203,12 @@ var COLOR_PRESETS = [
   /* ---------- 编辑：默认不添加任何设备 ----------
      编辑状态存在 localStorage['hc.edit']：
        added  { "实体ID": 1 }                  —— 用户手动加进来的卡（默认一张都没有）
+       hidden { "实体ID": 1 }                  —— 用户从这块屏上移除掉的卡（优先生效）
        order  [ "实体ID", ... ]                 —— 自定义顺序（只决定先后，与列数无关）
        span   { "实体ID": 2|3 }                 —— 这张卡横跨几列（不写就是 1）
-     「默认不添加任何设备」：allCards=false 时，没在 added 里的设备一律不显示。 */
+     「默认不添加任何设备」：allCards=false 时，没在 added 里的设备一律不显示。
+     「显示全部设备」(allCards=true) 时 added 是空的、所有设备都会出来，
+     此时移除只能靠 hidden —— 否则点「✕ 移除」等于什么也没发生。 */
   var EDIT_KEY = 'hc.edit';
 
   function readEdit() {
@@ -1214,6 +1217,7 @@ var COLOR_PRESETS = [
     if (!o || typeof o !== 'object') o = {};
     return {
       added: (o.added && typeof o.added === 'object') ? o.added : {},
+      hidden: (o.hidden && typeof o.hidden === 'object') ? o.hidden : {},
       order: Array.isArray(o.order) ? o.order.slice() : [],
       span: (o.span && typeof o.span === 'object') ? o.span : {},
       rows: (o.rows && typeof o.rows === 'object') ? o.rows : {}
@@ -1231,6 +1235,9 @@ var COLOR_PRESETS = [
   }
 
   function cardVisible(entity) {
+    /* 手动移除过的卡：不管哪种模式都不再显示（allCards 模式下 added 是空的，
+       光删 added 等于没删，所以要用 hidden 记住「这张我不要」） */
+    if (editState().hidden[entity]) return false;
     var p = prefs();
     if (p.allCards) return true;
     return !!editState().added[entity];
@@ -1476,7 +1483,10 @@ var COLOR_PRESETS = [
   function editAddAll(all) {
     var e = editState(), list = allCards();
     e.added = {};
+    e.hidden = {};
+    /* 全部加上 = 清掉所有 hidden；全部清空 = 把当前所有卡记成 hidden（「显示全部设备」下才真的会空） */
     if (all) list.forEach(function (it) { e.added[it.tile.entity] = 1; });
+    else list.forEach(function (it) { e.hidden[it.tile.entity] = 1; });
     e.order = list.map(function (it) { return it.tile.entity; });
     writeEdit(e);
     actLog('edit all=' + (all ? list.length : 0));
@@ -1486,11 +1496,9 @@ var COLOR_PRESETS = [
   }
 
   function editToggle(entity) {
-    var e = editState();
-    if (e.added[entity]) delete e.added[entity];
-    else e.added[entity] = 1;
-    writeEdit(e);
-    actLog('edit toggle ' + entity + ' -> ' + (e.added[entity] ? 'on' : 'off'));
+    var on = !cardVisible(entity);
+    setCardVisible(entity, on);
+    actLog('edit toggle ' + entity + ' -> ' + (on ? 'on' : 'off'));
     renderGrid(true);
     /* 只有编辑帮助面板打开时才重写它；否则会把选中的卡片工具条/内容顶掉 */
     if (S.sheetShow === 'edit') el.sheetInner.innerHTML = editSheetHtml();
@@ -1653,20 +1661,29 @@ var COLOR_PRESETS = [
     actLog('add sheet open');
   }
 
-  /** 添加/移除一张卡；不动其它卡片的顺序。sheet 只在添加面板里时刷新 */
-  function addToggle(entity) {
+  /** 把一张卡放上屏（on=true）或从屏上拿掉；「全部设备」开不开都走这一条路。
+      移除时必须记 hidden：allCards 模式下 added 本来是空的，只删 added 等于没删。 */
+  function setCardVisible(entity, on) {
     var e = editState();
-    if (e.added[entity]) {
-      delete e.added[entity];
-      actLog('add off ' + entity);
-    } else {
+    if (on) {
+      delete e.hidden[entity];
       e.added[entity] = 1;
       var ord = e.order ? e.order.slice() : [];
       if (ord.indexOf(entity) < 0) ord.push(entity);
       e.order = ord;
-      actLog('add on ' + entity);
+    } else {
+      delete e.added[entity];
+      e.hidden[entity] = 1;
     }
     writeEdit(e);
+    return e;
+  }
+
+  /** 添加/移除一张卡；不动其它卡片的顺序。sheet 只在添加面板里时刷新 */
+  function addToggle(entity) {
+    var on = !cardVisible(entity);
+    setCardVisible(entity, on);
+    actLog((on ? 'card on ' : 'card off ') + entity);
     renderGrid(true);
     if (S.sheetShow === 'add') el.sheetInner.innerHTML = addSheetHtml();
   }
@@ -1732,7 +1749,11 @@ var COLOR_PRESETS = [
   }
 
   function editReset() {
-    writeEdit({});
+    /* 「恢复默认」= 一块空屏：added/尺寸/顺序全清，并把当前所有设备记成 hidden，
+       这样「显示全部设备」开着时也是空屏，而不是点完又冒出一屏卡 */
+    var e = { added: {}, hidden: {}, order: [], span: {}, rows: {} };
+    allCards().forEach(function (it) { e.hidden[it.tile.entity] = 1; });
+    writeEdit(e);
     actLog('edit reset');
     renderGrid(true);
     if (S.sheetShow === 'edit') el.sheetInner.innerHTML = editSheetHtml();
@@ -1774,7 +1795,11 @@ var COLOR_PRESETS = [
     var r = roomById(S.room);
     if (!r) { toast('先在顶栏选一个房间'); return; }
     var e = editState(), n = 0;
-    (r.tiles || []).forEach(function (t) { if (t && t.entity && !e.added[t.entity]) { e.added[t.entity] = 1; n++; } });
+    (r.tiles || []).forEach(function (t) {
+      if (!t || !t.entity) return;
+      if (e.hidden[t.entity]) delete e.hidden[t.entity];
+      if (!e.added[t.entity]) { e.added[t.entity] = 1; n++; }
+    });
     var ord = e.order.slice(), seen = {};
     ord.forEach(function (id) { seen[id] = 1; });
     (r.tiles || []).forEach(function (t) { if (t && t.entity && !seen[t.entity]) { ord.push(t.entity); seen[t.entity] = 1; } });
@@ -1790,7 +1815,13 @@ var COLOR_PRESETS = [
     var r = roomById(S.room);
     if (!r) return;
     var e = editState(), n = 0;
-    (r.tiles || []).forEach(function (t) { if (t && t.entity && e.added[t.entity]) { delete e.added[t.entity]; n++; } });
+    (r.tiles || []).forEach(function (t) {
+      if (!t || !t.entity) return;
+      if (!cardVisible(t.entity)) return;
+      delete e.added[t.entity];
+      e.hidden[t.entity] = 1;
+      n++;
+    });
     writeEdit(e);
     actLog('edit tab off ' + r.id + ' -' + n);
     renderGrid(true);
@@ -2118,7 +2149,14 @@ var COLOR_PRESETS = [
     if (act === 'edit-done') { exitEdit(); return; }
     if (act === 'edit-add') { openAddSheet(); return; }
     if (act === 'edit-reset') { editReset(); return; }
-    if (act === 'card-remove') { addToggle(item.tile.entity); toast('已移除 · ' + displayName(item.tile)); return; }
+    if (act === 'card-remove') {
+      var gone = item.tile.entity, goneName = displayName(item.tile);
+      addToggle(gone);
+      /* 卡片没了，浮动工具条也别继续挂着一张不存在的卡 */
+      selectTile(null, null);
+      toast('已移除 · ' + goneName);
+      return;
+    }
     if (act === 'card-move-left') { moveCard(item.tile.entity, -1); return; }
     if (act === 'card-move-right') { moveCard(item.tile.entity, 1); return; }
     if (act === 'card-size') { openSizeSheet(item); return; }
@@ -4205,7 +4243,7 @@ function boot() {
     camSrc: camSrc, cameraSheet: cameraSheet, camStateText: function (st) { return CAM_STATE[st] || '待机'; },
     setReal: function (v) { S.real = !!v; },
     guideSheetHtml: guideSheetHtml, panelSheetHtml: panelSheetHtml, prefs: prefs, PREDEF: PREF_DEF,
-    readEdit: readEdit, writeEdit: writeEdit, cardVisible: cardVisible, cardSpan: cardSpan,
+    readEdit: readEdit, writeEdit: writeEdit, cardVisible: cardVisible, setCardVisible: setCardVisible, cardSpan: cardSpan,
     sortCards: sortCards, editToggle: editToggle, editSpan: editSpan, editMove: editMove,
     editAddAll: editAddAll, editSheetHtml: editSheetHtml, allCards: allCards, visibleRooms: visibleRooms, hiddenRooms: hiddenRooms, hasColor: hasColor, rgbCss: rgbCss, hsvToRgb: hsvToRgb, rgbToHs: rgbToHs, colorPresets: COLOR_PRESETS
   };
