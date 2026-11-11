@@ -137,18 +137,14 @@ if (!api) {
 /* ---------- 断言 ---------- */
 console.log('面板渲染逻辑（离线）');
 
-/* 1. 离线设备：读数位留「—」，「离线」这个词由下方状态行负责（1×1 控制卡） */
+/* 1. 离线设备：读数位留「—」；控制卡的状态由圆钮颜色负责，不写状态词 */
 ok(api.isNa('unavailable') && api.isNa('unknown') && !api.isNa('on'), '状态判定：unavailable/unknown 视为离线');
 eq(api.valHtml({ type: 'light', entity: 'light.x', name: 'x' }, 'unavailable', {}), '—',
-  '离线灯：读数位是「—」，状态词交给 stateWord');
-eq(api.stateWord({ type: 'light', entity: 'light.x', name: 'x' }, 'unavailable', {}), '离线',
-  '1×1 控制卡：离线灯状态词写「离线」');
+  '离线灯：读数位是「—」，卡片变暗由 na 类负责');
 
-/* 2. 灯：开/关不再出现在读数位（状态由状态词或电源钮说），只有亮度这种真数值才显示 */
+/* 2. 灯：开/关不再出现在读数位（状态由圆钮颜色说），只有亮度这种真数值才显示 */
 eq(api.valHtml({ type: 'light', entity: 'light.a', name: 'a' }, 'on', { supported_color_modes: ['onoff'] }), '',
   'onoff 灯（无亮度能力）：读数位留空');
-eq(api.stateWord({ type: 'light', entity: 'light.a', name: 'a' }, 'on', {}), '开',
-  '1×1 控制卡：开着的灯状态词是「开」');
 ok(/^100<span class="u">%<\/span>$/.test(api.valHtml({ type: 'light', entity: 'light.b', name: 'b' }, 'on',
   { brightness: 255, supported_color_modes: ['brightness'] })), '亮度灯：值显示百分比');
 ok(api.hasBrightness({ supported_color_modes: ['onoff'] }) === false, '能力判定：onoff 灯没有亮度');
@@ -173,8 +169,6 @@ ok(api.hasPosition({ supported_features: 15 }) === true, '能力判定：support
 ok(api.hasPosition({ supported_features: 3 }) === false, '能力判定：supported_features=3 无开合度');
 eq(api.valHtml({ type: 'cover', entity: 'cover.c', name: 'c' }, 'closed', { supported_features: 3 }), '',
   '无开合度卷帘：读数位留空（没有可信数字就不编一个 0%）');
-eq(api.stateWord({ type: 'cover', entity: 'cover.c', name: 'c' }, 'closed', { supported_features: 3 }), '关',
-  '无开合度卷帘：状态词写「关」');
 ok(/^60<span class="u">%<\/span>$/.test(api.valHtml({ type: 'cover', entity: 'cover.d', name: 'd' }, 'open',
   { supported_features: 15, current_position: 60 })), '有开合度卷帘：值显示百分比');
 
@@ -197,17 +191,18 @@ var okHtml = api.tileHtml({
 ok(!/class="tile[^"]*\bna\b/.test(okHtml), '正常实体不带 na 类', okHtml.slice(0, 80));
 ok(okHtml.indexOf('data-entity="light.ok"') > -1, 'tileHtml 带上实体 id（点击派发用）');
 
-/* 7b. 1×1 只有两种模板（照用户手绘）：控制卡 = 圆钮 + 「状态 · 名称」；传感卡 = 大字读数 + 名称 */
+/* 7b. 1×1 只有两种模板（照用户手绘）：控制卡 = 圆钮 + 名称；传感卡 = 大字读数 + 名称 */
 api.setStates({
   'light.ok': { entity_id: 'light.ok', state: 'on', attributes: {} },
   'sensor.bed': { entity_id: 'sensor.bed', state: '21.5', attributes: { unit_of_measurement: '°C', device_class: 'temperature' } }
 });
 var readHtml = api.tileHtml({ tile: { entity: 'sensor.bed', type: 'sensor', name: '卧室温度' }, room: '' });
 ok(readHtml.indexOf('t-big') > -1, '1×1 传感卡：大字读数模板（t-big）');
-ok(readHtml.indexOf('data-role="statetxt"') === -1, '1×1 传感卡：不出现状态行，只有名称');
+ok(readHtml.indexOf('21.5') > -1, '1×1 传感卡：读数写进模板');
 var ctrlHtml = api.tileHtml({ tile: { entity: 'light.ok', type: 'light', name: '主灯' }, room: '' });
 ok(ctrlHtml.indexOf('t-round') > -1, '1×1 控制卡：圆钮模板（t-round）');
-ok(ctrlHtml.indexOf('data-role="statetxt"') > -1, '1×1 控制卡：带「状态 · 名称」行');
+ok(ctrlHtml.indexOf('主灯') > -1, '1×1 控制卡：只写名称');
+ok(ctrlHtml.indexOf('data-role="statetxt"') === -1, '1×1 控制卡：不写状态词（圆钮颜色就是状态）');
 ok(ctrlHtml.indexOf('t-power') === -1, '1×1 控制卡：卡上不再挂第二个电源钮');
 
 /* 8. scene 不应被当成自动化 */

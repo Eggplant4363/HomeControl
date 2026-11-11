@@ -588,15 +588,13 @@ body::before { content: none; }
 }
 .t-big .u { font-size: 13px; font-weight: 400; color: var(--text-4); margin-left: 3px; letter-spacing: .04em; }
 .t-big.muted { color: var(--text-5); }
-/* 一行小字：控制卡「状态 · 名称」、传感卡只有名称，都居中（卡片本身是居中的，文字跟着居中） */
+/* 一行小字：只有名称，居中；离圆钮/读数远一点（圆钮的颜色自己就是状态） */
 .t-line {
-  margin-top: 11px; max-width: 100%; align-self: center;
-  font-size: 12px; line-height: 16px; color: var(--text-4);
+  margin-top: 16px; max-width: 100%; align-self: center;
+  font-size: 12px; line-height: 16px; color: var(--text-3);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.t-line .t-sep { margin: 0 5px; color: var(--text-5); }
-.t-line [data-role="cardname"] { color: var(--text-3); }
-.t-line-c { margin-top: 12px; }
+.t-line-c { margin-top: 14px; color: var(--text-4); }
 .tile.tiny .tile-head, .tile.tiny .tile-mid { display: none; }
 .tile.na .t-step, .tile.na .t-bar, .tile.na .t-ctl { display: none; }
 
