@@ -745,7 +745,8 @@ var COLOR_PRESETS = [
     /* 行跨度不再是编辑态专属：默认尺寸也会让摄像头/温湿度计占两行 */
     var rows = rowSpan(tile.entity);
     var notAdded = S.editing && !cardVisible(tile.entity);
-    var grabbable = S.editing && !notAdded;
+    /* 批量选择时不做拉伸：整张卡都要能点（否则 88px 的拉伸角区把小球卡吃掉大半） */
+    var grabbable = S.editing && !notAdded && !S.bulk;
     var mode = iconMode(tile);
     /* 1×1 用哪套模板只跟尺寸有关，跟编辑态无关：进编辑只多一圈虚线框和角上的尺寸标，
        图标/圆钮必须和平时一模一样，否则看起来像两套 UI */
@@ -1859,6 +1860,7 @@ var COLOR_PRESETS = [
       S.tileSel = null;
       S.tileSelItem = null;
       if (bar) bar.className = 'tile-bar';
+      if (!S.bulk) setBarPad(false);
       return;
     }
     S.tileSel = node;
@@ -1877,11 +1879,24 @@ var COLOR_PRESETS = [
       '</b></button>' +
       '<button class="t-tool t-del" data-act="card-remove">✕ 移除</button>';
     bar.className = 'tile-bar show';
+    setBarPad(true);
     actLog('select ' + item.tile.entity);
+  }
+
+  /** 底部浮条是 fixed 的，会盖住网格最后一行：条在的时候给网格补一段下边距，
+   *  条收起再还原——否则最下面那张卡永远点不到（点下去命中的是浮条）。 */
+  function setBarPad(on) {
+    if (!el.grid) return;
+    el.grid.style.paddingBottom = on ? '92px' : '';
   }
 
   /** 选中卡片的工具条：点按钮就作用在选中的那张卡上 */
   function onTileBarClick(ev) {
+    /* 这条监听挂在 document 上，必须自己确认点的是工具条里的按钮：
+       否则卡片里那些 data-act 按钮（空调 ±、窗帘 开/关…）会冒泡到这儿，
+       作用到「当前选中的那张卡」上——编辑态就会莫名其妙去开窗帘。 */
+    var bar = document.getElementById('tileBar');
+    if (!bar || bar.className.indexOf('show') < 0 || !bar.contains(ev.target)) return;
     var btn = ev.target;
     while (btn && btn !== document && !(btn.getAttribute && btn.getAttribute('data-act'))) btn = btn.parentNode;
     if (!btn || btn === document) return;
@@ -1954,6 +1969,7 @@ var COLOR_PRESETS = [
       '<button class="t-tool t-del" data-act="bulk-remove"' + dis + '>✕ 移除</button>' +
       '<button class="t-tool" data-act="bulk-off">退出多选</button>';
     bar.className = 'tile-bar show';
+    setBarPad(true);
   }
 
   function toggleBulk() {
@@ -1963,8 +1979,13 @@ var COLOR_PRESETS = [
     else {
       var bar = document.getElementById('tileBar');
       if (bar) bar.className = 'tile-bar';
+      setBarPad(false);
     }
     actLog('bulk ' + (S.bulk ? 'on' : 'off'));
+    /* 重排一次卡片：多选时不挂拉伸角（整张卡都要能点），退出多选再挂回去 */
+    var keepTop = el.grid ? el.grid.scrollTop : 0;
+    renderGrid(true);
+    if (el.grid) el.grid.scrollTop = keepTop;
     paintBulkBtn();
     paintPicked();
     if (S.bulk) bulkBar();
@@ -3910,6 +3931,14 @@ function bindDim() {
       if (idx < 0 || !S.items[idx]) return;
       var item = S.items[idx];
       var actEl = closest(ev.target, null, 'data-act');
+      /* 编辑态先接管选中/勾选：卡片里那些控制按钮（空调 ±、窗帘 开/关…）
+         一律不响应——否则点空调的 − 会真的去改你家温度，而且这张卡也就选不中了。
+         只有「+ 添加」这颗按钮例外，它本来就是编辑态的功能。 */
+      if (S.editing && !(actEl && actEl.getAttribute('data-act') === 'card-add')) {
+        if (S.bulk) bulkToggle(tileEl, item);
+        else selectTile(S.tileSel === tileEl ? null : tileEl, item);
+        return;
+      }
       if (actEl && S.holdFired && actEl.getAttribute('data-hold')) {
         /* 长按已经处理过，这一次的 click 不再走短按逻辑 */
         S.holdFired = false;
@@ -3920,12 +3949,6 @@ function bindDim() {
         S.tileSel = S.editing ? tileEl : null;
         doAct(actAttr, item);
         if (S.sheetShow === 'add' || actAttr === 'edit-add' || actAttr.indexOf('add-toggle:') === 0) el.sheetInner.innerHTML = addSheetHtml();
-        return;
-      }
-      /* 编辑模式：批量选择时点卡片＝勾上/取消；否则点卡片空白处＝选中这张卡（再点一次取消） */
-      if (S.editing) {
-        if (S.bulk) { bulkToggle(tileEl, item); return; }
-        selectTile(S.tileSel === tileEl ? null : tileEl, item);
         return;
       }
       primary(item);
@@ -3966,6 +3989,8 @@ function bindDim() {
     }
     function gripDown(ev) {
       if (!S.editing) return;
+      /* 批量选择模式只要点选，不要拉伸 */
+      if (S.bulk) return;
       var g = closest(ev.target, null, 'data-grip');
       var tileEl = g ? closest(g, 'tile') : null;
       var entity = g ? g.getAttribute('data-grip') : null;
@@ -4029,6 +4054,17 @@ function bindDim() {
       } else {
         var tag = st.el.querySelector('.t-size');
         if (tag) tag.innerHTML = spanText(st.c0, st.cols) + (st.r0 > 1 ? ' · 高 ' + st.r0 : '');
+        /* 只是在那个角上点了一下、没拖动：当成点卡片本身。
+           否则小卡（6 列时整张才 113px）右下 88px 角区几乎盖住整张卡，永远选不中。
+           这一次的 click 会被上面 gripFired 的 400ms 立即早退挡掉，不会双触发。 */
+        if (S.editing) {
+          var gi = S.tileEls.indexOf(st.el);
+          var gItem = gi >= 0 ? S.items[gi] : null;
+          if (gItem) {
+            if (S.bulk) bulkToggle(st.el, gItem);
+            else selectTile(S.tileSel === st.el ? null : st.el, gItem);
+          }
+        }
       }
       actLog('grip up ' + st.entity + ' ' + st.c + 'x' + st.r);
     }

@@ -242,6 +242,44 @@ WS.seq = 0;
   check(await evalJs(`getComputedStyle(document.querySelector('#bulkBtn')).display === 'none'`), '退出编辑后「批量选择」按钮隐藏');
   check(await evalJs(`document.querySelectorAll('.tile.picked').length === 0`), '退出编辑后没有残留勾选');
 
+  /* ============ ⑤ 卡片里的控制按钮 / 右下角区也能选中 ============ */
+  console.log('=== 5. 带控制的卡片、右下角区都能选中 ===');
+  await setMode(false, {
+    added: { 'cover.living_curtain': 1, 'switch.master_plug': 1 }, hidden: {}, order: ['cover.living_curtain', 'switch.master_plug'],
+    span: { 'cover.living_curtain': 2 }, rows: {}
+  });
+  const COVER = '.tile[data-entity="cover.living_curtain"]';
+  const PLUG = '.tile[data-entity="switch.master_plug"]';
+  check(await evalJs(`!!document.querySelector('${COVER} [data-act="cover-open"]')`), '窗帘卡里有「打开」按钮（data-act）');
+
+  /* 单选模式下点那张「打开」按钮：应该是选中这张卡，而不是真去开窗帘 */
+  /* 拦一下后端：编辑态点任何控制按钮都不该发出服务调用 */
+  await evalJs(`(function(){window.__calls=[];var M=window.MockBackend;if(M&&!M.__hooked){var o=M.prototype.call;M.prototype.call=function(d,s,dd){window.__calls.push(d+'.'+s);return o.apply(this,arguments);};M.__hooked=1;}return 1;})()`);
+  await enterEdit();
+  await evalJs(`window.__calls=[]; 1`);
+  await clickSel(`${COVER} [data-act="cover-open"]`);
+  check(await evalJs(`!!document.querySelector('${COVER}.selected')`), '编辑态点窗帘卡的「打开」是选中卡片');
+  check((await evalJs(`(window.__calls||[]).length`)) === 0, '编辑态点「打开」没有发出任何服务调用（' + JSON.stringify(await evalJs(`window.__calls`)) + '）');
+
+  /* 右下 88px 角区：单选时点一下＝选中，不是「什么都没发生」 */
+  const corner = await evalJs(`(function(){var n=document.querySelector('${PLUG}');var r=n.getBoundingClientRect();return (r.right-20)+','+(r.bottom-20);})()`);
+  const cp = corner.split(',').map(Number);
+  await clickAt(cp[0], cp[1]); await sleep(450);
+  check(await evalJs(`!!document.querySelector('${PLUG}.selected')`), '单选模式点卡片右下角区也是选中（不是死区）');
+  check(await evalJs(`(function(){var n=document.querySelector('${PLUG}');return /(^|\s)(span-|rows-)/.test(n.className)===false;})()`), '点角区没有误改成 2×');
+
+  /* 多选模式下：点「打开」按钮 = 勾选；点右下角区 = 勾选 */
+  await clickSel('#bulkBtn');
+  const btnSel = `${COVER} [data-act="cover-open"]`;
+  await clickSel(btnSel);
+  check((await pickedCount()) === 1 && await evalJs(`!!document.querySelector('${COVER}.picked')`), '多选时点窗帘卡的「打开」也照样勾中');
+  await clickAt(cp[0], cp[1]); await sleep(450);
+  check((await pickedCount()) === 2 && await evalJs(`!!document.querySelector('${PLUG}.picked')`), '多选时点右下角区也能勾中');
+  check(await evalJs(`!document.querySelector('${PLUG} .t-grip')`), '多选模式不显示拉伸角（整张卡都能点）');
+  await shot('bulk-4-corner.png');
+  await clickSel('#tileBar [data-act="bulk-off"]');
+  await evalJs(`document.querySelector('#editBtn').click(); 1`);
+  await sleep(400);
   try { edge.kill(); } catch (e) { }
   console.log('');
   if (failed === 0) { console.log('E2E-BULK PASS'); process.exit(0); }
