@@ -504,6 +504,24 @@ var COLOR_PRESETS = [
     return '传感器';
   }
 
+  /** 1×1 控制卡下面那行的状态词：电源钮没了，状态必须自己说出来。
+      「开 / 关 / 离线 / 点按触发」这种两字词，三米外一眼能读。 */
+  function stateWord(tile, st, attrs) {
+    if (isNa(st)) return '离线';
+    if (isAuto(tile)) return '点按触发';
+    if (tile.type === 'camera') return CAM_STATE[st] || '待机';
+    if (tile.type === 'climate') return st === 'off' ? '关闭' : (HVAC[st] || st);
+    if (tile.type === 'cover') {
+      /* 1×1 状态行要两字词：COVER_STATE 的「已关闭」在这种小行里太长 */
+      if (st === 'open') return '开';
+      if (st === 'closed') return '关';
+      return COVER_STATE[st] || st;
+    }
+    if (st === 'on') return '开';
+    if (st === 'off') return '关';
+    return String(st);
+  }
+
   /* ---------------- 卡片 ---------------- */
   /* 百分比进度条骨架：t-fill 是裁剪层（把填充裁成轨道圆角，满格也不露直角），
      i = 已填充部分，b = 拖动钮。位置都读 CSS 变量 --pct，
@@ -744,7 +762,27 @@ var COLOR_PRESETS = [
     var notAdded = S.editing && !cardVisible(tile.entity);
     var grabbable = S.editing && !notAdded;
     var mode = iconMode(tile);
-    return '<div class="tile type-' + tile.type + ' mode-' + mode + naCls + (notAdded ? ' not-added' : '') + (span > 1 ? ' span-' + span : '') + (rows > 1 ? ' rows-2' : '') + '" data-entity="' + esc(tile.entity) + '"' +
+    var tiny = !S.editing && span === 1 && rows === 1;
+    var cls = 'tile type-' + tile.type + ' mode-' + mode + naCls + (tiny ? ' tiny' : '') +
+      (notAdded ? ' not-added' : '') + (span > 1 ? ' span-' + span : '') + (rows > 1 ? ' rows-2' : '');
+    /* 1×1 只有两种读法（照用户手绘）：
+       控制类 = 一个圆钮放在正中（图标就是可以按的东西），下面一行「状态 · 名称」；
+       传感类 = 大字读数 + 单位放在正中，下面一行只有名称。 */
+    if (tiny) {
+      var stT = stateOf(tile.entity), attrsT = attrsOf(tile.entity);
+      /* 读数和控制是两种卡：能读出可信数字的（传感器/空调/天气）用大字读数卡，
+         其余（灯、开关、窗帘、摄像头、场景）用控制卡——圆钮就是可以按的东西。 */
+      var readTiny = isNumberSensor(tile, attrsT) || binarySensor(tile) || tile.type === 'climate' || tile.type === 'weather';
+      var line = readTiny
+        ? '<div class="t-line t-line-c" data-role="cardname">' + esc(displayName(tile)) + '</div>'
+        : '<div class="t-line"><span data-role="statetxt">' + esc(stateWord(tile, stT, attrsT)) + '</span>' +
+          '<span class="t-sep">·</span><span data-role="cardname">' + esc(displayName(tile)) + '</span></div>';
+      var core = readTiny
+        ? '<div class="t-core"><div class="t-big' + (isNa(stT) ? ' muted' : '') + '" data-role="val">' + valHtml(tile, stT, attrsT) + '</div></div>' + line
+        : '<div class="t-core"><div class="t-round" data-role="ico" data-icon="' + esc(iconFor(tile)) + '">' + svg(iconFor(tile)) + '</div></div>' + line;
+      return '<div class="' + cls + '" data-entity="' + esc(tile.entity) + '">' + core + '</div>';
+    }
+    return '<div class="' + cls + '" data-entity="' + esc(tile.entity) + '"' +
       (span > 1 ? ' data-span="' + span + '"' : '') + (rows > 1 ? ' data-rows="' + rows + '"' : '') + '>' +
       '<div class="tile-head">' +
       (S.editing
@@ -781,7 +819,8 @@ var COLOR_PRESETS = [
     /* 保留 span-N（卡片宽度）与 selected（编辑态选中），否则每次状态推送都会把宽度/选中抹掉 */
     var sp = cardSpan(tile.entity, num(prefs().cols, 4));
     var rw = rowSpan(tile.entity);
-    var tcls = 'tile type-' + tile.type + ' mode-' + iconMode(tile) + (isOn(tile) ? ' on' : '') + (isNa(st) ? ' na' : '') + (sp > 1 ? ' span-' + sp : '') + (rw > 1 ? ' rows-' + rw : '');
+    var tiny = !S.editing && sp === 1 && rw === 1;
+    var tcls = 'tile type-' + tile.type + ' mode-' + iconMode(tile) + (isNa(st) ? ' na' : '') + (tiny ? ' tiny' : '') + (isOn(tile) ? ' on' : '') + (sp > 1 ? ' span-' + sp : '') + (rw > 1 ? ' rows-' + rw : '');
     if (S.tileSel === node && node.className.indexOf('selected') >= 0) tcls += ' selected';
     if (node.className !== tcls) node.className = tcls;
     var raw3 = accentFor(tile);
@@ -799,11 +838,11 @@ var COLOR_PRESETS = [
       var icoName = iconFor(tile);
       if (ico.getAttribute('data-icon') !== icoName) {
         ico.setAttribute('data-icon', icoName);
-        /* 仪表模式的块底有一根细刻度，重建字形时要一起补回来 */
-        ico.innerHTML = svg(icoName) + (iconMode(tile) === 'meter' ? '<i><b></b></i>' : '');
+        /* 仪表模式的块底有一根细刻度，重建字形时要一起补回来（1×1 圆钮里没有刻度） */
+        ico.innerHTML = svg(icoName) + (iconMode(tile) === 'meter' && !tiny ? '<i><b></b></i>' : '');
       }
       /* 刻度表示读数深浅：只在数值真的动了才写 style，不每推送都写 */
-      var lvl = meterLevel(tile, st, attrs);
+      var lvl = tiny ? NaN : meterLevel(tile, st, attrs);
       var lvStr = isNaN(lvl) ? '0%' : Math.round(lvl * 100) + '%';
       if (ico.getAttribute('data-lvl') !== lvStr) {
         ico.setAttribute('data-lvl', lvStr);
@@ -817,7 +856,8 @@ var COLOR_PRESETS = [
 
     var val = node.querySelector('[data-role="val"]');
     if (val) {
-      var vcls = valClass(tile, st);
+      /* 1×1 传感卡用大字读数（t-big），宽卡还是原来的 t-val */
+      var vcls = tiny ? 't-big' + (isNa(st) ? ' muted' : '') : valClass(tile, st);
       var vhtml = valHtml(tile, st, attrs);
       if (val.className !== vcls) val.className = vcls;
       if (val.innerHTML !== vhtml) val.innerHTML = vhtml;
@@ -859,6 +899,18 @@ var COLOR_PRESETS = [
       if (stxt && stxt === displayName(tile)) stxt = '';
       var meta = item.room ? (stxt ? item.room + ' · ' + stxt : item.room) : stxt;
       if (sub.textContent !== meta) sub.textContent = meta;
+    }
+
+    /* 1×1 控制卡下方那行「状态 · 名称」：电源钮没了，状态词由这里自己说 */
+    var sw = node.querySelector('[data-role="statetxt"]');
+    if (sw) {
+      var sword = stateWord(tile, st, attrs);
+      if (sw.textContent !== sword) sw.textContent = sword;
+    }
+    var cn = node.querySelector('[data-role="cardname"]');
+    if (cn) {
+      var cnname = displayName(tile);
+      if (cn.textContent !== cnname) cn.textContent = cnname;
     }
 
     var set = node.querySelector('[data-role="set"]');
@@ -1247,6 +1299,8 @@ var COLOR_PRESETS = [
 
   /** 卡片占几行（1~2）：编辑里改过就按改的，没改过按设备类型默认 */
   function cellRows(tile) {
+    /* tile 找不到（测试里没有 S.items，或实体刚消失）时按 1 行走，不抛异常 */
+    if (!tile) return 1;
     var ex = editState().rows && editState().rows[tile.entity];
     var n = ex === undefined ? defaultCellH(tile) : num(ex, 1);
     if (n < 1) n = 1;
@@ -4152,7 +4206,8 @@ function boot() {
   window.__PANEL_TEST__ = {
     isNa: isNa, isAuto: isAuto, hasBrightness: hasBrightness, hasPosition: hasPosition,
     climateTempCaps: climateTempCaps, dualTarget: dualTarget,
-    valHtml: valHtml, subText: subText, midHtml: midHtml, tileHtml: tileHtml, iconFor: iconFor,
+    valHtml: valHtml, subText: subText, stateWord: stateWord, midHtml: midHtml, tileHtml: tileHtml,
+    iconFor: iconFor, iconMode: iconMode, meterLevel: meterLevel,
     pctMeta: pctMeta, pctFromX: pctFromX, barHtml: barHtml,
     personList: personList, whoState: whoState, avatarUrl: avatarUrl, whoInitial: whoInitial,
     whoHtml: whoHtml, renderWho: renderWho,

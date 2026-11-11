@@ -565,6 +565,38 @@ body::before { content: none; }
 /* 占位类（未布局的实体）：保持小方角块线描 */
 .tile.mode-idle .t-icon { width: 32px; height: 32px; border-radius: 10px; background: transparent; color: var(--text-5); }
 .tile.mode-idle .t-icon svg { width: 16px; height: 16px; }
+/* ---- 1×1 的两种读法（照用户手绘：简约明了，一屏只讲一件事） ---- */
+/* 控制类：一个圆钮坐在正中，图标就是可以按的东西；下方一行「状态 · 名称」靠左 */
+.tile.tiny { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 12px 12px 11px; }
+.t-core { flex: 0 0 auto; display: flex; align-items: center; justify-content: center; }
+.t-round {
+  width: 64px; height: 64px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(var(--surf),.07); color: var(--text-4);
+  transition: background .14s, color .14s;
+}
+.t-round svg { width: 28px; height: 28px; }
+.tile.tiny.on .t-round { background: rgb(var(--ctl-on)); color: var(--glyph-on); }
+.tile.tiny.na .t-round { background: rgba(var(--surf),.04); color: var(--text-5); }
+/* 摄像头：圆退成线描圈（画面不在 1×1 里出现）；场景：实心灰块感，一眼是「一条指令」 */
+.tile.tiny.mode-frame .t-round { background: transparent; border: 1px solid rgba(var(--surf),.14); color: var(--text-4); }
+.tile.tiny.mode-scene .t-round { background: rgba(var(--surf),.12); color: var(--text-2); }
+/* 传感类：大字读数 + 单位坐在正中，下方只有名称、居中 */
+.t-big {
+  font-size: 34px; font-weight: 300; line-height: 1; color: var(--text-1);
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.t-big .u { font-size: 13px; font-weight: 400; color: var(--text-4); margin-left: 3px; letter-spacing: .04em; }
+.t-big.muted { color: var(--text-5); }
+.t-line {
+  margin-top: 11px; max-width: 100%; align-self: flex-start;
+  font-size: 12px; line-height: 16px; color: var(--text-4);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.t-line .t-sep { margin: 0 5px; color: var(--text-5); }
+.t-line [data-role="cardname"] { color: var(--text-3); }
+.t-line-c { align-self: center; margin-top: 12px; }
+.tile.tiny .tile-head, .tile.tiny .tile-mid { display: none; }
 .tile.na .t-step, .tile.na .t-bar, .tile.na .t-ctl { display: none; }
 
 /* 「更多」场景弹层（场景/脚本多于一屏时用） */
