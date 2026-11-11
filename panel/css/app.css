@@ -568,7 +568,9 @@ body::before { content: none; }
 /* ---- 1×1 的两种读法（照用户手绘：简约明了，一屏只讲一件事） ---- */
 /* 控制类：一个圆钮坐在正中，图标就是可以按的东西；下方一行「状态 · 名称」靠左 */
 .tile.tiny { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 12px 12px 11px; }
-.t-core { flex: 0 0 auto; display: flex; align-items: center; justify-content: center; }
+/* 核心区高度固定成一个圆钮的直径：控制卡（64px 圆钮）和读数卡（34px 大字）
+   占同样的竖向空间，下面的名称才会齐平；不然两张卡并排时名字高低差半行。 */
+.t-core { flex: 0 0 auto; display: flex; align-items: center; justify-content: center; height: 64px; }
 .t-round {
   width: 64px; height: 64px; border-radius: 50%;
   display: flex; align-items: center; justify-content: center;
@@ -594,7 +596,8 @@ body::before { content: none; }
   font-size: 12px; line-height: 16px; color: var(--text-3);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.t-line-c { margin-top: 14px; color: var(--text-4); }
+/* 与 .t-line 的 margin-top 保持一致：读数卡和控制卡的名称落在同一条基线上 */
+.t-line-c { margin-top: 16px; color: var(--text-4); }
 .tile.tiny .tile-head, .tile.tiny .tile-mid { display: none; }
 .tile.na .t-step, .tile.na .t-bar, .tile.na .t-ctl { display: none; }
 

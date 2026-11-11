@@ -175,6 +175,31 @@ WS.seq = 0;
   check(await evalJs(`(function(){var n=document.querySelector('${TINY} .t-size');return !!n && /1×/.test(n.textContent);})()`), '编辑态 1×1 卡片角上有「1×」尺寸标');
   await shot('bulk-1-edit-icons.png');
 
+  /* 1×1 卡片里名称必须齐平：控制卡（64px 圆钮）和读数卡（34px 大字）核心区等高 */
+  const ALIGN = await evalJs(`(function(){
+    var tiles=[].slice.call(document.querySelectorAll('.grid .tile[data-entity]'));
+    var rows={},bad=[],ctl=0,read=0;
+    for(var i=0;i<tiles.length;i++){
+      var t=tiles[i],r=t.getBoundingClientRect(),ln=t.querySelector('.t-line');
+      if(!ln||!/\\btiny\\b/.test(t.className))continue;
+      var lr=ln.getBoundingClientRect(),c=t.querySelector('.t-core');
+      var key=Math.round(r.top);
+      (rows[key]=rows[key]||[]).push(Math.round(lr.top-r.top));
+      if(c&&Math.abs(c.getBoundingClientRect().height-64)>1.5)bad.push(t.getAttribute('data-entity')+' coreH='+c.getBoundingClientRect().height);
+      if(/\\bt-line-c\\b/.test(ln.className))read++;else ctl++;
+    }
+    var spread=[];
+    for(var k in rows){var v=rows[k];var mn=Math.min.apply(null,v),mx=Math.max.apply(null,v);if(mx-mn>1)spread.push('row'+k+':'+mn+'..'+mx);}
+    return JSON.stringify({ctl:ctl,read:read,bad:bad,spread:spread});})()`);
+  const al = JSON.parse(ALIGN);
+  check(al.spread.length === 0, '同一排里所有 1×1 卡片的名称落在同一条线上', 'spread=' + al.spread.join(','));
+  check(al.bad.length === 0, '控制卡/读数卡的核心区都是 64px 高', al.bad.join(' | '));
+  check(al.ctl > 0 && al.read > 0, '两种 1×1 卡都在场（控制卡 ' + al.ctl + ' / 读数卡 ' + al.read + '）');
+  /* 关掉编辑，回到第 ② 节的前提 */
+  await clickSel('#editBtn');
+  await sleep(500);
+  await enterEdit();
+
   /* ============ ② 批量选择 ============ */
   console.log('=== 2. 批量选择 ===');
   await clickSel('#bulkBtn');
