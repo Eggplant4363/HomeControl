@@ -378,10 +378,45 @@ var COLOR_PRESETS = [
     if (tile.type === 'climate') return 'snow';
     if (tile.type === 'cover') return 'curtain';
     if (dc === 'temperature') return 'thermo';
-    if (dc === 'humidity') return 'drop';
+    if (dc === 'humidity' || dc === 'moisture') return 'drop';
+    if (dc === 'battery') return 'battery';
+    if (dc === 'power' || dc === 'current' || dc === 'voltage') return 'bolt';
+    if (dc === 'pressure' || dc === 'weight') return 'gauge';
+    if (dc === 'illuminance') return 'sun';
+    if (dc === 'door') return 'door';
+    if (dc === 'window') return 'window';
     if (dc === 'motion' || dc === 'occupancy') return 'motion';
-    if (dc === 'smoke' || dc === 'gas') return 'smoke';
+    if (dc === 'smoke' || dc === 'gas' || dc === 'carbon_monoxide') return 'smoke';
     return 'thermo';
+  }
+
+  /** 图标块的画法按组件类型分（照 HomeKit / Google Home）：
+      meter=仪表（读数 + 块底一根细刻度）、power=动作（方块即电源键）、
+      frame=画面（摄像头，画面自己当主角）、scene=一条指令、idle=未布局的占位 */
+  function iconMode(tile) {
+    if (tile.type === 'camera') return 'frame';
+    if (tile.type === 'light' || tile.type === 'switch' || tile.type === 'fan') return 'power';
+    if (tile.type === 'scene' || tile.type === 'script') return 'scene';
+    if (tile.type === 'sensor' || tile.type === 'binary_sensor' || tile.type === 'climate' || tile.type === 'cover') return 'meter';
+    return 'idle';
+  }
+
+  /** 块底刻度表示读数深浅：百分比类按 0..100，温度按 5..40°C，照度按 0..1000 lx。
+      没有可信区间就返回 NaN（不画刻度，而不是画一根误导人的条）。 */
+  function meterLevel(tile, st, attrs) {
+    var dc = attrs.device_class, u = attrs.unit_of_measurement || '';
+    if (tile.type === 'cover') {
+      var p = num(attrs.current_position, st === 'closed' ? 0 : 100);
+      return Math.max(0, Math.min(1, p / 100));
+    }
+    var v = num(st, NaN);
+    if (isNaN(v)) return NaN;
+    if (dc === 'battery' || dc === 'humidity' || dc === 'moisture' || u === '%') return Math.max(0, Math.min(1, v / 100));
+    if (dc === 'temperature') return Math.max(0, Math.min(1, (v - 5) / 35));
+    if (tile.type === 'climate') return Math.max(0, Math.min(1, (num(attrs.current_temperature, v) - 5) / 35));
+    if (dc === 'illuminance') return Math.max(0, Math.min(1, v / 1000));
+    if (dc === 'power') return Math.max(0, Math.min(1, v / 2000));
+    return NaN;
   }
 
   function binarySensor(tile) {
@@ -708,12 +743,15 @@ var COLOR_PRESETS = [
     var rows = rowSpan(tile.entity);
     var notAdded = S.editing && !cardVisible(tile.entity);
     var grabbable = S.editing && !notAdded;
-    return '<div class="tile' + naCls + (notAdded ? ' not-added' : '') + (span > 1 ? ' span-' + span : '') + (rows > 1 ? ' rows-' + rows : '') + '" data-entity="' + esc(tile.entity) + '"' +
+    var mode = iconMode(tile);
+    return '<div class="tile type-' + tile.type + ' mode-' + mode + naCls + (notAdded ? ' not-added' : '') + (span > 1 ? ' span-' + span : '') + (rows > 1 ? ' rows-2' : '') + '" data-entity="' + esc(tile.entity) + '"' +
       (span > 1 ? ' data-span="' + span + '"' : '') + (rows > 1 ? ' data-rows="' + rows + '"' : '') + '>' +
       '<div class="tile-head">' +
       (S.editing
         ? '<div class="t-ico-wrap"><div class="t-edit-ico" data-role="ico" data-icon="' + esc(iconFor(tile)) + '">' + svg(iconFor(tile)) + '</div></div>'
-        : '<div class="t-ico-wrap"><div class="t-icon" data-role="ico" data-icon="' + esc(iconFor(tile)) + '">' + svg(iconFor(tile)) + '</div></div>') +
+        : '<div class="t-ico-wrap"' + (mode === 'power' && powerable(tile) ? ' data-act="toggle"' : '') + '>' +
+          '<div class="t-icon" data-role="ico" data-icon="' + esc(iconFor(tile)) + '">' + svg(iconFor(tile)) +
+          (mode === 'meter' ? '<i><b></b></i>' : '') + '</div></div>') +
       /* 左图标、中间名称、右边电源钮（照米家）：名称下那行是「房间 · 状态」 */
       '<div class="t-id"><div class="t-name">' + esc(displayName(tile)) + '</div>' +
       '<div class="t-sub" data-role="sub"></div></div>' +
@@ -743,7 +781,7 @@ var COLOR_PRESETS = [
     /* 保留 span-N（卡片宽度）与 selected（编辑态选中），否则每次状态推送都会把宽度/选中抹掉 */
     var sp = cardSpan(tile.entity, num(prefs().cols, 4));
     var rw = rowSpan(tile.entity);
-    var tcls = 'tile type-' + tile.type + (isOn(tile) ? ' on' : '') + (isNa(st) ? ' na' : '') + (sp > 1 ? ' span-' + sp : '') + (rw > 1 ? ' rows-' + rw : '');
+    var tcls = 'tile type-' + tile.type + ' mode-' + iconMode(tile) + (isOn(tile) ? ' on' : '') + (isNa(st) ? ' na' : '') + (sp > 1 ? ' span-' + sp : '') + (rw > 1 ? ' rows-' + rw : '');
     if (S.tileSel === node && node.className.indexOf('selected') >= 0) tcls += ' selected';
     if (node.className !== tcls) node.className = tcls;
     var raw3 = accentFor(tile);
@@ -761,8 +799,20 @@ var COLOR_PRESETS = [
       var icoName = iconFor(tile);
       if (ico.getAttribute('data-icon') !== icoName) {
         ico.setAttribute('data-icon', icoName);
-        ico.innerHTML = svg(icoName);
+        /* 仪表模式的块底有一根细刻度，重建字形时要一起补回来 */
+        ico.innerHTML = svg(icoName) + (iconMode(tile) === 'meter' ? '<i><b></b></i>' : '');
       }
+      /* 刻度表示读数深浅：只在数值真的动了才写 style，不每推送都写 */
+      var lvl = meterLevel(tile, st, attrs);
+      var lvStr = isNaN(lvl) ? '0%' : Math.round(lvl * 100) + '%';
+      if (ico.getAttribute('data-lvl') !== lvStr) {
+        ico.setAttribute('data-lvl', lvStr);
+        ico.style.setProperty('--lvl', lvStr);
+      }
+      /* 没有可信区间（门磁、人体感应、PM2.5 这类）就把刻度整根藏掉：
+         一根空槽会让人以为读数坏了 */
+      var meterBar = ico.querySelector('i');
+      if (meterBar) meterBar.style.display = isNaN(lvl) ? 'none' : '';
     }
 
     var val = node.querySelector('[data-role="val"]');

@@ -214,14 +214,16 @@ body::before { content: none; }
 .tile.on::after { display: none; }
 
 .tile-head { display: flex; align-items: center; flex: 0 0 auto; }
+/* 图标块：方角（squircle）而不是圆形 —— HomeKit / Google Home 都是方角块，
+   圆形在小卡上像一枚标签贴纸，不像一个控件。position:relative 给块内的刻度条用。 */
 .t-icon {
-  width: 36px; height: 36px; border-radius: 50%;
+  width: 36px; height: 36px; border-radius: 10px; position: relative;
   display: flex; align-items: center; justify-content: center;
   background: rgba(var(--surf),.06); color: var(--text-4);
   transition: background .14s, color .14s;
 }
 .t-icon svg { width: 18px; height: 18px; }
-/* 开着的卡片：只有图标变成实心强调色圆钮（照米家），卡片底保持平面 */
+/* 开着的卡片：只有图标块变强调色（照米家），卡片底保持平面 */
 .tile.on .t-icon { background: rgb(var(--ctl-on)); color: var(--glyph-on); }
 
 /* 名字是这张卡的主语，房间/状态是它下面那行小字。 */
@@ -520,7 +522,49 @@ body::before { content: none; }
    名字和「房间 · 离线」就够说明状态；读数位置留一个「—」，别把整块中间挖掉。 */
 .tile.na .t-val { color: var(--text-5); }
 .tile.na .t-name { color: var(--text-3); }
-.tile.na .t-icon { background: rgba(var(--surf),.035); color: var(--text-5); }
+/* ---- 图标按卡片类型分模式（照 HomeKit / Google Home：方角块、图标即状态） ---- */
+/* 仪表类：方角块里留字形，块底一根细刻度表示读数深浅（湿度/电量按 %，温度按 5–40°C，
+   窗帘按开合）。刻度只在可信区间下画，没有区间的读数留空。 */
+.tile.mode-meter .t-icon { width: 40px; height: 40px; border-radius: 11px; overflow: hidden; }
+.tile.mode-meter .t-icon svg { width: 20px; height: 20px; margin-bottom: 6px; }
+.tile.mode-meter .t-icon i {
+  position: absolute; left: 6px; right: 6px; bottom: 6px; height: 3px;
+  border-radius: 2px; background: rgba(var(--surf),.16);
+}
+.tile.mode-meter .t-icon i b {
+  display: block; height: 100%; width: var(--lvl, 0%);
+  border-radius: 2px; background: rgb(var(--accent));
+  transition: width .18s cubic-bezier(.22,1,.36,1);
+}
+.tile.mode-meter.na .t-icon i b { width: 0; }
+
+/* 动作类：方角块直接就是电源键（HomeKit 那套——按图标开关，卡上不再挂第二个钮） */
+.tile.mode-power .t-ico-wrap { cursor: pointer; }
+.tile.mode-power .t-icon { width: 40px; height: 40px; border-radius: 11px; }
+.tile.mode-power .t-icon svg { width: 20px; height: 20px; }
+.tile.mode-power.on .t-icon { background: rgb(var(--ctl-on)); color: var(--glyph-on); }
+.tile.mode-power.na .t-icon { background: rgba(var(--surf),.04); color: var(--text-5); }
+.tile.mode-power .t-power { display: none; }
+/* 宽卡上另有电源钮，图标块退成轻 tint：一张卡上不会出现两个实心色块 */
+.tile.mode-power.span-2 .t-icon, .tile.mode-power.rows-2 .t-icon {
+  width: 36px; height: 36px; border-radius: 10px; background: rgba(var(--surf),.07);
+}
+.tile.mode-power.span-2.on .t-icon, .tile.mode-power.rows-2.on .t-icon {
+  background: rgba(var(--ctl-on),.14); color: rgb(var(--ctl-on));
+}
+.tile.mode-power.span-2 .t-icon svg, .tile.mode-power.rows-2 .t-icon svg { width: 18px; height: 18px; }
+.tile.mode-power.span-2 .t-power, .tile.mode-power.rows-2 .t-power { display: flex; }
+
+/* 画面类：图标块退成线描，画面自己当主角 */
+.tile.mode-frame .t-icon { width: 36px; height: 36px; border-radius: 10px; background: transparent; color: var(--text-4); }
+
+/* 场景类：实心灰块 + 播放字形，一眼看出是「一条指令」而不是一个设备 */
+.tile.mode-scene .t-icon { width: 40px; height: 40px; border-radius: 11px; background: rgba(var(--surf),.12); color: var(--text-2); }
+.tile.mode-scene .t-icon svg { width: 20px; height: 20px; }
+
+/* 占位类（未布局的实体）：保持小方角块线描 */
+.tile.mode-idle .t-icon { width: 32px; height: 32px; border-radius: 10px; background: transparent; color: var(--text-5); }
+.tile.mode-idle .t-icon svg { width: 16px; height: 16px; }
 .tile.na .t-step, .tile.na .t-bar, .tile.na .t-ctl { display: none; }
 
 /* 「更多」场景弹层（场景/脚本多于一屏时用） */
