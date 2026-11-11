@@ -489,6 +489,12 @@ eq(wh.indexOf('<b>A</b>') >= 0, true, '头像首字母在 DOM 里兜底');
 api.setStates({ 'person.a': { entity_id: 'person.a', state: 'home', attributes: {} } });
 eq(api.personList().length, 1, 'states 变更后重新挑人');
 
+/* ---------- 编辑态批量选择 ---------- */
+eq(api.bulk().on, false, '批量选择：默认关着');
+eq(api.bulkCount(), 0, '批量选择：默认一张都没勾');
+eq(typeof api.toggleBulk, 'function', '导出 toggleBulk');
+eq(typeof api.doBulk, 'function', '导出 doBulk');
+
 console.log('');
 if (failed === 0) {
   console.log('ALL PASS (' + passed + ' checks)');

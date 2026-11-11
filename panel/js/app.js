@@ -34,6 +34,9 @@
     edit: null,
     sheetShow: null,
     tileSelItem: null,
+    /* 编辑态的批量选择：bulk = 多选模式开着，bulkSel = {实体:1} */
+    bulk: false,
+    bulkSel: {},
     layoutReady: true,
     layoutBuilding: false
   };
@@ -744,9 +747,19 @@ var COLOR_PRESETS = [
     var notAdded = S.editing && !cardVisible(tile.entity);
     var grabbable = S.editing && !notAdded;
     var mode = iconMode(tile);
-    var tiny = !S.editing && span === 1 && rows === 1;
+    /* 1×1 用哪套模板只跟尺寸有关，跟编辑态无关：进编辑只多一圈虚线框和角上的尺寸标，
+       图标/圆钮必须和平时一模一样，否则看起来像两套 UI */
+    var tiny = span === 1 && rows === 1;
     var cls = 'tile type-' + tile.type + ' mode-' + mode + naCls + (tiny ? ' tiny' : '') +
       (notAdded ? ' not-added' : '') + (span > 1 ? ' span-' + span : '') + (rows > 1 ? ' rows-2' : '');
+    var grip = grabbable ? '<div class="t-grip" data-grip="' + esc(tile.entity) + '"></div>' : '';
+    var sizeTxt = spanLabel(tile.entity) + (rows > 1 ? ' · 高 ' + rows : '');
+    var tools = S.editing
+      ? '<div class="t-tools">' +
+          (notAdded ? '<button class="t-tool t-add" data-act="card-add">+ 添加</button>' : '') +
+          '<span class="t-size">' + sizeTxt + '</span>' +
+        '</div>'
+      : '';
     /* 1×1 只有两种读法（照用户手绘）：
        控制类 = 一个圆钮放在正中（图标就是可以按的东西），下面一行「状态 · 名称」；
        传感类 = 大字读数 + 单位放在正中，下面一行只有名称。 */
@@ -760,16 +773,15 @@ var COLOR_PRESETS = [
       var core = readTiny
         ? '<div class="t-core"><div class="t-big' + (isNa(stT) ? ' muted' : '') + '" data-role="val">' + valHtml(tile, stT, attrsT) + '</div></div>' + line
         : '<div class="t-core"><div class="t-round" data-role="ico" data-icon="' + esc(iconFor(tile)) + '">' + svg(iconFor(tile)) + '</div></div>' + line;
-      return '<div class="' + cls + '" data-entity="' + esc(tile.entity) + '">' + core + '</div>';
+      return '<div class="' + cls + '" data-entity="' + esc(tile.entity) + '">' + core + tools + grip + '</div>';
     }
     return '<div class="' + cls + '" data-entity="' + esc(tile.entity) + '"' +
       (span > 1 ? ' data-span="' + span + '"' : '') + (rows > 1 ? ' data-rows="' + rows + '"' : '') + '>' +
       '<div class="tile-head">' +
-      (S.editing
-        ? '<div class="t-ico-wrap"><div class="t-edit-ico" data-role="ico" data-icon="' + esc(iconFor(tile)) + '">' + svg(iconFor(tile)) + '</div></div>'
-        : '<div class="t-ico-wrap"' + (mode === 'power' && powerable(tile) ? ' data-act="toggle"' : '') + '>' +
-          '<div class="t-icon" data-role="ico" data-icon="' + esc(iconFor(tile)) + '">' + svg(iconFor(tile)) +
-          (mode === 'meter' ? '<i><b></b></i>' : '') + '</div></div>') +
+      /* 图标块两态同一套画法：编辑态只是不再能直接点开灯，外观不变 */
+      '<div class="t-ico-wrap"' + (!S.editing && mode === 'power' && powerable(tile) ? ' data-act="toggle"' : '') + '>' +
+        '<div class="t-icon" data-role="ico" data-icon="' + esc(iconFor(tile)) + '">' + svg(iconFor(tile)) +
+        (mode === 'meter' ? '<i><b></b></i>' : '') + '</div></div>' +
       /* 左图标、中间名称、右边电源钮（照米家）：名称下那行是「房间 · 状态」 */
       '<div class="t-id"><div class="t-name">' + esc(displayName(tile)) + '</div>' +
       '<div class="t-sub" data-role="sub"></div></div>' +
@@ -777,14 +789,9 @@ var COLOR_PRESETS = [
         ? ''
         : '<button class="t-power" data-act="toggle" title="开关">' + svg('power') + '</button>') +
       '</div>' +
-      (S.editing
-        ? '<div class="t-tools">' +
-            (notAdded ? '<button class="t-tool t-add" data-act="card-add">+ 添加</button>' : '') +
-            '<span class="t-size">' + spanLabel(tile.entity) + (rows > 1 ? ' · 高 ' + rows : '') + '</span>' +
-          '</div>'
-        : '') +
+      tools +
       '<div class="tile-mid">' + midHtml(tile) + '</div>' +
-      (grabbable ? '<div class="t-grip" data-grip="' + esc(tile.entity) + '"></div>' : '') +
+      grip +
       '</div>';
   }
 
@@ -799,9 +806,11 @@ var COLOR_PRESETS = [
     /* 保留 span-N（卡片宽度）与 selected（编辑态选中），否则每次状态推送都会把宽度/选中抹掉 */
     var sp = cardSpan(tile.entity, num(prefs().cols, 4));
     var rw = rowSpan(tile.entity);
-    var tiny = !S.editing && sp === 1 && rw === 1;
+    var tiny = sp === 1 && rw === 1;
     var tcls = 'tile type-' + tile.type + ' mode-' + iconMode(tile) + (isNa(st) ? ' na' : '') + (tiny ? ' tiny' : '') + (isOn(tile) ? ' on' : '') + (sp > 1 ? ' span-' + sp : '') + (rw > 1 ? ' rows-' + rw : '');
     if (S.tileSel === node && node.className.indexOf('selected') >= 0) tcls += ' selected';
+    /* 批量选择也存着：状态包一来就会重写 className，不补回来勾选就没了 */
+    if (S.bulk && S.bulkSel[tile.entity]) tcls += ' picked';
     if (node.className !== tcls) node.className = tcls;
     var raw3 = accentFor(tile);
     var tacc = themeAcc(raw3);
@@ -1441,6 +1450,7 @@ var COLOR_PRESETS = [
       S.tileEls.push(el.grid.children[j]);
     }
     for (var m = 0; m < items.length; m++) updateTile(S.tileEls[m], items[m]);
+    if (S.bulk) paintPicked();
     if (hasCamTile()) setTimeout(camPaint, 30);
     setTimeout(sparkPaint, 60);
     renderEditBar();
@@ -1835,6 +1845,7 @@ var COLOR_PRESETS = [
     actLog('edit enter');
     renderGrid(true);
     paintEditBtn();
+    paintBulkBtn();
     el.grid.scrollTop = 0;
     toast('编辑模式：点卡片加/删，右上角 ✓ 完成');
   }
@@ -1874,9 +1885,120 @@ var COLOR_PRESETS = [
     var btn = ev.target;
     while (btn && btn !== document && !(btn.getAttribute && btn.getAttribute('data-act'))) btn = btn.parentNode;
     if (!btn || btn === document) return;
+    var act = btn.getAttribute('data-act');
+    if (act.indexOf('bulk-') === 0) { ev.stopPropagation(); doBulk(act); return; }
     if (!S.tileSel || !S.tileSelItem) return;
     ev.stopPropagation();
-    doAct(btn.getAttribute('data-act'), S.tileSelItem);
+    doAct(act, S.tileSelItem);
+  }
+
+  /* ---------- 编辑态：批量选择 ---------- */
+
+  /** 底部那颗「批量选择 / 退出多选」按钮：只在编辑态出现 */
+  function paintBulkBtn() {
+    var b = document.getElementById('bulkBtn');
+    if (!S.editing) { if (b) b.style.display = 'none'; return; }
+    if (!b) {
+      b = document.createElement('button');
+      b.id = 'bulkBtn';
+      b.className = 'bulk-btn';
+      b.addEventListener('click', function (ev) {
+        ev.stopPropagation();
+        toggleBulk();
+      });
+      b.addEventListener('touchstart', function (ev) { ev.stopPropagation(); }, false);
+      /* 顶栏 ✎/✓ 左边那颗：固定按钮会压住网格里的卡片，放顶栏不挡内容 */
+      var anchor = el.editBtn && el.editBtn.parentNode;
+      if (anchor) anchor.insertBefore(b, el.editBtn);
+      else document.body.appendChild(b);
+    }
+    b.style.display = (S.editing && !S.bulk) ? 'block' : 'none';
+    b.className = 'bulk-btn' + (S.bulk ? ' on' : '');
+    b.innerHTML = S.bulk ? '退出多选' : '批量选择';
+    b.setAttribute('title', S.bulk ? '退出多选' : '批量选择卡片');
+  }
+
+  function bulkCount() {
+    var n = 0, k;
+    for (k in S.bulkSel) if (S.bulkSel[k]) n++;
+    return n;
+  }
+
+  /** 把 .picked 补回到当前网格（重渲染后 DOM 是新的） */
+  function paintPicked() {
+    if (!el.grid) return;
+    for (var i = 0; i < S.tileEls.length; i++) {
+      var nd = S.tileEls[i];
+      var e = nd.getAttribute('data-entity');
+      var want = !!(S.bulk && e && S.bulkSel[e]);
+      var has = nd.className.indexOf('picked') >= 0;
+      if (want && !has) nd.className = nd.className + ' picked';
+      else if (!want && has) nd.className = nd.className.replace(/\s*picked/g, '');
+    }
+  }
+
+  /** 多选模式下底部那条：已选几张 + 全选 / 取消 / 添加 / 移除 */
+  function bulkBar() {
+    var bar = document.getElementById('tileBar');
+    if (!S.bulk) return;
+    if (!bar) {
+      bar = document.createElement('div');
+      bar.id = 'tileBar';
+      document.body.appendChild(bar);
+    }
+    if (S.tileSel) selectTile(null, null);
+    var n = bulkCount(), dis = n ? '' : ' disabled';
+    bar.innerHTML = '<div class="tb-name">已选 <b>' + n + '</b> 张卡片</div>' +
+      '<button class="t-tool" data-act="bulk-all">全选</button>' +
+      '<button class="t-tool" data-act="bulk-none">取消选择</button>' +
+      '<button class="t-tool t-del" data-act="bulk-remove"' + dis + '>✕ 移除</button>' +
+      '<button class="t-tool" data-act="bulk-off">退出多选</button>';
+    bar.className = 'tile-bar show';
+  }
+
+  function toggleBulk() {
+    S.bulk = !S.bulk;
+    S.bulkSel = {};
+    if (S.bulk) selectTile(null, null);
+    else {
+      var bar = document.getElementById('tileBar');
+      if (bar) bar.className = 'tile-bar';
+    }
+    actLog('bulk ' + (S.bulk ? 'on' : 'off'));
+    paintBulkBtn();
+    paintPicked();
+    if (S.bulk) bulkBar();
+  }
+
+  function bulkToggle(node, item) {
+    var e = item.tile.entity;
+    if (S.bulkSel[e]) delete S.bulkSel[e];
+    else S.bulkSel[e] = 1;
+    paintPicked();
+    bulkBar();
+  }
+
+  /** 批量动作：把「选中的这些」一次加进或移出面板 */
+  function doBulk(act) {
+    if (!S.bulk) return;
+    if (act === 'bulk-none') { S.bulkSel = {}; paintPicked(); bulkBar(); return; }
+    if (act === 'bulk-all') {
+      for (var i = 0; i < S.items.length; i++) S.bulkSel[S.items[i].tile.entity] = 1;
+      paintPicked();
+      bulkBar();
+      return;
+    }
+    if (act === 'bulk-off') { toggleBulk(); return; }
+    var ents = [], k;
+    for (k in S.bulkSel) if (S.bulkSel[k]) ents.push(k);
+    if (!ents.length) return;
+    /* 网格里只画「已显示」的卡，所以批量选择能做的就是把选中的这些一次移出面板 */
+    for (var j = 0; j < ents.length; j++) setCardVisible(ents[j], false);
+    actLog('bulk remove ' + ents.length);
+    S.bulkSel = {};
+    renderGrid(true);
+    toast('已移除 ' + ents.length + ' 张卡片');
+    if (S.bulk) bulkBar();
   }
 
   /** 调试：在设备上生成 x y 与可点位置（编辑模式卡片带 data-act 时用） */
@@ -1903,10 +2025,13 @@ var COLOR_PRESETS = [
 
   function exitEdit() {
     S.editing = false;
+    S.bulk = false;
+    S.bulkSel = {};
     if (S.sheetShow === 'add' || S.sheetShow === 'edit') closeSheet();
     actLog('edit exit');
     renderGrid(true);
     paintEditBtn();
+    paintBulkBtn();
     if (S.editBarEl) { S.editBarEl.className = 'edit-bar'; S.editBarEl.innerHTML = ''; }
     selectTile(null, null);
     el.grid.scrollTop = 0;
@@ -3797,8 +3922,12 @@ function bindDim() {
         if (S.sheetShow === 'add' || actAttr === 'edit-add' || actAttr.indexOf('add-toggle:') === 0) el.sheetInner.innerHTML = addSheetHtml();
         return;
       }
-      /* 编辑模式：点卡片空白处＝选中这张卡（再点一次取消） */
-      if (S.editing) { selectTile(S.tileSel === tileEl ? null : tileEl, item); return; }
+      /* 编辑模式：批量选择时点卡片＝勾上/取消；否则点卡片空白处＝选中这张卡（再点一次取消） */
+      if (S.editing) {
+        if (S.bulk) { bulkToggle(tileEl, item); return; }
+        selectTile(S.tileSel === tileEl ? null : tileEl, item);
+        return;
+      }
       primary(item);
     });
 
@@ -4244,6 +4373,7 @@ function boot() {
     setReal: function (v) { S.real = !!v; },
     guideSheetHtml: guideSheetHtml, panelSheetHtml: panelSheetHtml, prefs: prefs, PREDEF: PREF_DEF,
     readEdit: readEdit, writeEdit: writeEdit, cardVisible: cardVisible, setCardVisible: setCardVisible, cardSpan: cardSpan,
+    bulkCount: bulkCount, toggleBulk: toggleBulk, doBulk: doBulk, bulk: function () { return { on: S.bulk, sel: S.bulkSel }; },
     sortCards: sortCards, editToggle: editToggle, editSpan: editSpan, editMove: editMove,
     editAddAll: editAddAll, editSheetHtml: editSheetHtml, allCards: allCards, visibleRooms: visibleRooms, hiddenRooms: hiddenRooms, hasColor: hasColor, rgbCss: rgbCss, hsvToRgb: hsvToRgb, rgbToHs: rgbToHs, colorPresets: COLOR_PRESETS
   };

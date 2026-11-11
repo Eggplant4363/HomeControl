@@ -820,9 +820,15 @@ body::before { content: none; }
 .grid.editing .tile { background: rgba(var(--surf),.04); border-color: rgba(var(--accent-soft-rgb),.18); }
 .grid.editing .tile .tile-mid { opacity: .28; }
 .grid.editing .tile .t-name { opacity: .8; }
-.t-edit-ico { width: 30px; height: 30px; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: var(--accent-soft); background: rgba(var(--accent-soft-rgb),.10); }
-.t-edit-ico svg { width: 17px; height: 17px; }
 .grid.editing .tile-head { flex-wrap: nowrap; min-width: 0; }
+/* 1×1 进编辑态也用原来那套模板（圆钮 / 大字读数），只在角上补一枚尺寸标：
+   工具行绝对定位到卡片右上，不占圆钮的位置 */
+.tile.tiny .t-tools { position: absolute; left: 6px; top: 6px; right: 6px; margin: 0;
+  display: flex; align-items: center; pointer-events: none; }
+.tile.tiny .t-tools .t-tool, .tile.tiny .t-tools .t-size { pointer-events: auto; }
+.tile.tiny .t-tools .t-tool { height: 22px; min-width: 22px; padding: 0 6px; font-size: 11px; border-radius: 6px; }
+.tile.tiny .t-size { margin-left: auto; font-size: 11px; }
+.tile.tiny .t-grip { width: 46px; height: 46px; }
 
 /* ---------------- 负一屏 · 音乐 ----------------
    从主屏往右滑拉出来的一整页。固定层只做位移/透明度（老机器的合成器很吃这个），
@@ -1010,6 +1016,24 @@ body::before { content: none; }
   color: var(--accent-soft); font-size: 15px; }
 .tile.selected { border-color: rgba(var(--accent-soft-rgb),.55); box-shadow: 0 0 0 2px rgba(var(--accent-soft-rgb),.22) inset; }
 .t-tool.t-add { color: var(--accent-soft); background: rgba(var(--accent-soft-rgb),.16); border-color: rgba(var(--accent-soft-rgb),.26); }
+.t-tool[disabled] { opacity: .38; }
+.t-tool[disabled]:active { background: rgba(var(--surf),.07); }
+
+/* 批量选择：勾中的卡片描边 + 右上角一枚对勾，和「单选」的描边区分开。
+   颜色固定成顶栏 ✓ 那颗的浅蓝，不跟卡片自己的强调色走——七张卡七种颜色的勾看着像故障 */
+.tile.picked { border-color: #8fc3ff; box-shadow: 0 0 0 2px rgba(143,195,255,.45) inset; }
+.tile.picked::before {
+  content: '✓'; position: absolute; right: 7px; top: 7px; z-index: 31;
+  width: 22px; height: 22px; border-radius: 50%; font-size: 13px; line-height: 22px; text-align: center;
+  color: #071018; background: #8fc3ff; font-weight: 700;
+}
+/* 编辑态顶栏那颗「批量选择」：挨着 ✎/✓，不占网格里卡片的地方 */
+.bulk-btn {
+  display: none; flex: 0 0 auto; height: 34px; padding: 0 13px; margin-right: 9px;
+  border-radius: 17px; border: 1px solid rgba(var(--accent-soft-rgb),.28);
+  background: rgba(var(--card-rgb),.9); color: var(--accent-soft); font-size: 13.5px;
+}
+.bulk-btn.on { background: rgb(var(--accent)); color: #071018; border-color: rgb(var(--accent)); font-weight: 600; }
 
 /* 选中卡片的浮动工具条（编辑模式） */
 .tile-bar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; display: none;
