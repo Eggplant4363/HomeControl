@@ -23,6 +23,7 @@
     url: '',            /* 远端 APK 下载地址 */
     file: '',           /* 远端 APK 文件名 */
     path: '',           /* 下载到本机后的路径 */
+    needPerm: false,    /* Android 8+ 缺「安装未知应用」授权时为 true */
     pct: 0,
     msg: ''
   };
@@ -190,7 +191,14 @@
       return;
     }
     if (kind === 'install') {
-      if (o.error === 'need_permission') { setPhase('error', '要在系统里允许这台设备安装应用，点「去授权」'); return; }
+      U.needPerm = false;
+      if (o.error === 'need_permission') {
+        /* Android 8+ 要先在系统里允许本应用「安装未知应用」。给两个按钮：
+           去授权（跳系统页），回来点「继续安装」——不用重新检查/重新下载。 */
+        U.needPerm = true;
+        setPhase('error', '要在系统里允许这台设备安装应用：点「去授权」，回来后点「继续安装」');
+        return;
+      }
       if (o.error) { setPhase('error', '装不起来：' + o.error); return; }
       setPhase('installing', '安装器已打开，按屏幕提示完成安装');
     }
@@ -199,6 +207,7 @@
   function install() {
     if (!U.path) { setPhase('error', '还没有下载好的安装包'); return; }
     if (!hasBridge()) { setPhase('error', '浏览器预览里没有升级通道'); return; }
+    U.needPerm = false;
     setPhase('installing', '正在打开安装器…');
     var id = 'ins' + (++seq);
     pending[id] = 'install';
@@ -212,12 +221,12 @@
 
   function openPerm() {
     try { if (bridge() && bridge().updPerm) bridge().updPerm(); } catch (e) { }
-    setPhase('error', '授权后回来再点「安装」');
+    setPhase('error', '在系统里允许「安装未知应用」后，回来点「继续安装」');
   }
 
   function reset() {
     U.phase = 'idle'; U.ver = ''; U.url = ''; U.size = 0; U.file = '';
-    U.path = ''; U.pct = 0; U.msg = '';
+    U.path = ''; U.pct = 0; U.msg = ''; U.needPerm = false;
     repaint();
   }
 
@@ -263,6 +272,10 @@
       html += '<button class="btn primary" data-act="upd-install">立即安装</button>';
     } else if (U.phase === 'downloading' || U.phase === 'installing') {
       html += '<button class="btn" data-act="upd-none">请稍候…</button>';
+    } else if (U.phase === 'error' && U.needPerm) {
+      html += '<button class="btn primary" data-act="upd-install">继续安装</button>' +
+        '<button class="btn" data-act="upd-perm">去授权</button>' +
+        '<button class="btn" data-act="upd-check">重新检查</button>';
     } else if (U.phase === 'error' && /允许这台设备安装应用/.test(U.msg)) {
       html += '<button class="btn primary" data-act="upd-perm">去授权</button>' +
         '<button class="btn" data-act="upd-check">重新检查</button>';

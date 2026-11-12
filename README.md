@@ -365,8 +365,9 @@ WebSocket 帧统计）。注意这是模拟器数字，Chromium 57 真机还没�
 4. **安装**：用 `UpdateProvider`（authority `com.homecontrol.panel.upd`，只暴露 cache 目录里那一个文件）给出
    `content://` URI，然后依次尝试 `ACTION_INSTALL_PACKAGE` / `ACTION_VIEW` 的 content:// 与 file:// 两种形态
    （Android 7 起不再允许 `file://`）。MIUI 5.1 上只有 `ACTION_VIEW + content://` 能起来，所以是「按顺序试」而不是写死一条。
-5. **权限**：Android 8+ 还要求「安装未知应用」授权，面板会先显示「去授权」，点它跳到
-   `ACTION_MANAGE_UNKNOWN_APP_SOURCES` 的系统页面；授权回来再点安装即可。Android 5.1（平板2）没有这一步。
+5. **权限**：Android 8+ 一般要求「安装未知应用」授权。面板不预先拦，先直接起安装器；
+   起不来时才提示「去授权」（跳 `ACTION_MANAGE_UNKNOWN_APP_SOURCES`），授权回来点「继续安装」即可，
+   不用重新检查/重新下载。Android 5.1（平板2）没有这一步。
 
 要让升级真正可用，还需要两件事：
 
@@ -382,6 +383,12 @@ WebSocket 帧统计）。注意这是模拟器数字，Chromium 57 真机还没�
 ① 真实 GitHub → 「仓库还没有发布任何版本」（网络 + TLS + 404 映射通）；
 ② 指向本地镜像 → 「发现新版本 v0.7.15（177 KB）」→ 下载 0%…100% → 「下载完成，点下面的按钮安装」；
 ③ 点安装 → 系统安装器弹出（`mCurrentFocus=com.android.packageinstaller/.PackageInstallerActivity`，截图 `build/padupd-6-installer.png`）。
+
+同一套流程在平板5（Android 13 / MIUI，截图 `build/pad5upd-1-found.png`…`pad5upd-3-install.png`）也走通了，多踩到一个坑：
+本项目 `targetSdk=22`，MIUI 13 上 `canRequestPackageInstalls()` 即使 appops 已经 allow 仍然返回 **false**，
+所以**不能拿它提前拦**（提前拦会把本来能装的路径堵死）。现在的做法是「先试着起安装器」，
+四个 Intent 组合都被拒时才回头判权限、提示「去授权」——那次实测直接弹出了 MIUI 的安装确认框。
+另外「需要授权」这个状态现在给了「继续安装」按钮，授权回来不用重新检查、重新下载。
 
 验收：`node tools\sim.js --mock --port 8794` + `node tools\e2e-update.js`（假桥 + 假 GitHub：无桥提示、检查、下载进度、
 安装、同版本/404/需要授权三个分支、只重绘 `#updSec` 不重建设置页，共 32 项）。

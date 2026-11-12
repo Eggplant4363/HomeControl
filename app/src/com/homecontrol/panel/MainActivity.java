@@ -1261,9 +1261,10 @@ public class MainActivity extends Activity {
         private String doInstall(String path) {
             File f = new File(path == null ? "" : path);
             if (!f.isFile()) return errJson("安装包不见了，重新下载一次");
-            if (Build.VERSION.SDK_INT >= 26 && !getPackageManager().canRequestPackageInstalls()) {
-                return errJson("need_permission");
-            }
+            /* 注意：不要在这里用 canRequestPackageInstalls() 提前拦。
+               本项目 targetSdk=22，MIUI 13（Android 13）上这个 API 明明 appops 已 allow
+               仍然返回 false，提前拦会把本来能装的路径堵死。先试装，全都起不来时再判是不是权限问题。 */
+            boolean permOk = Build.VERSION.SDK_INT < 26 || getPackageManager().canRequestPackageInstalls();
             String mime = "application/vnd.android.package-archive";
             /* MI PAD 2（Android 5.1 / MIUI）上实测：ACTION_VIEW + content:// 没有任何 Activity 接
                （ActivityNotFoundException），但 ACTION_INSTALL_PACKAGE 一直能用；file:// 到 7.0 才被禁。
@@ -1292,6 +1293,7 @@ public class MainActivity extends Activity {
                     }
                 }
             }
+            if (!permOk) return errJson("need_permission");
             return errJson("没有安装器能打开安装包" + (last == null ? "" : "（" + last.getClass().getSimpleName() + "）"));
         }
 

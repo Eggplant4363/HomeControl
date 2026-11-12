@@ -229,7 +229,8 @@ const FAKE_BRIDGE = `(function(){
   await clickSel('#updSec [data-act="upd-perm"]');
   await sleep(400);
   check(/perm/.test(await evalJs("window.__LOG.join(',')")), '「去授权」调到了 updPerm');
-  check(/授权后回来再点/.test(await note()), '授权后提示回来再装', await note());
+  check(/继续安装/.test(await note()), '授权后提示点「继续安装」', await note());
+  check(/继续安装/.test(await btns()), '需要授权时也给了「继续安装」的入口', await btns());
   await shot('upd-5-perm.png');
 
   /* ---------- ⑥ 重绘只换 #updSec，不重建整页 ---------- */
