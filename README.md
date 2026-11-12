@@ -376,7 +376,7 @@ WebSocket 帧统计）。注意这是模拟器数字，Chromium 57 真机还没�
 - **签名一致**：新 APK 必须能覆盖装旧 APK。默认 `tools/build.ps1` 用仓库里的 debug keystore，
   同一把钥匙签出来的才能原地覆盖；换成正式签名后要保证钥匙不变，否则系统会报「应用未安装」。
 
-排查/联调时不用真发版：`node tools\cdp\_mirror.js 8795 0.7.16` 会在本机起一个假 Release
+排查/联调时不用真发版：`node tools\dev-release.js 8795 0.7.16` 会在本机起一个假 Release
 （把 `dist/homecontrol.apk` 当附件、JSON 里写本机局域网 IP），再在面板里 `window.__HC_UPDATE_API = 'http://<pc>:8795/release.json'` 指过去，就能把「检查 → 下载 → 安装」跑完整。
 
 真机验收（2026-11-13，MI PAD 2 / Android 5.1 / Chromium 57）：
