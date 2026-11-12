@@ -6,9 +6,9 @@ param([switch]$KeepShot)
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 Set-Location $root
-
-$adb = 'D:\Software\platform-tools\adb.exe'
-if (-not (Test-Path $adb)) { Write-Host '找不到 adb：' $adb -ForegroundColor Red; exit 2 }
+. (Join-Path $PSScriptRoot 'env.ps1')
+$adb = $Adb
+if (-not $env:ANDROID_SERIAL) { $env:ANDROID_SERIAL = $Device }
 
 $fails = 0
 function Check($ok, $name, $extra) {

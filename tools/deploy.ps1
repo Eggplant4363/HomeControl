@@ -1,17 +1,27 @@
-﻿# 一条命令把面板装到平板上：校验设备 -> 装 APK -> 推面板 -> 写 url.txt -> 重启 -> 收尾检查。
-# 用法：powershell -ExecutionPolicy Bypass -File tools\deploy.ps1 [-Build] [-Mock] [-SkipApk]
+﻿# 一条命令把面板装到平板上：校验设备 -> 装 APK -> 授权 -> 推送（复用 push.ps1）-> 重启 -> 收尾检查。
+# 用法：powershell -ExecutionPolicy Bypass -File tools\deploy.ps1 [-Build] [-Mock] [-SkipApk] [-Prod] [-Serial <设备号>]
+#   -Build    先重新构建 APK（版本号要升就单独跑 tools\build.ps1 -VersionCode 48）
+#   -SkipApk  只改面板时不重装 APK
+#   -Mock     部署成模拟数据模式（删掉 HA 配置）
+#   -Prod     正式部署：不写 url.txt / debug.flag，CDP 与假 HA 都关着
+#   -Serial   多台设备时指定目标；不设则用 $env:HC_DEVICE（默认 emulator-5554）
 [CmdletBinding()]
 param(
-    [switch]$Build,     # 先重新构建 APK
-    [switch]$Mock,      # 部署成模拟数据模式（删掉 HA 配置）
-    [switch]$SkipApk    # 面板改动不必重装 APK 时用
+    [switch]$Build,
+    [switch]$Mock,
+    [switch]$SkipApk,
+    [switch]$Prod,
+    [string]$Serial = ''
 )
 
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
-$adb = "D:\Software\platform-tools\adb.exe"
+. (Join-Path $PSScriptRoot "env.ps1")
+$adb = $Adb
 $apk = Join-Path $root "dist\homecontrol.apk"
 $pkg = "com.homecontrol.panel"
+if ($Serial) { $env:ANDROID_SERIAL = $Serial }
+if (-not $env:ANDROID_SERIAL) { $env:ANDROID_SERIAL = $Device }
 
 function Adb {
     $argList = @($args)
@@ -32,12 +42,13 @@ function Step($ok, $name, $extra) {
 Write-Host "=== 1. 设备 ==="
 $devices = (Adb devices) -join "`n"
 $online = $devices -match 'device$' -or $devices -match "`tdevice"
-Step $online "adb 能看到在线设备" ($devices -replace "`n", ' | ')
+Step $online "adb 能看到在线设备（$env:ANDROID_SERIAL）" ($devices -replace "`n", ' | ')
 if (-not $online) {
     Write-Host ""
     Write-Host "平板不在线。常见原因与处理：" -ForegroundColor Yellow
     Write-Host "  · 显示 offline：长按电源键 10 秒强制重启，或拔插 USB"
     Write-Host "  · 完全没有设备：检查 USB 线/口，确认已开 USB 调试"
+    Write-Host "  · 无线调试：tools\wireless.ps1（Android 11+）或平板上 adb tcpip 5555"
     exit 1
 }
 
@@ -51,30 +62,32 @@ if (-not $SkipApk) {
     Write-Host "=== 3. 安装 APK ==="
     $r = (Adb install -r $apk) -join "`n"
     Step ($r -match 'Success') "安装成功" $r
+    # targetSdk 还是 22：Android 13 上存储权限必须手动给，MIUI 的授权弹窗很容易漏。
+    # Android 5/6（SDK<23）没有运行时权限，安装时就给了，pm grant 反而会报错。
+    $sdk = [int]((Adb shell "getprop ro.build.version.sdk") -join '')
+    if ($sdk -ge 23) {
+        Adb shell "pm grant $pkg android.permission.WRITE_EXTERNAL_STORAGE" | Out-Null
+        Adb shell "pm grant $pkg android.permission.READ_EXTERNAL_STORAGE" | Out-Null
+        Step ((Adb shell "dumpsys package $pkg") -join "`n" -match 'android\.permission\.WRITE_EXTERNAL_STORAGE.*granted=true') "存储权限已授予（SDK $sdk）"
+    } else {
+        Step $true "SDK $sdk 无运行时权限，安装时已授予存储权限"
+    }
 }
 
-Write-Host "=== 4. 推送面板 ==="
-$panel = Join-Path $root "panel"
-$r = (Adb shell "mkdir -p /sdcard/HomeControl/panel") -join ''
-Adb push ($panel + "\.") "/sdcard/HomeControl/panel/" | Out-Null
-Adb shell "echo file:///sdcard/HomeControl/panel/index.html > /sdcard/HomeControl/url.txt" | Out-Null
-$url = (Adb shell "cat /sdcard/HomeControl/url.txt") -join ''
-Step ($url -match 'file:///sdcard/HomeControl/panel/index.html') "url.txt 指向面板" $url
+Write-Host "=== 4. 推送面板与配置（push.ps1） ==="
+$pushArgs = @('-ExecutionPolicy', 'Bypass', '-File', (Join-Path $PSScriptRoot "push.ps1"))
+if ($Mock) { $pushArgs += '-Mock' }
+if ($Prod) { $pushArgs += '-Prod' }
+& powershell @pushArgs | Out-Null
+Step ($LASTEXITCODE -eq 0) "push.ps1 完成"
 
-if ($Mock) {
-    Adb shell "rm -f /sdcard/HomeControl/ha.json /sdcard/HomeControl/mockha.enabled /sdcard/HomeControl/mockha.nows" | Out-Null
-    Write-Host "  （已切到模拟数据模式）" -ForegroundColor DarkGray
+if ($Prod) {
+    $dbg = (Adb shell "ls /sdcard/HomeControl/debug.flag") -join ''
+    Step ($dbg -match 'No such file|not found') "debug.flag 不存在（正式包不开调试）" $dbg
 } else {
-    # 根目录有 ha.json 就一起推上去：里面是 HA 地址与长期访问令牌
-    $haFile = Join-Path $root "ha.json"
-    if (Test-Path $haFile) {
-        Adb push $haFile "/sdcard/HomeControl/ha.json" | Out-Null
-        $ha = (Adb shell "cat /sdcard/HomeControl/ha.json") -join ''
-        $script:haPushed = $true
-        Step ($ha -match '"url"') "ha.json 已推送（真实 HA 模式）" $ha
-    } else {
-        Write-Host "  （根目录没有 ha.json，保持面板当前配置）" -ForegroundColor DarkGray
-    }
+    $url = (Adb shell "cat /sdcard/HomeControl/url.txt") -join ''
+    Step ($url -match 'file:///sdcard/HomeControl/panel/index.html') "url.txt 指向面板" $url
+    Step ((Adb shell "ls /sdcard/HomeControl/debug.flag") -join '' -notmatch 'No such file') "debug.flag 已写（CDP/url.txt/假 HA 可用）"
 }
 
 Write-Host "=== 5. 重启面板 ==="
@@ -92,7 +105,8 @@ while ((Get-Date) -lt $deadline) {
 }
 if ($nStates -lt 0) { $log = (Adb logcat -d) -join "`n"; $mStates = [regex]::Match($log, 'first states .*?实体 (\d+)') }
 Step ($mStates.Success) "面板已收到 HA 状态（实体 $nStates）"
-if ($script:haPushed) {
+$real = (Adb shell "cat /sdcard/HomeControl/ha.json") -join ''
+if ($real -match '"url"') {
     # 编辑模式默认一张卡都不加，所以这里判「收到了多少实体」，不再要求卡片数
     Step ($nStates -ge 100) "真实 HA 数据已加载（$nStates 个实体）"
 } else {

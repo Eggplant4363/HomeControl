@@ -1,8 +1,10 @@
 ﻿# 上墙验收：设备在线 -> 应用在 -> 默认桌面是面板 -> 重启后自动拉起 -> 无脚本错误
 # 用法: powershell -ExecutionPolicy Bypass -File .\tools\verify.ps1
 $ErrorActionPreference = 'Continue'
-$adb = 'D:\Software\platform-tools\adb.exe'
 $root = (Split-Path -Parent $PSScriptRoot)
+. (Join-Path $PSScriptRoot 'env.ps1')
+$adb = $Adb
+if (-not $env:ANDROID_SERIAL) { $env:ANDROID_SERIAL = $Device }
 $out = Join-Path $root 'docs\verify-report.md'
 $results = @()
 $started = Get-Date
