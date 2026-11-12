@@ -19,7 +19,7 @@ Home Assistant 的地址与长期访问令牌，以及一台在线的平板。
 | 常亮 | `FLAG_KEEP_SCREEN_ON`；`dumpsys power` 中 `mWakefulness=Awake` 持续 |
 | 开机/回桌面自启 | 设为默认桌面（`CATEGORY_HOME`），重启 33 秒后面板自动出现；`mCurrentFocus=com.homecontrol.panel/.MainActivity` |
 | 断线自动重连 | 停掉假 HA 后状态胶囊转「连接断开，重连中…」，恢复后自动 `已连接` |
-| 假死自愈 | 自检钩子阻塞主线程 60s → 45s 时 `watchdog: no heartbeat for 45s, reloading` → 页面自恢复 |
+| 假死自愈 | 自检钩子阻塞主线程 60s → 45s 时 `watchdog: no heartbeat for 45s, reloading` → 页面自恢复。**熄屏时看门狗直接跳过**（Doze 会冻结 WebView 的 JS 定时器，旧版因此在熄屏状态下每 45s 重载一次；见 [docs/REFACTOR.md](docs/REFACTOR.md) R1） |
 | 双击返回键逃生口 | 1.5s 内两次 BACK → 进入系统设置（默认桌面被替换时的后路） |
 | 平板内改配置 | 长按状态胶囊 → 写 `/sdcard/HomeControl/ha.json`（`writeText ok: ... (54 chars)`）→ 重连 |
 | 保存前探活 | 200 / 401 / `SocketTimeoutException` 三种结果分别提示，失败不关弹层 |
@@ -177,11 +177,14 @@ powershell -ExecutionPolicy Bypass -File .\tools\verify.ps1
 ## 五、目录与产物
 
 ```
-app/                安卓壳（Java，无第三方依赖）
-panel/              面板前端（HTML/CSS/JS，Chromium 57 兼容）
-tools/              19 个脚本：构建/部署/推送/6 层自检/假 HA/fixture
-dist/homecontrol.apk 78,800 B（versionName 0.6.0 / versionCode 36）
-docs/HANDOVER.md    本文
+app/src/            安卓壳（Java，无第三方依赖）+ TlsPolicy
+app/src_debug/      只在 debug 变体编译的假 HA（release dex 里没有这个类）
+app/certs/          ISRG 锚证书源文件（构建拷进 assets/certs，本身不放进 assets）
+panel/              面板前端（HTML/CSS/JS，Chromium 57 兼容；唯一的真相，assets 不入库）
+tools/              构建/部署/推送 + 自检 + 真机回归（env.ps1、lib/cdp.js、check-{security,rest,tls}.js…）
+dist/               homecontrol.apk（debug，165 KB）/ homecontrol-release.apk（153 KB），versionName 0.7.12 / versionCode 49
+docs/ARCHITECTURE.md 两层职责、Bridge 契约、TLS 与看门狗规则、构建七步
+docs/REFACTOR.md    本轮重构：已修清单+证据、验证矩阵、待办、踩坑表
 docs/USAGE.md       使用手册（含首次上墙、掉线处理、截图索引）
 docs/screens/       29 张实机/PC 截图
 README.md           工程说明（20 节，含所有“为什么这么做”）
@@ -200,6 +203,6 @@ powershell -ExecutionPolicy Bypass -File .\tools\push.ps1 -Restart
 1. **不用 HA 官方前端**：这块板的 WebView 是 2017 年的 Chromium 57 且无法升级；HA 官方前端（2023+）跑不起来。所以自研轻量面板。
 2. **开发期热更新不用 `adb reverse`**：这台设备的 adbd 太老，`adb reverse` 报 `protocol fault` 还会打死 adb server；改用「推 `.rev` 时间戳 + 页面轮询 mtime」。
 3. **设备→PC 方向网络不通**：Windows 防火墙静默丢包（6 个端口全部 `SocketTimeoutException` 而非 refused），加规则需管理员权限。
-   因此真实协议验证改用**设备内假 HA**（`MainActivity` 起 `MockHaServer`，127.0.0.1:8123，开关是 `/sdcard/HomeControl/mockha.enabled`）。
+   因此真实协议验证改用**设备内假 HA**（`MainActivity` 反射起 `MockHaServer`，127.0.0.1:8123）。它只在 **debug 变体**里编译，且要 `/sdcard/HomeControl/debug.flag` + `/sdcard/HomeControl/mockha.enabled` 同时存在才起——正式包里既没有这个类也没有调试通道。
 4. **没有 npm 依赖**：Node 24 自带的 npm 在这台机器上坏了（`Class extends value undefined`），所有工具脚本零依赖手写。
 5. **不自动拉起被杀进程**：MIUI 拒绝第三方后台自启广播，靠「默认桌面」角色解决；没有加 AlarmManager（force-stop 会清闹钟，且与双击返回键逃生口冲突）。

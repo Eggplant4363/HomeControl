@@ -24,7 +24,7 @@
 
 | # | 问题 | 处置 | 证据 |
 | --- | --- | --- | --- |
-| R1 | **看门狗在熄屏时变成 reload 风暴**：Activity 带 `SHOW_WHEN_LOCKED|TURN_SCREEN_ON`，熄屏后它仍是 resumed、没有 `onPause`；Doze 冻结 WebView 的 JS 定时器（心跳在 `panel/js/app.js` 的 `setInterval(heartbeat,4000)`），于是每 45s 判「卡死」→ `web.reload()`。旧版在 Pad 5 上静置 10 分钟重载了 9 次（`00:46:21 → 00:56:52`），每次重载还会把 localStorage 的编辑布局抖一遍 | `MainActivity.java:420 startWatchdog` + `:455 screenInteractive()`：熄屏直接跳过并更新 `lastBeat`；新增 `everBeat`/`loadedAt` 首帧门控（`FIRST_BEAT_MS=180000`） | ① 旧行为复现：`?selftest=hang` → `watchdog: no heartbeat for 45s, reloading`；② 新行为：`input keyevent 26` 熄屏静置 110s → HomePanel 日志 24 行里 **0 条 watchdog/reload**，自注册的 `rest POST /api/states/…` 每 60s 仍在跑 |
+| R1 | **看门狗在熄屏时变成 reload 风暴**：Activity 带 `SHOW_WHEN_LOCKED|TURN_SCREEN_ON`，熄屏后它仍是 resumed、没有 `onPause`；Doze 冻结 WebView 的 JS 定时器（心跳在 `panel/js/app.js` 的 `setInterval(heartbeat,4000)`），于是每 45s 判「卡死」→ `web.reload()`。旧版在 Pad 5 上静置 10 分钟重载了 9 次（`00:46:21 → 00:56:52`），每次重载还会把 localStorage 的编辑布局抖一遍 | `MainActivity.java:446 startWatchdog` + `:481 screenInteractive()`：熄屏直接跳过并更新 `lastBeat`；新增 `everBeat`/`loadedAt` 首帧门控（`FIRST_BEAT_MS=180000`） | ① 旧行为复现：`?selftest=hang` → `watchdog: no heartbeat for 45s, reloading`；② 新行为：`input keyevent 26` 熄屏静置 110s → HomePanel 日志 24 行里 **0 条 watchdog/reload**，自注册的 `rest POST /api/states/…` 每 60s 仍在跑 |
 | R2 | 首帧慢会被看门狗打断：`first states` 实测可到 35s（deploy 的验收轮询也按 40s 等），45s 阈值会把正在启动的页面 reload 掉，于是永远起不来 | 首帧前不判卡死，只给 180s 绝对上限 | `first states 460ms · 实体 1264`（真实 HA），启动期无 reload |
 | R3 | `scheduleRetry` 无限重试（3s×3 之后每 10s 到永远）：网络不通时设备整夜重试，logcat 刷满，且永远停在白屏 | `MAX_RETRY=10` 后停在横幅「已停止自动重试（连按两次返回键进系统设置检查网络与 url.txt）」并 return | 断网场景停在横幅而不是无限重试 |
 | R4 | `/sdcard` 是 symlink，canonical 解析成 `/storage/emulated/0/HomeControl/`；和常量 `CONFIG_DIR="/sdcard/HomeControl/"` 直接比前缀会把**所有**读写判死 | `configRoot()` 对 `CONFIG_DIR` 取 canonical 并补尾斜杠，缓存进 `configCanon` | 第一次部署后 logcat 每 1.5s `mtime denied: /sdcard/HomeControl/panel/.rev`、实体掉到 39（模拟数据）；修后实体 1262/1264、0 条 denied |
@@ -33,9 +33,12 @@
 
 | # | 问题 | 处置 | 证据 |
 | --- | --- | --- | --- |
-| J1 | **原生 REST 回调是全局单槽**：`backend.js` 的 `window.__restCb` 每次 `rest()` 都被覆写，id 不匹配的响应静默丢弃。并发场景（温湿度曲线一次发 N 条 `restHistory`；自注册连发 5 个 POST；REST 兜底轮询；`call()` 的 REST 退路）只剩最后一个响应生效 → 被丢的回调永不触发：`sparkBusy[id]` 永久为 1（曲线再也不重试）、`call()` 的 Promise 永不 settle（失败回滚与 undo 不执行） | `panel/js/backend.js`：模块级 `var restCbs = {}`，`window.__restCb` 只装一次并按 id 查表删除；`fin(ok,code,data)` + done 守卫 + 12s 超时放手；Java 契约不变（`MainActivity.java:857 rest` 仍回调 `window.__restCb(cbId,out)`） | `node tools/check-rest.js`：修前并发 5 个 GET → `{"got":1,"codes":[200]}`（bug 是真的），修后 → `{"got":5,"codes":[200,200,200,200,200]}` REST OK |
+| J1 | **原生 REST 回调是全局单槽**：`backend.js` 的 `window.__restCb` 每次 `rest()` 都被覆写，id 不匹配的响应静默丢弃。并发场景（温湿度曲线一次发 N 条 `restHistory`；自注册连发 5 个 POST；REST 兜底轮询；`call()` 的 REST 退路）只剩最后一个响应生效 → 被丢的回调永不触发：`sparkBusy[id]` 永久为 1（曲线再也不重试）、`call()` 的 Promise 永不 settle（失败回滚与 undo 不执行） | `panel/js/backend.js`：模块级 `var restCbs = {}`，`window.__restCb` 只装一次并按 id 查表删除；`fin(ok,code,data)` + done 守卫 + 12s 超时放手；Java 契约不变（`MainActivity.java:883 rest` 仍回调 `window.__restCb(cbId,out)`） | `node tools/check-rest.js`：修前并发 5 个 GET → `{"got":1,"codes":[200]}`（bug 是真的），修后 → `{"got":5,"codes":[200,200,200,200,200]}` REST OK |
 | J2 | **Chromium 57 语法门禁自己是瞎的**：`tools/lint-es5.js` 的 `strip()` 把正则字面量里的引号当字符串起点（`/[&<>"']/g` 出现在 `app.js:58`、`music.js:68`），吞掉到下一个引号之间的全部代码——`app.js` 4469 行被剥成 **1309 行**，`app.js:1057-1061` 的 5 个 SELF getter 实测 0 命中 → 门禁报全 PASS 是假象；且 strip 吞换行，报错行号对不上原文 | 重写 `strip()`：按 prevChar + 关键字白名单判「除法 vs 正则」（`[\w$)\]]` 之后视为除法；方括号内的 `/` 不算结束；遇换行退回除法），并保留换行 → 行号与原文一一对应；行数变了就打 `BUG … 行号不可信` 并计失败。规则拆成 RULES（57 会报错/静默失效：`??`、`?.`、async/await、`Object.entries/values/fromEntries`、`flat/flatMap`、`Promise.allSettled/any`、`.finally`、`.matchAll`、`.replaceAll`、`findLast/findLastIndex`、`.at`、`globalThis`、`BigInt`、`import/export`、`for...of`）与 NOTES（箭头函数/class/const/let/`...`/Map/Set/getter/includes：57 能跑，只是不合风格，不算失败）。支持 `node tools/lint-es5.js <文件>…` 单查 | `ALL PASS (6 files, 0 modern-syntax hit, 5 style note)`；5 条 note 全在 `app.js:1057-1061`（SELF 的 getter，ES5 合法） |
 | J3 | 音乐封面：每解析一张封面就把 base64 永久存进 `item.cover`，并且立刻 `paintNow()+paintList()` 整表重建 → N 张封面 = N 次全量重绘；配合 `LIB_MAX_ROWS=1500` 能在 512MB 的 MI PAD 2 上攒几十 MB 字符串 | `panel/js/music.js`：`COVER_CAP=60` + `coverOrder[]` LRU（`evictCovers()` 把最老的非当前曲清成 `cover=''`）+ `queueCoverRepaint()`（250ms 合并成一次重绘） | `node --check` 通过；真机 push 后 `JSB ACT first states 314ms · 实体 1264`、面板正常。**没做**行级 `img.src` 定位（需要 `data-idx` 映射，改动更大，见 §4） |
+| J4 | `adjustTemp` 的 `if (noTemp)` 分支是从 `climateSheet` 粘进来的弹层 markup：引用本函数里不存在的 `st/cur/modeHtml/fans`，而且**动作函数**返回 HTML 字符串 → 没有设定温度的空调点一下加减号必 `ReferenceError` | 改成 `toast('这台空调没有可调的设定温度，用弹层选模式')` + `return`；`__PANEL_TEST__` 多导出一个 `adjustTemp` 以便真机验证 | `node tools/check-temp.js <serial>` → `{"err":null,"ret":"undefined","toastText":"这台空调没有可调的设定温度，用弹层选模式","toastShown":true}`，TEMP OK（真机 MI PAD 2，热更新后的 `/sdcard` 副本） |
+| J5 | `app.js` 开头有一段**粘贴事故区**（原 `:205-255`）：重复的 `hasBrightness`（原 `:76`）、重复的 `COLOR_PRESETS`（原 `:87`）、`esc()` 函数体里嵌了三个死函数 `svg`/`supportedModes`/`hasColorTemp`、四个多余的 `}`。值相同所以当下不崩，但缩进已毁、影子声明容易改错（改一处另一处仍生效） | 整段删除（−51 行），保留 `:57`/`:76`/`:87` 的原定义 | `node --check` 通过；`lint-es5.js` `ALL PASS`；`test-ui.js` `ALL PASS (215 checks)`；真机 `first states 252ms · 实体 1264` |
+| J6 | boot 里 `editBtn` 的 click 接线被嵌在 `if (el.gear)` 块内 → gear 不存在时**编辑按钮完全失效**（现在 `index.html` 有 gear，所以是潜伏 bug；接线顺序也被打乱） | `el.gear` 与 `el.editBtn` 拆成两个同级 `if`，缩进复原 | 真机热更新后面板正常，编辑按钮与齿轮各自可用（`editBtn` 的 handler 不再依赖 gear） |
 
 ### P1 结构性（tools/ 与构建）
 
@@ -68,11 +71,12 @@ powershell -File tools\deploy.ps1 -SkipApk -Serial A3P4661B1BA6
 node tools\check-security.js A3P4661B1BA6             # SECURITY OK
 node tools\check-rest.js A3P4661B1BA6                 # REST OK（并发 5 个都回调）
 node tools\check-tls.js A3P4661B1BA6                  # TLS 三条判定
+node tools\check-temp.js A3P4661B1BA6                 # TEMP OK（没设定温度的空调）
 powershell -File tools\smoke.ps1 -Serial A3P4661B1BA6
 powershell -File tools\verify.ps1 -Serial A3P4661B1BA6
 ```
 
-已实测通过：SECURITY OK 9/9、REST OK 5/5、TLS 三条判定、`first states 460ms · 实体 1264`、`tls anchors: 2`、release dex 不含 `MockHaServer`。
+已实测通过：SECURITY OK 9/9、REST OK 5/5、TLS 三条判定、TEMP OK、`first states 460ms · 实体 1264`、`tls anchors: 2`、release dex 不含 `MockHaServer`；正式部署（release 包 + `-Prod`）下 `loadPanel file:///android_asset/panel/index.html`、`first states 437ms · 实体 1264`、`/proc/net/unix` 里没有 devtools socket、`netstat` 里没有 8123/9222。
 
 ---
 
@@ -89,14 +93,11 @@ powershell -File tools\verify.ps1 -Serial A3P4661B1BA6
 
 ## 4. 还没做（按优先级，含为什么现在不动）
 
-### A. `app.js` 的四处结构性问题（**被并发会话占用，故意不动**）
+### A. `app.js` 的结构性问题：三处已修（J4/J5/J6），剩下的是模块拆分
 
-另一会话正在改 `panel/js/app.js`（1×½ 卡片），同时改它会让两边互相覆盖。等它落地后单独做一次纯搬迁：
+三处粘贴/接线事故本轮已修并真机验证（见 §1 的 J4/J5/J6）。删掉那 51 行后 `app.js` 从 4468 行变成 4417 行，**下面的行号要重新定位再做搬迁**（1×½ 卡片也在改这个文件，行号会继续漂）：
 
-1. `app.js:2273-2284` `adjustTemp` 的 `if (noTemp)` 分支是从 `climateSheet`（`:2647-2652`）粘贴进来的弹层 markup，引用未定义的 `st/cur/modeHtml/fans`，而且从**动作函数**里 `return '<div…>'` → 这条路径一旦被触达必 `ReferenceError`。改成 toast + return。
-2. `app.js:205-255` 粘贴事故区：重复的 `hasBrightness(:205)`（原定义 `:76`）、重复的 `COLOR_PRESETS(:211)`（原 `:87`）、`esc(:224)` 函数体里嵌套了三个死函数 `svg(:227)`/`supportedModes(:238)`/`hasColorTemp(:241)`、多余 `}`（`:247/:250/:252/:255`）。值相同所以现在不崩，但缩进已毁、影子声明容易改错。整段删掉，保留 `:76`/`:87`/`:57` 的原定义。
-3. `app.js:4337-4346` boot 里 `editBtn` 的 click 接线被嵌在 `if (el.gear)` 块内 → gear 不存在时编辑按钮完全失效（现在 `index.html` 里有 gear，所以是潜伏 bug）。提为同级语句。
-4. 模块拆分（纯搬迁，共享状态仍挂在 `window.HC.S`；`__PANEL_TEST__` 导出指向搬迁后的函数保住测试；`index.html` 脚本顺序不变 = 零行为差异）：
+1. 模块拆分（纯搬迁，共享状态仍挂在 `window.HC.S`；`__PANEL_TEST__` 导出指向搬迁后的函数保住测试；`index.html` 脚本顺序不变 = 零行为差异）：
    `hc-util.js`（`esc/svg/num/clamp/hasClass/closest`，`app.js:57-330` + `music.js:68/:1901` 去重）→
    `hc-theme.js`（LAB tone 引擎 + `applyTheme/isLight`，`app.js:1036-1223`，顺手删 `legacyThemeAcc`）→
    `hc-store.js`（prefs/hidden/room/edit/names + music 的 vol/mode 缓存，读写统一含 try/catch）→
@@ -115,7 +116,7 @@ powershell -File tools\verify.ps1 -Serial A3P4661B1BA6
 
 ### C. `MainActivity` 仍是上帝类（~1085 行，10 个职责）
 
-本轮把 TLS 抽成了 `TlsPolicy.java`，其余还在一个类里。建议的拆分（不改行为，按 §3 的清单逐块搬）：`PanelWebView`（`:144-231`）/ `PanelBridge`（`:540-1080`）/ `HttpGateway`（`:791-1080`）/ `Watchdog`（`:420-465`）/ `DevUrlResolver`（`:257-283`）。注意 `Bridge` 的方法名是 JS 侧的契约，改名要同步改 `panel/js`。
+本轮把 TLS 抽成了 `TlsPolicy.java`，其余还在一个类里。建议的拆分（不改行为，按 §3 的清单逐块搬）：`PanelWebView`（`:144-257`）/ `PanelBridge`（`:566-1107`）/ `HttpGateway`（`:817-1107`）/ `Watchdog`（`:446-495`）/ `DevUrlResolver`（`:259-295`）。注意 `Bridge` 的方法名是 JS 侧的契约，改名要同步改 `panel/js`。
 
 ### D. 音乐封面只做到「合并重绘 + LRU」，没做到行级更新
 

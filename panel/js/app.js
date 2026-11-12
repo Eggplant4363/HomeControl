@@ -202,57 +202,6 @@
     if (lo == null && hi == null) return null;
     return { low: num(lo, 20), high: num(hi, 26) };
   }
-function hasBrightness(attrs) {
-    var s = supportedModes(attrs);
-    if (s) return s.indexOf('onoff') < 0;
-    return attrs.brightness != null || attrs.color_mode != null;
-  }
-
-var COLOR_PRESETS = [
-    { name: '暖黄', rgb: [255, 176, 80] },
-    { name: '暖白', rgb: [255, 214, 170] },
-    { name: '正白', rgb: [255, 244, 229] },
-    { name: '青绿', rgb: [110, 231, 183] },
-    { name: '天蓝', rgb: [96, 165, 250] },
-    { name: '蓝紫', rgb: [147, 130, 255] },
-    { name: '品红', rgb: [244, 114, 182] },
-    { name: '暖红', rgb: [248, 113, 113] }
-  ];
-
-  
-
-  function esc(s) {
-      return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
-        return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
-      });  function svg(name) {
-      var d = ICONS[name] || ICONS.gear;
-      return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">' + d + '</svg>';
-   
-
-  
-
-  
-
-  
-
-  function supportedModes(attrs) {
-      var m = attrs.supported_color_modes;
-      if (m && m.length) return m.join(',');
-      return '';  function hasColorTemp(attrs) {
-      var s = supportedModes(attrs);
-      if (s) return s.indexOf('color_temp') > -1;
-      return attrs.min_mireds != null && attrs.max_mireds != null;  
-
-
-    }
-
-
-    }
-
-   }
-
-
-    }
 
   function hasPosition(attrs) {
     var sf = attrs.supported_features;
@@ -2276,11 +2225,10 @@ var COLOR_PRESETS = [
     var caps = climateTempCaps(attrs);
     var noTemp = !caps.single && !caps.range;
     if (noTemp) {
-      var heroMode = (st === 'off' || st === 'unavailable') ? '关' : (HVAC[st] || st);
-      return '<div class="sheet-hero"><div class="hero-val" data-role="s-val">' + heroMode + '</div>' +
-        '<div class="hero-sub">' + (isNaN(cur) ? '' : '室温 ' + cur.toFixed(1) + '°C · ') + (HVAC[st] || st) + '</div></div>' +
-        '<div class="ctl-label">模式</div><div class="opts">' + modeHtml + '</div>' +
-        (fans.length ? '<div class="ctl-label">风速</div><div class="opts">' + fanHtml + '</div>' : '');
+      /* 没有可调设定温度（只有 mode/风速）。这是动作函数，不能返回弹层 markup：
+         这个分支是从 climateSheet 粘过来的，引用了本函数里不存在的 st/cur/modeHtml/fans。 */
+      toast('这台空调没有可调的设定温度，用弹层选模式');
+      return;
     }
     var dual = dualTarget(attrs);
     if (dual) {
@@ -4334,15 +4282,16 @@ function boot() {
     el.view = $('view');
     el.topbar = document.querySelector('.topbar');
     el.toolbar = document.querySelector('.toolbar');
+    /* 两个按钮各自接线：gear 不存在时编辑按钮也必须能用（原来 editBtn 被嵌在 if (el.gear) 里） */
     if (el.gear) {
       el.gear.innerHTML = svg('gear');
+      el.gear.addEventListener('click', function () { openSettingsView(); });
+      el.gear.addEventListener('touchstart', function (ev) { if (ev && ev.stopPropagation) ev.stopPropagation(); }, false);
+    }
     if (el.editBtn) {
       el.editBtn.addEventListener('click', function () { if (S.editing) exitEdit(); else enterEdit(); });
       el.editBtn.addEventListener('touchstart', function (ev) { ev.stopPropagation(); });
       paintEditBtn();
-    }
-      el.gear.addEventListener('click', function () { openSettingsView(); });
-      el.gear.addEventListener('touchstart', function (ev) { if (ev && ev.stopPropagation) ev.stopPropagation(); }, false);
     }
 
     selfTestHang();
@@ -4431,6 +4380,8 @@ function boot() {
   window.__PANEL_TEST__ = {
     isNa: isNa, isAuto: isAuto, hasBrightness: hasBrightness, hasPosition: hasPosition,
     climateTempCaps: climateTempCaps, dualTarget: dualTarget,
+    /* 动作函数也导出：tools/check-temp.js 要在真机上验「没有设定温度的空调点加减号」这条路径 */
+    adjustTemp: adjustTemp,
     valHtml: valHtml, subText: subText, midHtml: midHtml, tileHtml: tileHtml,
     iconFor: iconFor, iconMode: iconMode, meterLevel: meterLevel,
     pctMeta: pctMeta, pctFromX: pctFromX, barHtml: barHtml,

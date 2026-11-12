@@ -44,17 +44,17 @@
 
 ### 页面从哪来
 
-1. `debug.flag` 存在 → 读 `/sdcard/HomeControl/url.txt`（`MainActivity.java:257 resolveUrl()`），可以指向 `file:///sdcard/HomeControl/panel/index.html`（开发期热更新）或 `http://pc:8787/...`。
+1. `debug.flag` 存在 → 读 `/sdcard/HomeControl/url.txt`（`MainActivity.java:259 resolveUrl()`），可以指向 `file:///sdcard/HomeControl/panel/index.html`（开发期热更新）或 `http://pc:9047/...`。
 2. 否则 → 固定 `file:///android_asset/panel/index.html`（APK 内的资产）。
 
 **为什么 url.txt 只在 debug 生效**：这个文件在世界可读的 `/sdcard` 里。正式版读它等于让任何能碰这台平板文件系统的人决定面板跑哪段 JS。
 
 ### 配置目录与白名单
 
-面板只被允许读写 `/sdcard/HomeControl/` 里的东西。实现：`configRoot()` 把 `CONFIG_DIR` 取 **canonical** 再比对（`MainActivity.java:340`）——`/sdcard` 在这台设备上是 symlink，canonical 会解析成 `/storage/emulated/0/HomeControl/`；直接拿字符串常量比较会把一切读写判死（踩过：logcat 每 1.5s `mtime denied`，实体掉到 39 走模拟数据）。
+面板只被允许读写 `/sdcard/HomeControl/` 里的东西。实现：`configRoot()` 把 `CONFIG_DIR` 取 **canonical** 再比对（`MainActivity.java:366`）——`/sdcard` 在这台设备上是 symlink，canonical 会解析成 `/storage/emulated/0/HomeControl/`；直接拿字符串常量比较会把一切读写判死（踩过：logcat 每 1.5s `mtime denied`，实体掉到 39 走模拟数据）。
 
-- `safeConfigPath(path)`（`:355`）：`getCanonicalPath()` → 必须落在 `configRoot()` 前缀内；`mtime` / `writeText` / `removeFile` / `readText` 全走它。
-- `readConfig(path)`（`:319`）：拒绝、缺失、目录一律返回 `""`（≤65536B），面板用 `if (!txt)` 判断。
+- `safeConfigPath(path)`（`:381`）：`getCanonicalPath()` → 必须落在 `configRoot()` 前缀内；`mtime` / `writeText` / `removeFile` / `readText` 全走它。
+- `readConfig(path)`（`:345`）：拒绝、缺失、目录一律返回 `""`（≤65536B），面板用 `if (!txt)` 判断。
 
 面板实际用到的文件（全仓库 grep 出来的调用点）：`ha.json`（`app.js:3152` 写 / `:3186` 读 / `:3175` 删）、`music.json`（`music.js:166` 读 / `:204` 写）、`/sdcard/HomeControl/panel/.rev`（`app.js:3364`、`:4283` 读 mtime，热更新信号）。
 
@@ -75,17 +75,17 @@
 
 | 行 | 干什么 |
 | --- | --- |
-| `:84 onCreate` | 窗口 flag（KEEP_SCREEN_ON / SHOW_WHEN_LOCKED / TURN_SCREEN_ON）、装 WebView、手势排除区（`:234 applyGestureExclusion`，避开 MIUI 全面屏手势）、看门狗、加载 |
+| `:84 onCreate` | 窗口 flag（KEEP_SCREEN_ON / SHOW_WHEN_LOCKED / TURN_SCREEN_ON）、装 WebView、手势排除区（`:236 applyGestureExclusion`，避开 MIUI 全面屏手势）、看门狗、加载 |
 | `:120 debugEnabled` | `debug.flag` 是否存在（静态，缓存） |
 | `:129 maybeStartMockHa` | debug 门控 + 反射 `MockHaServer`（release 变体里这个类不存在，反射失败只是打日志） |
 | `:144 initWebView` | JS 接口、console→logcat、SSL 错误回调（`:209`）、mixed content 允许（局域网 http 页面连 ws 需要） |
-| `:257 resolveUrl` | debug 才读 url.txt |
-| `:285 configuredHosts` / `:295 hostOf` / `:303 sslHostAllowed` | 从 `ha.json.url`、`music.json.base`、prefs 里的 URL 抽出主机名，用于「只放行面板自己配置的服务器」的 SSL 例外 |
-| `:319 readConfig` / `:340 configRoot` / `:355 safeConfigPath` | 文件白名单 |
-| `:365 loadPanel` / `:375 scheduleRetry` | 加载失败重试：3s×3 然后每 10s，**最多 10 次**后停在横幅「已停止自动重试」而不是无限重试 |
-| `:420 startWatchdog` / `:455 screenInteractive` | 见 §5 |
-| `:499 onKeyDown` | 1.5s 内两次 BACK → 打开系统设置（默认桌面被替换时的后路） |
-| `:540 Bridge` | JS 桥：`log` `heartbeat` `getVolume` `setVolume` `reload` `info` `netInfo` `battery` `devUrl` `mtime` `writeText` `removeFile` `readText` `setBrightness` `trustAll`(`:765`) `applyTls`(`:778`) `openHa`(`:791`) `restCall`(`:818`) `rest`(`:857`) `httpProbe`(`:878`) `httpJson`(`:903`) `httpReq`(`:909`) `httpGetText`(`:929`) `httpBinary`(`:936`) `httpBytes`(`:956`) `httpText`(`:1017`) `exitApp`(`:1081`) |
+| `:259 resolveUrl` | debug 才读 url.txt |
+| `:287 configuredHosts` / `:297 hostOf` / `:305 sslHostAllowed` | 从 `ha.json.url`、`music.json.base`、prefs 里的 URL 抽出主机名，用于「只放行面板自己配置的服务器」的 SSL 例外 |
+| `:345 readConfig` / `:366 configRoot` / `:381 safeConfigPath` | 文件白名单 |
+| `:391 loadPanel` / `:401 scheduleRetry` | 加载失败重试：3s×3 然后每 10s，**最多 10 次**后停在横幅「已停止自动重试」而不是无限重试 |
+| `:446 startWatchdog` / `:481 screenInteractive` | 见 §5 |
+| `:525 onKeyDown` | 1.5s 内两次 BACK → 打开系统设置（默认桌面被替换时的后路） |
+| `:566 Bridge` | JS 桥：`log` `heartbeat` `getVolume` `setVolume` `reload` `info` `netInfo` `battery` `devUrl` `mtime` `writeText` `removeFile` `readText` `setBrightness` `trustAll`(`:791`) `applyTls`(`:804`) `openHa`(`:817`) `restCall`(`:844`) `rest`(`:883`) `httpProbe`(`:904`) `httpJson`(`:929`) `httpReq`(`:935`) `httpGetText`(`:955`) `httpBinary`(`:962`) `httpBytes`(`:982`) `httpText`(`:1043`) `exitApp`(`:1107`) |
 
 `Bridge` 里的网络方法都是「在 `ui.post` 之外的线程跑 `HttpURLConnection`，结果用 `web.evaluateJavascript` 回调」——WebView 自己的网络栈跑不了带 Bearer 令牌的 HA REST（跨域 + 混合内容），所以由壳代跑。
 
@@ -108,10 +108,10 @@
 | 参数 | 值 | 位置 |
 | --- | --- | --- |
 | JS 心跳 | 4s | `panel/js/app.js` 的 `setInterval(heartbeat,4000)` → `Bridge.heartbeat()` |
-| 检查周期 | 15s | `MainActivity.java:420 startWatchdog` |
+| 检查周期 | 15s | `MainActivity.java:446 startWatchdog` |
 | 卡死阈值 | `BEAT_STALL_MS = 45000` | `:66` |
 | 首帧宽限 | `FIRST_BEAT_MS = 180000` | `:67`（`everBeat` 之前不判卡死；慢网络下 `first states` 实测可到 35s） |
-| 屏幕门 | `screenInteractive()`（API≥20 `isInteractive()`，否则 `isScreenOn()`） | `:455` |
+| 屏幕门 | `screenInteractive()`（API≥20 `isInteractive()`，否则 `isScreenOn()`） | `:481` |
 
 逻辑：熄屏直接跳过（并把 `lastBeat` 更新为当前，防止亮屏那一下立刻判卡死）；首帧前只有超过 180s 才 reload；之后 45s 无心跳才 reload。
 
@@ -167,7 +167,7 @@ dist/homecontrol.apk（debug，含假 HA） / dist/homecontrol-release.apk（rel
 | 设备 | 系统 | WebView | 通道 | 备注 |
 | --- | --- | --- | --- | --- |
 | MI PAD 2（latte，`A3P4661B1BA6`） | Android 5.1 / SDK 22，MIUI 9.6，user 构建无 root | Chromium 57（2017，不能升级） | USB adb；`adb tcpip 5555` + `adb connect 10.10.1.78:5555`（重启后 tcpip 失效，要重新插线跑一次） | 1024×768@2x；无 `pidof`；CDP 的 `/json/list` 不给 `webSocketDebuggerUrl`（只有 id）；信任库没有 ISRG 根 |
-| Xiaomi Pad 5（nabu，`10.10.1.188:34049`） | Android 13 / SDK 33 | 新 Chromium | 无线调试：配对端口与连接端口是两个不同端口（`adb pair` + `adb connect`），guid `adb-a30703c6-OjSXZn` | targetSdk 22 → 装完要 `pm grant` 存储权限；Doze 会冻结定时器（看门狗门控同样适用，另加 `cmd deviceidle whitelist +com.homecontrol.panel`） |
+| Xiaomi Pad 5（nabu，`10.10.1.188`） | Android 13 / SDK 33 | 新 Chromium | 无线调试：配对端口与连接端口是**两个不同端口**（`adb pair` + `adb connect`），每次开「无线调试」两个端口都会变（本次连接 `10.10.1.188:34049`，guid `adb-a30703c6-OjSXZn`） | targetSdk 22 → 装完要 `pm grant` 存储权限；Doze 会冻结定时器（看门狗门控同样适用，另加 `cmd deviceidle whitelist +com.homecontrol.panel`） |
 
 面板布局存在 WebView 的 `localStorage['hc.edit']`（不在 `/sdcard`），所以新装一台平板是空布局，要在设备上「编辑 → ＋添加卡片」；MI PAD 2 的布局没法拷过去（没有 root，也拿不到别的 app 的 data 目录）。
 
