@@ -8,6 +8,10 @@ app/build/
 *.aab
 *.class
 *.log
+# 设备加载的 /sdcard 副本由 build.ps1 从 panel/ 与 app/certs/ 拷进 assets，两份都别进仓库（以前两边分叉过也没人发现）
+app/assets/panel/
+app/assets/certs/
+tools/build/
 
 # ── 本机与设备私有数据（不要进仓库）──────────────────────────
 # ha.json 里有本机 HA 地址与长期访问令牌，只提交 ha.json.example

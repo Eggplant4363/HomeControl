@@ -14,22 +14,35 @@ panel/                 面板前端（纯静态、无构建链、ES5，兼容 Ch
   js/layout.js         按 HA registry 自动生成房间 / 卡片 / 场景键
   js/app.js            渲染、弹层与交互
   js/music.js          负一屏音乐页（演示 / 道理鱼 / Subsonic 三种音源）
-app/                   安卓壳（Java，minSdk 21 / targetSdk 22）
+app/                   安卓壳（Java，minSdk 21 / targetSdk 22；正式变体不含 app/src_debug）
+app/certs/             TLS 锚（ISRG Root X1/X2），构建时拷进 assets/certs
 tools/
-  build.ps1            手工构建 APK（aapt2 + javac + d8 + zipalign + apksigner）
-  push.ps1             推面板到 /sdcard/HomeControl/panel 并重启 App（-Build / -Restart / -Mock）
+  env.ps1              集中解析 SDK / build-tools / android.jar / JDK / adb / 默认设备（可用 HC_* 覆盖）
+  build.ps1            手工构建 APK（aapt2 + javac + d8 + zipalign + apksigner；-Variant debug|release / -VersionCode / -VersionName / -OutName）
+  deploy.ps1           装 APK + 推面板 + 重启 + 自检（-Build / -Mock / -SkipApk / -Prod / -Serial）
+  push.ps1             推面板到 /sdcard/HomeControl/panel 并重启 App（-Restart / -Mock / -Prod / -Build）
   verify.ps1           上墙验收：设备/安装/默认桌面/重启自动拉起/无脚本错误，产出 docs/verify-report.md
-  lint-es5.js         扫面板是否用了 Chromium 57 不支持的语法
   smoke.ps1            上机冒烟：推面板→重启→查 page finished/无 JSBERR→点一张卡→查 ACT 日志
-  smoke.ps1            设备端冒烟：推面板 → 重启 → 查加载/JS 错误 → 点一张卡 → 验证 ACT 日志
-  lint-es5.js          Chromium 57 语法闸门（箭头函数 / 可选链 / class / const 等一律报错）
+  lib/cdp.js           共享 CDP 客户端（Edge 与设备 WebView 两条路；e2e/shot/probe 都用它，别再手抄 WS 握手）
+  lint-es5.js          Chromium 57 语法闸门（Chrome 57 会报错的写法 FAIL；能跑但不合风格的走 note）
+  lint-css.js          CSS 闸门：Chromium 57 不生效但不报错的写法（布局会悄悄变形）
+  test-ha.js           协议 + 自动布局单测（假 HA 跑在 Node 里，WS + REST + history + registry）
+  test-ui.js           PC 侧 UI 回归（Edge headless + CDP）
+  check-security.js    真机上验 JS 桥的文件白名单（../ 穿越、目录读取、越权写必须被拒）
+  check-tls.js         真机上验 TLS：LAN 直通、公网 Let's Encrypt 走自带锚、自签与域名不匹配必须被拒
+  check-rest.js        真机上验原生 REST 回调表：并发 5 个请求必须全部回调
+  fake-ha.js           零依赖假 HA（WebSocket），可单跑，也被单测复用
+  fake-daoliyu.js      零依赖假「道理鱼」音乐服务（REST + WAV + SVG 封面），负一屏联调用
+  sim.js               PC 模拟器（默认只读、拦 POST /api/services/*），配 sim-shot.js 出图
+  e2e-*.js             真机端到端用例（改卡片布局/命名/设置等，经 WebView CDP）
+  shot-*.js / probe-*.js 真机截图与探针（同样走 lib/cdp.js）
   make-fixture.ps1     生成「真实模式」离线验收用的面板副本
   make-big-fixture.ps1 生成 80 实体压力测试用的面板副本
   fixture-panel-ha.js  验收副本里的样例数据后端（替换 window.HABackend）
-  fake-ha.js           零依赖假 HA（WebSocket），可单跑，也被单测复用
-  fake-daoliyu.js      零依赖假「道理鱼」音乐服务（REST + WAV + SVG 封面），负一屏联调用
-  cdp-run.js           用 CDP 在面板 WebView 里执行一段 JS（调试/验收用；新 WebView 才有 CDP，平板 2 的 Chromium 57 连上会崩，见「调试平板 2」）
-  test-ha.js           协议 + 自动布局单测（24 项断言）
+  fixture-big-ha.js    压力测试数据后端
+  mk-music.js          写 build/music.json（凭据从本地记忆取，不进仓库）
+  cdp-run.js           用 CDP 在面板 WebView 里执行一段 JS（调试/验收用）
+  real-ha-check.js     连真实 HA 核对实体与房间分类
   devserver.js         PC 侧静态服务（8787），用于 PC 上快速看页面
 dist/homecontrol.apk   构建产物
 docs/screens/          实机截图（panel-home / panel-config / panel-diag / panel-real-layout / panel-study / panel-cover / panel-climate-heatcool / panel-night-dim / panel-many-rooms 等）
@@ -55,23 +68,28 @@ powershell -ExecutionPolicy Bypass -File tools\deploy.ps1 -SkipApk   # 只改了
 
 它会依次做：adb 在线检查（离线时直接告诉你「长按电源键 10 秒」而不是抛异常）→ 装 APK → 推 `panel\` 到 `/sdcard/HomeControl/panel/` → 改写 `url.txt` → force-stop + 启动 → 校验 `page finished` / 无脚本错误 / 前台是壳 App，最后打印 DEPLOY OK。
 
-版本号随构建更新：`versionName 0.7.10` / `versionCode 47`，诊断页第一行就能看到「版本 0.7.10 · MI PAD 2」。
+版本号随构建更新：`versionName 0.7.12` / `versionCode 49`（`build.ps1` 的默认值就是当前版本；发新包就 `-VersionCode 50 -VersionName "0.7.13"` 并同步改这一行，不用再写一次性升版本脚本——装到已装更高 versionCode 的设备上会 `INSTALL_FAILED_VERSION_DOWNGRADE`），诊断页第一行就能看到「版本 0.7.12 · MI PAD 2」。
 
 面板把自己也注册进 Home Assistant（0.7.9）：走 `POST /api/states/<entity_id>`（实测 201，不存在就新建，不需要 MQTT），每分钟报一次 `sensor.homecontrol_panel`（在线状态、型号、App 版本、IP/SSID、皮肤、电量、充电、`last_seen`）、`binary_sensor.homecontrol_panel_connected`、`sensor.homecontrol_panel_battery`、`binary_sensor.homecontrol_panel_charging`、`switch.homecontrol_panel_dark_mode`。那个开关是双向的：面板写自己的皮肤，HA 里把开关拨了，面板跟着换皮肤（`selfWritten` 用来区分「HA 那边改了」和「我们自己写的」，不会自己跟自己打架）。注意 HA 的 REST 建的是实体，不是设备注册表里的设备，所以在 HA 界面上它们归在「未分配设备」下。
 ## 构建与部署
 
 ```powershell
-# 构建（需要 D:\Software\android-sdk 的 build-tools 34 + platforms\android-34 + JDK 17）
-powershell -ExecutionPolicy Bypass -File .\tools\build.ps1
+# 构建（路径由 tools\env.ps1 解析：SDK / build-tools / android.jar / JDK / adb，可用 HC_ANDROID_SDK 等环境变量覆盖）
+powershell -ExecutionPolicy Bypass -File .\tools\build.ps1                                  # debug 变体，含假 HA + 调试开关
+powershell -ExecutionPolicy Bypass -File .\tools\build.ps1 -Variant release -OutName homecontrol-release.apk   # 正式包：不含 MockHaServer
+powershell -ExecutionPolicy Bypass -File .\tools\build.ps1 -VersionCode 49 -VersionName "0.7.12"
 
 # 安装
 adb install -r .\dist\homecontrol.apk
 
 # 开发期：推面板 + 重启 App（约 3 秒出效果，不用重装 APK）
 powershell -ExecutionPolicy Bypass -File .\tools\push.ps1 -Restart
+powershell -ExecutionPolicy Bypass -File .\tools\push.ps1 -Prod     # 生产形态：删掉 debug.flag 与 url.txt
 ```
 
-`build.ps1` 里有个 Windows 专属的坑：`aapt2 link -A` 写进 APK 的资产条目名带反斜杠（`assets/panel\js\app.js`），Android 只认 `/`，于是 `file:///android_asset/panel/index.html` 一律 `ERR_FILE_NOT_FOUND`。第 3b 步会把条目名统一正斜杠再继续打包（构建日志里 `[3b/7] asset entry names normalized (8)`）；改构建脚本时别把这一步去掉。
+调试开关是一个文件而不是编译期常量：`/sdcard/HomeControl/debug.flag` 存在时才开 WebView CDP（:9222）、才读 `url.txt`、才允许起假 HA。开发部署由 `push.ps1` 写这个文件，`push.ps1 -Prod` / `deploy.ps1 -Prod` 删掉它——正式版不该让同网段的人连上调试端口就能往面板里注入 JS（配合下面的文件白名单，那才是真正能越权的路径）。
+
+`build.ps1` 里有个 Windows 专属的坑：`aapt2 link -A` 写进 APK 的资产条目名带反斜杠（`assets/panel\js\app.js`），Android 只认 `/`，于是 `file:///android_asset/panel/index.html` 一律 `ERR_FILE_NOT_FOUND`。第 3b 步会把条目名统一正斜杠再继续打包（构建日志里 `[3b/7] asset entry names normalized (8)`）；改构建脚本时别把这一步去掉。`app/assets/panel/` 与 `app/assets/certs/` 是构建产物（每次 wipe 后从 `panel/` 与 `app/certs/` 拷进来），已 gitignore，别手工编辑。
 
 ## 中控屏行为（上墙相关）
 
@@ -80,7 +98,7 @@ powershell -ExecutionPolicy Bypass -File .\tools\push.ps1 -Restart
 - **上墙验收**：`powershell -ExecutionPolicy Bypass -File .\tools\verify.ps1` 依次检查 设备在线 / 应用已装 / 按 HOME 进面板 / 系统启动完成 / 重启后自动拉起 / 屏幕常亮 / 无脚本错误，结果写 `docs/verify-report.md` 并留重启后截图 `docs/screens/panel-verify.png`
 - **使用手册**：docs/USAGE.md（接 HA 的两种方式、日常操作、夜间调暗、诊断页、逃生口、更新 APK 的注意事项）
 - **全屏常亮**：`FLAG_KEEP_SCREEN_ON`，并带 `SHOW_WHEN_LOCKED / DISMISS_KEYGUARD`，锁屏时也能盖上来
-- **断线自愈**：JS 心跳 4s，45s 无心跳自动 reload；页面加载失败按 3s / 10s 重试
+- **断线自愈**：JS 心跳 4s；看门狗只在**屏幕亮着**时判卡死（熄屏 + Doze 会冻结 WebView 定时器，老版本因此在熄屏后每 45s 重载一次，整夜不停），首帧前给 180s 宽限（慢网络下 `first states` 实测可到 35s，原来 45s 阈值会把启动中的页面打断）；页面加载失败按 3s / 10s 重试，最多 10 次后停在「已停止自动重试」而不是无限重试
 - **逃生口**：1.5 秒内连按两次返回键 → 打开系统设置（恢复原桌面：设置 → 主屏幕 → 系统桌面）
 - **配置读取**：`/sdcard/HomeControl/url.txt` 指定页面地址（`file://` 或 `http(s)://`）；`/sdcard/HomeControl/ha.json` 提供 HA 地址与令牌
 - **平板内直接配置**：长按右上角状态胶囊 0.8 秒 → 「连接设置」弹层，填地址 + 令牌点「保存并重连」（写入 `ha.json` 后自动 reload）；点「改用模拟数据」删掉 `ha.json` 回到模拟模式。这样上墙后不用再摸电脑
@@ -88,7 +106,7 @@ powershell -ExecutionPolicy Bypass -File .\tools\push.ps1 -Restart
 - **连背光一起调**：压暗时通过 `window.setAttributes()` 把本窗口的 `screenBrightness` 降到 `dim.brightness`（默认 0.35），退出时传 `-1` 恢复系统亮度。只作用本窗口、不需要 WRITE_SETTINGS 权限；夜里是真的不刺眼、也省电，不是只盖一层黑遮罩
 - **防烧屏位移**：每 5 分钟把 `#app` 整体随机平移 1~2px（`cfg.burnIn.shiftEverySec` / `maxShift`，`panel/js/app.js` 的 `startPixelShift()`），配合 `scale(1.01)` 盖住边缘。像素级偏移肉眼看不出来，但静态的时钟、卡片边框不会长期压在同一个物理像素上
 - **记住房间**：选中的房间存 localStorage['hc.room']，凌晨静默重载 / 应用重启后回到同一个房间，不会跳回「全部」；如果那个房间在真实 HA 里已经不存在，自动回落到「全部」
-- **误触撤销**：点卡片开关后，底部提示条给 5 秒「撤销」（	oggle() 里调 	oast(text,'撤销',fn)，n 发反向 	urn_on/	urn_off）。墙上触摸屏手臂伸过去容易蹭到旁边卡片，撤销比重做一次便宜。整条提示可点——Chromium 57 里 pointer-events:none 的父元素即使子元素设 uto 也点不到（elementFromPoint 能命中但事件不派发），所以带动作时给 .toast.act 整条放开
+- **误触撤销**：点卡片开关后，底部提示条给 5 秒「撤销」（`toggle()` 里调 `toast(text,'撤销',fn)`，`fn` 发反向 `turn_on`/`turn_off`）。墙上触摸屏手臂伸过去容易蹭到旁边卡片，撤销比重做一次便宜。整条提示可点——Chromium 57 里 pointer-events:none 的父元素即使子元素设 `auto` 也点不到（elementFromPoint 能命中但事件不派发），所以带动作时给 .toast.act 整条放开
 - **亮度条直接拖**：可调光的灯（`light` 且 `supported_color_modes` 含亮度）卡片上有一条 22px 高的进度条，手指按住任意位置就能拖，拖动中每 140ms 推一次 `light.turn_on {brightness_pct}`，本地先改、不跟着 HA 回包抖；关灯时条留在原位画到 0（半透明），一眼看出这盏灯能调。能力判断在 `panel/js/app.js` 的 `pctMeta()`，拖完那一下的 click 会被吞掉，不会顺手关灯
 - **顶栏住户头像 + 在家/离家**：「已连接」左边显示 `person.*` 的圆形头像（取 `attributes.entity_picture`，相对路径自动拼上 HA 地址，是公开图所以不需要带令牌；加载失败退回首字母），旁边一句在家人话。`home` → 「在家」（头像描绿环），`not_home` → 「离家」、自定义区域名原样显示、`unknown/unavailable` → 「状态未知」；家里有多个 person 时最多并排 3 个头像，文字显示「2/3 在家」。逻辑在 `panel/js/app.js` 的 `renderWho()` / `whoState()`，头像签名不变就不重绘，1254 个实体的高频回包不会反复重载图片
 - **房间多 / 实体多**：房间 tab 放不下时自动改为可横向滑动（选中的房间会自动滑进可视区）；某个房间实体超过 8 张时网格改为可纵向滑动，行高固定，不会把卡片挤出屏幕又没法翻。场景键超过 4 个时同样可横向滑动，且场景区最宽只占 46%，不会把房间 tab 挤没
@@ -141,7 +159,7 @@ adb push music.json /sdcard/HomeControl/music.json
 - `file://` 页面里 XHR 会被 CORS 拦（道理鱼不返回 `Access-Control-Allow-Origin`），所以所有接口请求都走壳 App 的原生桥 `AndroidBridge.httpReq(cbId, method, url, headersJson, body)`，回调 `window.__musicHttpCb(id, {'{'}status,body{'}'})`；`<audio>` / `<img>` 不受 CORS 限制，可以直接用
 - 道理鱼的封面 `GET /api/cover?path=…` **必须带 `Authorization: Bearer`**（`?token=` 不认），而 `<img>` 加不了请求头 → 走原生桥 `AndroidBridge.httpBinary(cbId, method, url, headersJson)` 取字节转 base64 的 `data:` URI（`window.__musicBinaryCb` 回调，同一 URL 只取一次）
 - 曲库是 FLAC（一首 85MB，平板放不动）：按曲目格式选流 —— mp3/m4a/aac/wav/ogg 直接 `/api/tracks/{id}/stream?token=`，其余走 `/api/tracks/{id}/transcode?token=&format=mp3&bitrate=192`；万一播放失败再退一次转码
-- `WebViewClient.onReceivedSslError` 直接 `proceed()`：Android 5.1 的 WebView（Chromium 57）信任库里没有 Let's Encrypt 的 ISRG 根证书，音频流走 WebView 自己的网络栈（Java 桥的 `trustAll()` 管不到它），不放行就播不出歌。中控屏只连自己的服务器
+- `WebViewClient.onReceivedSslError` 按**主机范围**放行（不是无脑 `proceed()`）：Android 5.1 的 WebView（Chromium 57）信任库里没有 Let's Encrypt 的 ISRG 根证书，音频流与 WebSocket 走 WebView 自己的网络栈（Java 桥的 `TlsPolicy` 管不到它），不放行就播不出歌、也没有实时推送。放行只限局域网 + 面板自己配置的服务器（`ha.json` 的 url、`music.json` 的 base、弹层里填的地址），没配过的域名一律 `cancel()`；错误码不看（Chromium 57 对同一张证书在页面里报 2、在 WSS 握手里报 3，分类不可靠）。真校验在 Java 侧：`TlsPolicy` 逐环验签 + 有效期 + 主机名（实测 badssl 被 Java 侧 `SSLHandshakeException: untrusted root` 拒掉）
 - 拖动时页面**不**先置 `open`，松手后按位移/速度一次性决定开或收（早期版本先置 `open` → 后半段手势被守卫丢掉，右滑打不开）
 - 手势只从左边 64px 内起手才算拉出（`EDGE_PULL`），另外落点落在 `.t-bar`（卡片亮度条）、`input`/`.slider`（设置滑条）、`.toolbar`（场景/房间横滚）、`.sheet`/`.mask`/`.view` 这些控件上时直接放弃，避免和它们抢横滑。Android 10+ 手势导航会把屏幕左边缘留给系统返回，所以 MainActivity 在 API 29+ 用 `setSystemGestureExclusionRects` 把左侧 56dp 宽的竖带排除在系统手势之外（返回手势在右边缘仍可用）——小米平板 5（Android 13）上从边缘滑不出音乐页就是这条在起作用。
 
@@ -528,7 +546,7 @@ REST 走的是**壳 App 的原生 HTTP**（`Bridge.rest`），不是页面里的
 代价要说清楚：REST 模式下没有面积/设备 registry，所以所有实体都会落在「其他」房间；也不会有实时刷新，需要手动重连（点一下状态胶囊）或等 WS 恢复。
 ## 设备内假 HA 联调（不依赖局域网）
 
-面板与真实 HA 的 WebSocket 协议链路可以在设备上自证 —— 壳 App 自带一个假 HA（`MockHaServer`，监听 `127.0.0.1:8123`），只在开关文件存在时启动。
+面板与真实 HA 的 WebSocket 协议链路可以在设备上自证 —— 壳 App 带一个假 HA（`MockHaServer`，监听 `127.0.0.1:8123`），只在开关文件 `/sdcard/HomeControl/mockha.enabled` 存在时启动，而且**只有 debug 变体有这个类**（`app/src_debug/`，release 构建不编译它，正式 APK 的 dex 里没有 `MockHaServer`，已用 zipfile 读 dex 验过）。起假 HA 还要 `debug.flag` 在场，所以正式版既没有假 HA 也没有调试端口。
 
 ```powershell
 # 打开（flag 文件 + ha.json 两个都要）
@@ -615,7 +633,8 @@ node tools\lint-css.js
 六套脚本，改完面板/协议都能先在本机跑一遍（平板不在也能验）：
 
 ```powershell
-node tools\lint-es5.js      # Chromium 57 语法检查 + panel/ 与 app/assets/panel 是否一致（5 文件 0 命中）
+node tools\lint-es5.js      # Chromium 57 语法检查 + panel/ 与 app/assets/panel 是否一致（6 文件 0 命中）
+                            # 也支持 `node tools\lint-es5.js <文件>` 临时查单个文件（给门禁自己测用）
 node tools\lint-css.js      # Chromium 57 CSS 检查（flex gap / backdrop-filter / :is() 等）
 node tools\test-ui.js       # 渲染与规整纯函数（87 项：离线/onoff/双设定点/无温度空调/卷帘/自动化/场景/房间/地址/曲线）
 node tools\test-ha.js       # 协议与自动布局（43 项，假 HA 跑在 Node 里，含 WS + REST + history）
@@ -761,9 +780,9 @@ powershell -ExecutionPolicy Bypass -File .\tools\smoke.ps1
 - 配置：**可在平板上长按状态胶囊直接改 HA 地址/令牌**（写 `ha.json` 后自动重连），也可 adb 推 `ha.json`；保存前用原生 HTTP 探活校验地址与令牌（200 / 401 / 超时三种结果分别提示）
 - 默认走**模拟数据**（`panel/js/config.js` 里 `mock: true`），37 个实体的完整交互已逐项验证
 - 真实模式：协议层由 `tools/test-ha.js` 全绿覆盖；设备端 UI 链路用 fixture 方案验收通过；只差真实地址 + 令牌做最终联调
-- 局域网限制（实测）：平板 → PC 方向所有端口（80/443/8080/5037/5555/9999/8123）都是 SocketTimeoutException，Windows 防火墙三个 profile 全开且加规则需要管理员权限，所以「设备连 PC 上的假 HA」这条路不通；真实 HA 只要在同一网段且允许入站就没问题。db reverse 也因旧 adbd 报 protocol fault 不可用，热更新改用 .rev 文件 + mtime 轮询
+- 局域网限制（实测）：平板 → PC 方向所有端口（80/443/8080/5037/5555/9999/8123）都是 SocketTimeoutException，Windows 防火墙三个 profile 全开且加规则需要管理员权限，所以「设备连 PC 上的假 HA」这条路不通；真实 HA 只要在同一网段且允许入站就没问题。`adb reverse` 也因旧 adbd 报 protocol fault 不可用，热更新改用 `.rev` 文件 + mtime 轮询
 - 上墙：已设为默认桌面，重启自动拉起（实测）；常亮、锁屏覆盖、看门狗、双返回键逃生口均可用；夜间/空闲自动调暗（实测，docs/screens/panel-night-dim.png）；长按时间可开诊断页（docs/screens/panel-diag.png）；每天 04:00 静默重载一次
-- **假死自愈（实测）**：面板 JS 每 4 秒心跳一次；壳 App 的看门狗每 15 秒检查，超过 45 秒没心跳就 `web.reload()`。真机验证：URL 加 `?selftest=hang` 让页面主线程卡死 60 秒 → logcat 出现 `watchdog: no heartbeat for 45s, reloading`，卡死结束后自动重载、页面恢复、无人工干预
+- **假死自愈（实测）**：面板 JS 每 4 秒心跳一次；壳 App 的看门狗每 15 秒检查，**屏幕亮着**且超过 45 秒没心跳才 web.reload()（PowerManager.isInteractive()；熄屏 + Doze 会冻结 WebView 定时器，所以熄屏时看门狗直接跳过，不再整夜每 45s 重载），首帧前给 180 秒宽限（慢网络下 irst states 实测可到 35 秒，45 秒阈值会把正在启动的页面打断）。真机验证两条：① URL 加 ?selftest=hang 让页面主线程卡死 60 秒 → logcat 出现 watchdog: no heartbeat for 45s, reloading，卡死结束后自动重载、页面恢复、无人工干预；② 熄屏静置 110 秒 → 0 条 watchdog/reload 日志（改之前每 45 秒一次）
 - **进程被杀后的恢复**：默认桌面角色保证按 Home 键 / 重启都会重新拉起（实测 force-stop 后按 Home 重新拉起、重启后无需解锁直接进面板）；MIUI 的 AutoStart 会拒绝后台自启广播，所以不依赖开机广播这一路
 
 ## PC 侧排版自检（不用真机）

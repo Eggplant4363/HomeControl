@@ -1,4 +1,4 @@
-# 生成「真实模式」离线验收用的面板副本：build\panel-fixture
+﻿# 生成「真实模式」离线验收用的面板副本：build\panel-fixture
 #   用途：没有可用 HA（或设备→PC 网络不通）时，在平板实机上验证
 #   ha.json 读取 → 真实模式 → registry 自动布局 → 场景键/房间 tab → 卡片交互
 #   做法：复制 panel\ → 覆盖 js\fixture-ha.js（把 window.HABackend 换成样例数据实现）

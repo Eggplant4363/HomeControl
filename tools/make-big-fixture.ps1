@@ -1,4 +1,4 @@
-# 生成「压力测试」面板副本：build\panel-big
+﻿# 生成「压力测试」面板副本：build\panel-big
 #   用途：验证房间多、实体多时的滚动与排版（8 房间 x 10 实体 + 6 场景）
 #   做法：复制 panel\ → 注入 js\fixture-ha.js（tools\fixture-big-ha.js）
 # 用法：powershell -ExecutionPolicy Bypass -File .\tools\make-big-fixture.ps1

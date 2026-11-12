@@ -6,107 +6,28 @@
  * 跑法：node tools\sim.js --mock --port 8794 然后 node tools\e2e-bulk.js
  */
 'use strict';
-const net = require('net');
-const http = require('http');
-const crypto = require('crypto');
-const { spawn } = require('child_process');
 const path = require('path');
-const fs = require('fs');
+const cdp = require('./lib/cdp');
+const { ROOT, sleep, httpGet, findEdge, openEdge, WS, evaluate, screenshot, closeAll } = cdp;
 
-const ROOT = path.resolve(__dirname, '..');
 const PANEL_URL = 'http://127.0.0.1:8794/';
 const CDP_PORT = 9342;
-const EDGE = ['C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
-              'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe'].find(p => fs.existsSync(p));
 
 let failed = 0;
 const check = (ok, name, extra) => {
   if (ok) console.log('  PASS  ' + name);
   else { console.log('  FAIL  ' + name); if (extra) console.log('        ' + extra); failed++; }
 };
-const sleep = ms => new Promise(r => setTimeout(r, ms));
-const httpGet = url => new Promise((resolve, reject) => {
-  http.get(url, res => { let b = ''; res.on('data', d => b += d); res.on('end', () => resolve(b)); }).on('error', reject);
-});
-
-class WS {
-  constructor(sock) { this.sock = sock; this.buf = Buffer.alloc(0); this.frames = []; this.waiters = []; }
-  static async connect(wsUrl) {
-    const u = new URL(wsUrl);
-    const sock = net.connect(Number(u.port), u.hostname);
-    await new Promise((res, rej) => { sock.once('connect', res); sock.once('error', rej); });
-    sock.write('GET ' + u.pathname + (u.search || '') + ' HTTP/1.1\r\nHost: ' + u.host +
-      '\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: ' +
-      crypto.randomBytes(16).toString('base64') + '\r\nSec-WebSocket-Version: 13\r\n\r\n');
-    let head = Buffer.alloc(0), rest = Buffer.alloc(0);
-    while (true) {
-      const chunk = await new Promise(r => sock.once('data', r));
-      head = Buffer.concat([head, chunk]);
-      const i = head.indexOf('\r\n\r\n');
-      if (i >= 0) { if (!/101/.test(head.slice(0, i).toString())) throw new Error('WS handshake failed'); rest = head.slice(i + 4); break; }
-    }
-    const ws = new WS(sock);
-    sock.on('data', d => ws._onData(d));
-    if (rest.length) ws._onData(rest);
-    return ws;
-  }
-  _onData(d) {
-    this.buf = Buffer.concat([this.buf, d]);
-    while (true) {
-      if (this.buf.length < 2) return;
-      const b1 = this.buf[1], masked = (b1 & 0x80) !== 0;
-      let len = b1 & 0x7f, off = 2;
-      if (len === 126) { if (this.buf.length < 4) return; len = this.buf.readUInt16BE(2); off = 4; }
-      else if (len === 127) { if (this.buf.length < 10) return; len = Number(this.buf.readBigUInt64BE(2)); off = 10; }
-      const mlen = masked ? 4 : 0;
-      if (this.buf.length < off + mlen + len) return;
-      let payload = this.buf.slice(off + mlen, off + mlen + len);
-      if (masked) { const m = this.buf.slice(off, off + 4); payload = Buffer.from(payload.map((v, i) => v ^ m[i % 4])); }
-      this.buf = this.buf.slice(off + mlen + len);
-      this.frames.push(payload.toString('utf8'));
-      while (this.waiters.length && this.frames.length) this.waiters.shift()(this.frames.shift());
-    }
-  }
-  _send(text) {
-    const payload = Buffer.from(text, 'utf8'), mask = crypto.randomBytes(4);
-    let header;
-    if (payload.length < 126) header = Buffer.from([0x81, 0x80 | payload.length]);
-    else if (payload.length < 65536) { header = Buffer.alloc(4); header[0] = 0x81; header[1] = 0x80 | 126; header.writeUInt16BE(payload.length, 2); }
-    else { header = Buffer.alloc(10); header[0] = 0x81; header[1] = 0x80 | 127; header.writeBigUInt64BE(BigInt(payload.length), 2); }
-    const masked = Buffer.from(payload.map((v, i) => v ^ mask[i % 4]));
-    this.sock.write(Buffer.concat([header, mask, masked]));
-  }
-  recv() { return this.frames.length ? Promise.resolve(this.frames.shift()) : new Promise(r => this.waiters.push(r)); }
-  async call(method, params) {
-    const id = ++WS.seq;
-    this._send(JSON.stringify({ id, method, params: params || {} }));
-    for (;;) {
-      let msg; try { msg = JSON.parse(await this.recv()); } catch (e) { continue; }
-      if (msg.id === id) return msg.result;
-    }
-  }
-  close() { try { this.sock.destroy(); } catch (e) { } }
-}
-WS.seq = 0;
 
 (async () => {
-  if (!EDGE) { console.log('未找到 Edge，跳过'); process.exit(0); }
+  if (!findEdge()) { console.log('未找到 Edge，跳过'); process.exit(0); }
   try { await httpGet(PANEL_URL); } catch (e) { console.log('模拟器没开：先 node tools\\sim.js --mock --port 8794'); process.exit(1); }
 
-  const profile = path.join(ROOT, 'build', 'edge-bulk');
-  fs.mkdirSync(profile, { recursive: true });
-  const edge = spawn(EDGE, ['--headless', '--disable-gpu', '--no-first-run', '--no-default-browser-check',
-    '--remote-debugging-port=' + CDP_PORT, '--user-data-dir=' + profile, '--window-size=1024,768', PANEL_URL], { stdio: 'ignore' });
-
-  let target = null;
-  for (let i = 0; i < 40 && !target; i++) {
-    await sleep(400);
-    try {
-      const list = JSON.parse(await httpGet('http://127.0.0.1:' + CDP_PORT + '/json/list'));
-      target = list.find(t => t.type === 'page' && t.url.indexOf('8794') >= 0);
-    } catch (e) { }
-  }
-  if (!target) { console.log('E2E-BULK FAIL（拿不到 CDP 目标）'); process.exit(1); }
+  let edge, target;
+  try {
+    const opened = await openEdge({ port: CDP_PORT, url: PANEL_URL, urlMatch: '8794', userDir: path.join(ROOT, 'build', 'edge-bulk') });
+    edge = opened.proc; target = opened.target;
+  } catch (e) { console.log('E2E-BULK FAIL（拿不到 CDP 目标）'); process.exit(1); }
 
   const ws = await WS.connect(target.webSocketDebuggerUrl);
   await ws.call('Runtime.enable');
@@ -115,9 +36,8 @@ WS.seq = 0;
   await ws.call('Network.setCacheDisabled', { cacheDisabled: true });
 
   const evalJs = async (expr) => {
-    const r = await ws.call('Runtime.evaluate', { expression: expr, returnByValue: true, userGesture: true });
-    if (r && r.exceptionDetails) { console.log('  eval error: ' + JSON.stringify(r.exceptionDetails.exception && r.exceptionDetails.exception.description || r.exceptionDetails.text)); return undefined; }
-    return r && r.result ? r.result.value : undefined;
+    try { return await evaluate(ws, expr); }
+    catch (e) { console.log('  eval error: ' + e.message); return undefined; }
   };
   const waitFor = async (expr, ms) => {
     const t0 = Date.now();
@@ -136,10 +56,7 @@ WS.seq = 0;
     await sleep(450);
     return true;
   };
-  const shot = async (name) => {
-    const r = await ws.call('Page.captureScreenshot', { format: 'png' });
-    fs.writeFileSync(path.join(ROOT, 'build', name), Buffer.from(r.data, 'base64'));
-  };
+  const shot = name => screenshot(ws, path.join(ROOT, 'build', name));
   const tileCount = () => evalJs(`document.querySelectorAll('.tile[data-entity]').length`);
   const pickedCount = () => evalJs(`document.querySelectorAll('.tile.picked').length`);
   const barText = () => evalJs(`(function(){var b=document.getElementById('tileBar');return b&&/show/.test(b.className)?b.textContent.replace(/\\s+/g,' '):'';})()`);
@@ -156,7 +73,7 @@ WS.seq = 0;
 
   /* ============ ① 编辑态与平时的卡片模板一致 ============ */
   console.log('=== 1. 编辑态图标/模板与平时一致 ===');
-  await setMode(false, { added: { 'switch.master_plug': 1, 'light.living_main': 1, 'sensor.living_temp': 1 }, hidden: {},
+  await setMode(false, { added: { 'switch.master_plug': 1, 'light.living_main': 1, 'light.living_strip': 1, 'sensor.living_temp': 1 }, hidden: {},
     order: ['switch.master_plug', 'light.living_main', 'sensor.living_temp'], span: {}, rows: {} });
   const TINY = '.tile[data-entity="switch.master_plug"]';
   const WIDE = '.tile[data-entity="light.living_main"]';
@@ -305,7 +222,7 @@ WS.seq = 0;
   await clickSel('#tileBar [data-act="bulk-off"]');
   await evalJs(`document.querySelector('#editBtn').click(); 1`);
   await sleep(400);
-  try { edge.kill(); } catch (e) { }
+  closeAll(ws, edge);
   console.log('');
   if (failed === 0) { console.log('E2E-BULK PASS'); process.exit(0); }
   console.log('E2E-BULK FAIL (' + failed + ')');
