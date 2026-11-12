@@ -1,24 +1,34 @@
-# Manual APK build: aapt2 -> javac -> d8 -> zip -> zipalign -> apksigner.
+﻿# Manual APK build: aapt2 -> javac -> d8 -> zip -> zipalign -> apksigner.
 # No Gradle, no dependencies beyond the Android SDK build-tools and a JDK 17.
+# 版本号和变体走参数（以前每次升版本都要复制一个 patch-version-NN.js，那种仪式已经终结）。
+#   tools\build.ps1                    → debug 包（带假 HA、当前版本 49）
+#   tools\build.ps1 -VersionCode 50    → 升版本（装到已装更高 versionCode 的设备上会
+#                                    INSTALL_FAILED_VERSION_DOWNGRADE，所以发新包就 +1，并同步改 README 的版本行）
+#   tools\build.ps1 -Variant release   → 正式包：不含 MockHaServer
 [CmdletBinding()]
 param(
-    [string]$OutName = "homecontrol.apk"
+    [string]$OutName = "homecontrol.apk",
+    [int]$VersionCode = 49,
+    [string]$VersionName = "0.7.12",
+    [string]$Variant = "debug"          # debug | release
 )
 
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
-$sdk = "D:\Software\android-sdk"
-$bt = Join-Path $sdk "build-tools\34.0.0"
-$androidJar = Join-Path $sdk "platforms\android-34\android.jar"
+. (Join-Path $PSScriptRoot "env.ps1")
+$sdk = $AndroidSdk
+$bt = $BuildTools
+$androidJar = $AndroidJar
 # 上一次的产物先删掉：apksigner 会就地重写，残留的旧 APK 可能带上不一致的 v2 摘要
 $staleApk = Join-Path $root ("dist\" + $OutName)
 if (Test-Path $staleApk) { Remove-Item $staleApk -Force -ErrorAction SilentlyContinue }
-$javaHome = "C:\Program Files\Microsoft\jdk-17.0.21.21-hotspot"
-$javac = Join-Path $javaHome "bin\javac.exe"
-$keytool = Join-Path $javaHome "bin\keytool.exe"
+$javaHome = $JavaHome
+$javac = $Javac
+$keytool = $Keytool
 $env:JAVA_HOME = $javaHome
 $env:PATH = "$javaHome\bin;$bt;$env:PATH"
 
+if ($Variant -ne "debug" -and $Variant -ne "release") { throw "variant must be debug or release" }
 foreach ($p in @($bt, $androidJar, $javac)) {
     if (-not (Test-Path $p)) { throw "missing build dependency: $p" }
 }
@@ -28,12 +38,14 @@ $dist = Join-Path $root "dist"
 Remove-Item $b -Recurse -Force -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force "$b\res", "$b\classes", "$b\dex", "$b\gen", $dist | Out-Null
 
-# 1. bundle the web panel into assets/panel
+# 1. bundle the web panel + TLS 信任锚 into assets/（assets 是构建产物，不进 git）
 $assets = Join-Path $root "app\assets"
 if (Test-Path $assets) { Remove-Item $assets -Recurse -Force }
 New-Item -ItemType Directory -Force (Join-Path $assets "panel") | Out-Null
 Copy-Item (Join-Path $root "panel\*") (Join-Path $assets "panel") -Recurse -Force
-Write-Host "[1/7] panel copied into assets"
+New-Item -ItemType Directory -Force (Join-Path $assets "certs") | Out-Null
+Copy-Item (Join-Path $root "app\certs\*.pem") (Join-Path $assets "certs") -Force
+Write-Host "[1/7] panel + certs copied into assets"
 
 # 2. resources
 $resZip = Join-Path $b "res.zip"
@@ -51,8 +63,8 @@ $baseApk = Join-Path $b "base.apk"
     --java (Join-Path $b "gen") `
     --min-sdk-version 21 `
     --target-sdk-version 22 `
-    --version-code 47 `
-    --version-name "0.7.10" `
+    --version-code $VersionCode `
+    --version-name $VersionName `
     $resZip
 if ($LASTEXITCODE -ne 0) { throw "aapt2 link failed" }
 Write-Host "[3/7] aapt2 link ok"
@@ -84,9 +96,10 @@ $srcStream.Dispose()
 if ($fixed -gt 0) { Move-Item -Force $tmpApk $baseApk } else { Remove-Item -Force $tmpApk }
 Write-Host "[3b/7] asset entry names normalized ($fixed)"
 
-# 4. java
-$srcs = @()
-$srcs += (Get-ChildItem (Join-Path $root "app\src") -Recurse -Filter *.java | ForEach-Object { $_.FullName })
+# 4. java（release 变体不含 app/src_debug：正式包里不该带一个假 HA 服务器）
+$srcDirs = @(Join-Path $root "app\src")
+if ($Variant -eq "debug") { $srcDirs += (Join-Path $root "app\src_debug") }
+$srcs = @(Get-ChildItem $srcDirs -Recurse -Filter *.java | ForEach-Object { $_.FullName })
 $rjava = Join-Path $b "gen\com\homecontrol\panel\R.java"
 if (Test-Path $rjava) { $srcs += $rjava }
 & $javac -encoding UTF-8 -source 8 -target 8 -bootclasspath $androidJar -classpath $androidJar -d (Join-Path $b "classes") @srcs

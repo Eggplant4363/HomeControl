@@ -58,14 +58,27 @@ public class MainActivity extends Activity {
     private static final String KEY_URL = "url";
     private static final String DEV_URL_FILE = "/sdcard/HomeControl/url.txt";
     private static final String ASSET_PAGE = "file:///android_asset/panel/index.html";
+    /** 面板自己的配置目录：文件读写只允许落在这里（桥暴露给网页，不能当任意文件读写口） */
+    private static final String CONFIG_DIR = "/sdcard/HomeControl/";
+    /** 开发/联调开关：没有这个文件就是正式包——不开 CDP 调试口、不读 url.txt、不起假 HA */
+    private static final String DEBUG_FLAG = "/sdcard/HomeControl/debug.flag";
+    /** 看门狗：收到过心跳后 45s 无心跳算卡死；从未收到过心跳时用更宽的门槛（首帧实测可 35s） */
+    private static final long BEAT_STALL_MS = 45000L;
+    private static final long FIRST_BEAT_MS = 180000L;
+    /** 加载失败自动重试的次数上限，超过就停在错误页等人处理，别整夜重试耗屏耗电 */
+    private static final int MAX_RETRY = 10;
 
     private WebView web;
     private FrameLayout root;
     private TextView banner;
     private final Handler ui = new Handler(Looper.getMainLooper());
     private volatile long lastBeat = 0L;
+    private volatile long loadedAt = 0L;
+    private volatile boolean everBeat = false;
     private int retryCount = 0;
-    private MockHaServer mockHa;
+    /** 假 HA 服务器只在 debug 源码目录里（app/src_debug/），正式包里这个类根本不存在，所以用反射 */
+    private Object mockHa;
+    private TlsPolicy tls;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -103,17 +116,26 @@ public class MainActivity extends Activity {
         startWatchdog();
     }
 
+    /** 开发/联调开关：debug.flag 存在才放开调试能力（CDP、url.txt、假 HA） */
+    private static boolean debugEnabled() {
+        return new File(DEBUG_FLAG).exists();
+    }
+
     /**
-     * 联调用：只有 /sdcard/HomeControl/mockha.enabled 存在时，才在 127.0.0.1:8123
+     * 联调用：debug 包（debug.flag + mockha.enabled 都在）才在 127.0.0.1:8123
      * 起一个假的 HA，让面板跑一遍真实 WebSocket 路径（局域网不通，只能这样验）。
+     * MockHaServer 只存在于 app/src_debug/，正式包里反射拿不到这个类，假服务不进 dex。
      */
     private void maybeStartMockHa() {
+        if (!debugEnabled()) return;
         try {
-            if (MockHaServer.enabled()) {
-                mockHa = new MockHaServer(8123);
-                mockHa.start();
-                Log.i(TAG, "mock HA started for local testing");
-            }
+            Class<?> c = Class.forName("com.homecontrol.panel.MockHaServer");
+            Boolean enabled = (Boolean) c.getMethod("enabled").invoke(null);
+            if (enabled == null || !enabled.booleanValue()) return;
+            Object srv = c.getConstructor(int.class).newInstance(8123);
+            c.getMethod("start").invoke(srv);
+            mockHa = srv;
+            Log.i(TAG, "mock HA started for local testing");
         } catch (Throwable t) {
             Log.w(TAG, "mock HA failed: " + t);
         }
@@ -140,9 +162,12 @@ public class MainActivity extends Activity {
         if (Build.VERSION.SDK_INT >= 28) {
             try { s.setForceDark(WebSettings.FORCE_DARK_OFF); } catch (Throwable t) { }
         }
-        if (Build.VERSION.SDK_INT >= 19) {
+        // CDP 调试口只给开发包：正式包开着它，同网段任何进程连 :9222 就能往页面里注入 JS，
+        // 连带桥（文件读写、REST 代理）变成攻击面。tools/push.ps1 开发部署时会写 debug.flag。
+        if (Build.VERSION.SDK_INT >= 19 && debugEnabled()) {
             try { WebView.setWebContentsDebuggingEnabled(true); } catch (Throwable t) { }
         }
+        tls = new TlsPolicy(this);
 
         web.setWebChromeClient(new WebChromeClient() {
             @Override
@@ -182,11 +207,20 @@ public class MainActivity extends Activity {
 
             @Override
             public void onReceivedSslError(WebView view, SslErrorHandler handler, SslError error) {
-                // 这台平板的 WebView（Chromium 57 / Android 5.1）信任库里没有 Let's Encrypt 的 ISRG 根证书；
-                // 负一屏的音频流走 WebView 自己的网络栈（Java 桥的 trustAll() 管不到它），
-                // 不在这里放行就播不了歌。中控屏只连自己的服务器，所以直接 proceed。
-                Log.w(TAG, "ssl error proceed " + error.getPrimaryError() + " " + error.getUrl());
-                handler.proceed();
+                // 这台平板的 WebView（Chromium 57 / Android 5.1）信任库里没有 Let's Encrypt 的 ISRG 根证书，
+                // 负一屏的音频流与 WebSocket 走 WebView 自己的网络栈（Java 桥管不到它），不在这里放行就播不了歌、
+                // 也没有实时推送（REST 兜底还能活，但慢 11s 起首帧）。
+                // 放行只限「面板自己配置的服务器 + 局域网」这个范围——错误码不看：同一张证书在 https 页面里报 2
+                // （不受信任），在 WebSocket 握手里报 3，Chromium 57 的分类不可靠，护栏是主机白名单本身。
+                // URL 指向没配过的第三方站点一律 cancel —— 那才是中间人/劫持的形状（实测 badssl 被 cancel）。
+                String url = error.getUrl();
+                if (sslHostAllowed(url)) {
+                    Log.w(TAG, "ssl error proceed " + error.getPrimaryError() + " " + url);
+                    handler.proceed();
+                    return;
+                }
+                Log.w(TAG, "ssl error cancel " + error.getPrimaryError() + " " + url);
+                handler.cancel();
             }
         });
 
@@ -220,11 +254,12 @@ public class MainActivity extends Activity {
         });
     }
 
-    /** bundled panel by default; an http URL in /sdcard/HomeControl/url.txt overrides it (dev mode) */
+    /** bundled panel by default; an http URL in url.txt overrides it, but only in dev mode
+        (debug.flag) — a world-readable file must not be able to aim the kiosk at any site. */
     private String resolveUrl() {
         try {
             File f = new File(DEV_URL_FILE);
-            if (f.exists()) {
+            if (debugEnabled() && f.exists()) {
                 BufferedReader r = new BufferedReader(new FileReader(f));
                 String line = r.readLine();
                 r.close();
@@ -248,16 +283,130 @@ public class MainActivity extends Activity {
         return ASSET_PAGE;
     }
 
+    /** 面板自己配置的服务器主机（ha.json 的 url、music.json 的 base），WebView 放行 SSL 只用它 */
+    private String configuredHosts() {
+        StringBuilder sb = new StringBuilder();
+        sb.append(hostOf(readConfig(CONFIG_DIR + "ha.json"), "url")).append(' ')
+          .append(hostOf(readConfig(CONFIG_DIR + "music.json"), "base")).append(' ');
+        SharedPreferences sp = getSharedPreferences(PREFS, MODE_PRIVATE);
+        sb.append(hostOf(sp.getString(KEY_URL, ""), "")).append(' ');
+        return sb.toString();
+    }
+
+    /** 从一段 JSON 文本里取某个字段的地址主机名（不做 JSON 解析，只要 host；http/https/ws/wss 都认） */
+    private static String hostOf(String text, String key) {
+        if (text == null || text.length() == 0) return "";
+        java.util.regex.Matcher m = java.util.regex.Pattern
+                .compile("\"" + key + "\"\\s*:\\s*\"(?:https?|wss?)://([^/\"]+)").matcher(text);
+        return m.find() ? m.group(1) : "";
+    }
+
+    /** WebView 的 SSL 放行范围：局域网，或面板自己配置的服务器主机 */
+    private boolean sslHostAllowed(String url) {
+        String host = schemeHost(url);
+        if (host == null || host.length() == 0) return false;
+        if (TlsPolicy.isPrivateHost(host)) return true;
+        String hosts = configuredHosts();
+        for (String h : hosts.split(" ")) {
+            if (h.length() > 0 && h.equalsIgnoreCase(host)) return true;
+        }
+        return false;
+    }
+
+    /**
+     * 取 URL 的主机名。java.net.URL 不认 ws:/wss:（WebSocket 的地址它解析不了，直接抛异常），
+     * 所以手工切：scheme 白名单 → 去掉 userinfo → 截到第一个 /?# → 去掉端口（IPv6 的括号保留外层形式再剥）。
+     */
+    private static String schemeHost(String url) {
+        if (url == null) return null;
+        int i = url.indexOf("://");
+        if (i <= 0) return null;
+        String scheme = url.substring(0, i).toLowerCase();
+        if (!scheme.equals("http") && !scheme.equals("https") && !scheme.equals("ws") && !scheme.equals("wss")) return null;
+        String rest = url.substring(i + 3);
+        int end = rest.length();
+        for (int j = 0; j < rest.length(); j++) {
+            char c = rest.charAt(j);
+            if (c == '/' || c == '?' || c == '#') { end = j; break; }
+        }
+        String hostPort = rest.substring(0, end);
+        int at = hostPort.lastIndexOf('@');
+        if (at >= 0) hostPort = hostPort.substring(at + 1);
+        if (hostPort.startsWith("[")) {
+            int close = hostPort.indexOf(']');
+            if (close > 0) return hostPort.substring(1, close);   // IPv6：[::1]:8123
+        }
+        int colon = hostPort.indexOf(':');
+        if (colon > 0) hostPort = hostPort.substring(0, colon);
+        return hostPort;
+    }
+
+    /** 读自己的配置文件（白名单内），失败返回 "" */
+    private String readConfig(String path) {
+        String canon = safeConfigPath(path);
+        if (canon == null) return "";
+        File f = new File(canon);
+        if (!f.exists() || f.length() > 65536L) return "";
+        BufferedReader r = null;
+        try {
+            StringBuilder sb = new StringBuilder();
+            r = new BufferedReader(new FileReader(f));
+            char[] buf = new char[4096];
+            int n;
+            while ((n = r.read(buf)) > 0) sb.append(buf, 0, n);
+            return sb.toString();
+        } catch (Throwable t) {
+            return "";
+        } finally {
+            if (r != null) try { r.close(); } catch (Throwable t) { }
+        }
+    }
+
+    /** 配置目录的规范路径（/sdcard 在 Android 上是 symlink，会解析成 /storage/emulated/0） */
+    private static String configRoot() {
+        if (configCanon == null) {
+            try {
+                String c = new File(CONFIG_DIR).getCanonicalPath();
+                if (!c.endsWith("/")) c = c + "/";
+                configCanon = c;
+            } catch (Throwable t) {
+                configCanon = CONFIG_DIR;
+            }
+        }
+        return configCanon;
+    }
+    private static volatile String configCanon = null;
+
+    /** 只允许面板配置目录里的路径：规范化后再判前缀，挡住 ../ 和 symlink 逃逸 */
+    private static String safeConfigPath(String path) {
+        if (path == null) return null;
+        try {
+            String canon = new File(path).getCanonicalPath();
+            return canon.startsWith(configRoot()) ? canon : null;
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
     private void loadPanel() {
         String url = resolveUrl();
         Log.i(TAG, "loadPanel " + url);
-        lastBeat = System.currentTimeMillis();
+        long now = System.currentTimeMillis();
+        lastBeat = now;
+        loadedAt = now;
+        everBeat = false;
         web.loadUrl(url);
     }
 
     private void scheduleRetry(String description) {
         retryCount++;
         final int n = retryCount;
+        if (n > MAX_RETRY) {
+            showBanner("面板加载失败" + (description == null ? "" : "（" + description + "）")
+                    + " · 已停止自动重试（连按两次返回键进系统设置检查网络与 url.txt）");
+            Log.w(TAG, "load failed " + n + " times, giving up");
+            return;
+        }
         String msg = "面板加载失败" + (description == null ? "" : "（" + description + "）") + " · 第 " + n + " 次重试";
         showBanner(msg);
         ui.postDelayed(new Runnable() {
@@ -291,18 +440,34 @@ public class MainActivity extends Activity {
      * Kiosk watchdog: the page pings heartbeat() every few seconds. If the
      * WebView hangs, crashes its renderer, or the network middleware wedges,
      * nothing pings anymore and we reload the page.
+     * 屏幕熄灭（含 Doze）时 WebView 的 JS 定时器被系统冻结，心跳一定停 —— 那不是卡死，
+     * 之前每 45s 重载一次，整夜白耗电（Pad 5 实测：静置时 watchdog 每 45s reload 一次）。
      */
     private void startWatchdog() {
         ui.postDelayed(new Runnable() {
             @Override
             public void run() {
                 try {
-                    long beat = lastBeat;
-                    if (beat > 0 && System.currentTimeMillis() - beat > 45000L) {
-                        Log.w(TAG, "watchdog: no heartbeat for 45s, reloading");
+                    long now = System.currentTimeMillis();
+                    if (!screenInteractive()) {
+                        lastBeat = now;   // 熄屏期间不算卡死，醒来后 onResume 会重新计时
+                        return;
+                    }
+                    if (!everBeat) {
+                        // 这一页还没给过心跳：首帧可能很慢（实测 first states 可 35s），门槛放宽
+                        if (loadedAt > 0 && now - loadedAt > FIRST_BEAT_MS) {
+                            Log.w(TAG, "watchdog: no heartbeat since load, reloading");
+                            retryCount = 0;
+                            loadedAt = now;
+                            web.reload();
+                        }
+                        return;
+                    }
+                    if (now - lastBeat > BEAT_STALL_MS) {
+                        Log.w(TAG, "watchdog: no heartbeat for " + BEAT_STALL_MS / 1000 + "s, reloading");
                         retryCount = 0;
+                        lastBeat = now;
                         web.reload();
-                        lastBeat = System.currentTimeMillis();
                     }
                 } catch (Throwable t) {
                     Log.w(TAG, "watchdog error " + t.getMessage());
@@ -310,6 +475,18 @@ public class MainActivity extends Activity {
                 ui.postDelayed(this, 15000L);
             }
         }, 15000L);
+    }
+
+    /** 屏幕是否亮着（API 20+ 用 isInteractive，老系统退回 isScreenOn） */
+    private boolean screenInteractive() {
+        try {
+            android.os.PowerManager pm = (android.os.PowerManager) getSystemService(POWER_SERVICE);
+            if (pm == null) return true;
+            if (Build.VERSION.SDK_INT >= 20) return pm.isInteractive();
+            return pm.isScreenOn();
+        } catch (Throwable t) {
+            return true;
+        }
     }
 
     private void goImmersive() {
@@ -373,7 +550,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onDestroy() {
         try {
-            if (mockHa != null) mockHa.stop();
+            if (mockHa != null) mockHa.getClass().getMethod("stop").invoke(mockHa);
         } catch (Throwable t) { }
         try {
             if (web != null) {
@@ -395,6 +572,7 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public void heartbeat() {
             lastBeat = System.currentTimeMillis();
+            everBeat = true;
             if (retryCount > 0) retryCount = 0;
         }
 
@@ -437,8 +615,6 @@ public class MainActivity extends Activity {
             });
         }
 
-        @JavascriptInterface
-        /** 壳 App 版本号，诊断页直接念给客服听 */
         String appVersion() {
             try {
                 return getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
@@ -515,11 +691,13 @@ public class MainActivity extends Activity {
             return sp.getString(KEY_URL, "");
         }
 
-        /** last-modified stamp of a file, used by the panel for hot reload during development */
+        /** last-modified stamp of a config file, used by the panel for hot reload during development */
         @JavascriptInterface
         public long mtime(String path) {
+            String canon = safeConfigPath(path);
+            if (canon == null) { Log.w(TAG, "mtime denied: " + path); return 0L; }
             try {
-                File f = new File(path);
+                File f = new File(canon);
                 return f.exists() ? f.lastModified() : 0L;
             } catch (Throwable t) {
                 return 0L;
@@ -530,7 +708,8 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public boolean writeText(String path, String content) {
             if (path == null || content == null) return false;
-            if (!path.startsWith("/sdcard/HomeControl/")) {
+            String canon = safeConfigPath(path);
+            if (canon == null) {
                 Log.w(TAG, "writeText denied: " + path);
                 return false;
             }
@@ -540,13 +719,13 @@ public class MainActivity extends Activity {
             }
             java.io.FileOutputStream out = null;
             try {
-                File f = new File(path);
+                File f = new File(canon);
                 File parent = f.getParentFile();
                 if (parent != null && !parent.exists()) parent.mkdirs();
                 out = new java.io.FileOutputStream(f, false);
                 out.write(content.getBytes("UTF-8"));
                 out.flush();
-                Log.i(TAG, "writeText ok: " + path + " (" + content.length() + " chars)");
+                Log.i(TAG, "writeText ok: " + canon + " (" + content.length() + " chars)");
                 return true;
             } catch (Throwable t) {
                 Log.w(TAG, "writeText failed: " + t.getMessage());
@@ -559,15 +738,16 @@ public class MainActivity extends Activity {
         /** delete a config file under /sdcard/HomeControl (switch the panel back to mock data) */
         @JavascriptInterface
         public boolean removeFile(String path) {
-            if (path == null || !path.startsWith("/sdcard/HomeControl/")) {
+            String canon = safeConfigPath(path);
+            if (canon == null) {
                 Log.w(TAG, "removeFile denied: " + path);
                 return false;
             }
             try {
-                File f = new File(path);
+                File f = new File(canon);
                 if (!f.exists()) return true;
                 boolean ok = f.delete();
-                Log.i(TAG, "removeFile " + path + " -> " + ok);
+                Log.i(TAG, "removeFile " + canon + " -> " + ok);
                 return ok;
             } catch (Throwable t) {
                 Log.w(TAG, "removeFile failed: " + t.getMessage());
@@ -575,25 +755,15 @@ public class MainActivity extends Activity {
             }
         }
 
-        /** read a small text config file from /sdcard (ha.json etc.) */
+        /** read a small text config file from /sdcard/HomeControl (ha.json, music.json) */
         @JavascriptInterface
         public String readText(String path) {
-            File f = new File(path);
-            if (!f.exists() || f.length() > 65536L) return "";
-            BufferedReader r = null;
-            try {
-                StringBuilder sb = new StringBuilder();
-                r = new BufferedReader(new FileReader(f));
-                char[] buf = new char[4096];
-                int n;
-                while ((n = r.read(buf)) > 0) sb.append(buf, 0, n);
-                return sb.toString();
-            } catch (Throwable t) {
-                Log.w(TAG, "readText failed: " + t.getMessage());
+            String canon = safeConfigPath(path);
+            if (canon == null) {
+                Log.w(TAG, "readText denied: " + path);
                 return "";
-            } finally {
-                if (r != null) try { r.close(); } catch (Throwable t) { }
             }
+            return readConfig(canon);
         }
 
         /** 调屏幕背光（只作用于本窗口，不需要 WRITE_SETTINGS 权限）。
@@ -630,7 +800,20 @@ public class MainActivity extends Activity {
             return ctx;
         }
 
-        /** 归一化成 http(s) 基地址，并打开连接（支持 https 自签名） */
+        /** https 的 TLS 策略：局域网（IP 字面量/localhost）自建自签放行；域名必须真验（见 TlsPolicy） */
+        private void applyTls(HttpsURLConnection h, String host) throws Exception {
+            if (TlsPolicy.isPrivateHost(host)) {
+                h.setSSLSocketFactory(trustAll().getSocketFactory());
+                h.setHostnameVerifier(new HostnameVerifier() {
+                    public boolean verify(String h2, SSLSession s) { return true; }
+                });
+            } else {
+                h.setSSLSocketFactory(tls.context().getSocketFactory());
+                // 域名连接保持默认主机名校验，不放开
+            }
+        }
+
+        /** 归一化成 http(s) 基地址，并打开连接（局域网支持 https 自签名） */
         private HttpURLConnection openHa(String baseUrl, String token, String method, String path, boolean body)
                 throws Exception {
             String u = baseUrl;
@@ -644,10 +827,7 @@ public class MainActivity extends Activity {
             HttpURLConnection c;
             if ("https".equals(url.getProtocol())) {
                 HttpsURLConnection h = (HttpsURLConnection) url.openConnection();
-                h.setSSLSocketFactory(trustAll().getSocketFactory());
-                h.setHostnameVerifier(new HostnameVerifier() {
-                    public boolean verify(String host, SSLSession s) { return true; }
-                });
+                applyTls(h, url.getHost());
                 c = h;
             } else {
                 c = (HttpURLConnection) url.openConnection();
@@ -805,10 +985,7 @@ public class MainActivity extends Activity {
                 URL u = new URL(url);
                 if ("https".equals(u.getProtocol())) {
                     HttpsURLConnection h = (HttpsURLConnection) u.openConnection();
-                    h.setSSLSocketFactory(trustAll().getSocketFactory());
-                    h.setHostnameVerifier(new HostnameVerifier() {
-                        public boolean verify(String host, SSLSession s) { return true; }
-                    });
+                    applyTls(h, u.getHost());
                     c = h;
                 } else {
                     c = (HttpURLConnection) u.openConnection();
@@ -869,10 +1046,7 @@ public class MainActivity extends Activity {
                 URL u = new URL(url);
                 if ("https".equals(u.getProtocol())) {
                     HttpsURLConnection h = (HttpsURLConnection) u.openConnection();
-                    h.setSSLSocketFactory(trustAll().getSocketFactory());
-                    h.setHostnameVerifier(new HostnameVerifier() {
-                        public boolean verify(String host, SSLSession s) { return true; }
-                    });
+                    applyTls(h, u.getHost());
                     c = h;
                 } else {
                     c = (HttpURLConnection) u.openConnection();
