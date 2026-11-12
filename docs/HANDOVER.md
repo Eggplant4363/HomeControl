@@ -181,10 +181,11 @@ app/src/            安卓壳（Java，无第三方依赖）+ TlsPolicy
 app/src_debug/      只在 debug 变体编译的假 HA（release dex 里没有这个类）
 app/certs/          ISRG 锚证书源文件（构建拷进 assets/certs，本身不放进 assets）
 panel/              面板前端（HTML/CSS/JS，Chromium 57 兼容；唯一的真相，assets 不入库）
-tools/              构建/部署/推送 + 自检 + 真机回归（env.ps1、lib/cdp.js、check-{security,rest,tls}.js…）
+tools/              构建/部署/推送 + 自检 + 真机回归（env.ps1、lib/cdp.js、check-{security,rest,temp,tls}.js…）
 dist/               homecontrol.apk（debug，165 KB）/ homecontrol-release.apk（153 KB），versionName 0.7.12 / versionCode 49
 docs/ARCHITECTURE.md 两层职责、Bridge 契约、TLS 与看门狗规则、构建七步
 docs/REFACTOR.md    本轮重构：已修清单+证据、验证矩阵、待办、踩坑表
+docs/TOOLING.md     每个脚本跑什么、需要什么前提、失败了怎么办（env 变量表 + 端口表 + 三条咬人的坑）
 docs/USAGE.md       使用手册（含首次上墙、掉线处理、截图索引）
 docs/screens/       29 张实机/PC 截图
 README.md           工程说明（20 节，含所有“为什么这么做”）

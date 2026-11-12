@@ -97,6 +97,9 @@ powershell -ExecutionPolicy Bypass -File .\tools\push.ps1 -Prod     # 生产形�
 - **更新 APK 后会掉回桌面**：`adb install -r` 会杀掉正在运行的面板进程，且 Android 5.1 上更新安装不会再收到开机广播，所以装完必须 `adb shell am start -n com.homecontrol.panel/.MainActivity`（或重启设备）
 - **上墙验收**：`powershell -ExecutionPolicy Bypass -File .\tools\verify.ps1` 依次检查 设备在线 / 应用已装 / 按 HOME 进面板 / 系统启动完成 / 重启后自动拉起 / 屏幕常亮 / 无脚本错误，结果写 `docs/verify-report.md` 并留重启后截图 `docs/screens/panel-verify.png`
 - **使用手册**：docs/USAGE.md（接 HA 的两种方式、日常操作、夜间调暗、诊断页、逃生口、更新 APK 的注意事项）
+- **架构**：docs/ARCHITECTURE.md（panel/ 与 Java 壳两层职责、页面地址来源、debug.flag 开关矩阵、MainActivity 职责按行号、TLS 两类主机两套规则、看门狗参数、数据流、构建七步、验证入口）
+- **本轮重构**：docs/REFACTOR.md（已修的安全/自愈问题、验证矩阵、有意不动的东西、待办、踩过的坑表）
+- **工具链**：docs/TOOLING.md（每个脚本跑什么、需要什么前提、失败了怎么办；含 env.ps1 变量表与端口表）
 - **全屏常亮**：`FLAG_KEEP_SCREEN_ON`，并带 `SHOW_WHEN_LOCKED / DISMISS_KEYGUARD`，锁屏时也能盖上来
 - **断线自愈**：JS 心跳 4s；看门狗只在**屏幕亮着**时判卡死（熄屏 + Doze 会冻结 WebView 定时器，老版本因此在熄屏后每 45s 重载一次，整夜不停），首帧前给 180s 宽限（慢网络下 `first states` 实测可到 35s，原来 45s 阈值会把启动中的页面打断）；页面加载失败按 3s / 10s 重试，最多 10 次后停在「已停止自动重试」而不是无限重试
 - **逃生口**：1.5 秒内连按两次返回键 → 打开系统设置（恢复原桌面：设置 → 主屏幕 → 系统桌面）
