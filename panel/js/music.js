@@ -1290,7 +1290,24 @@
     e.innerHTML = '<span class="dot"></span><span>' + esc(S.statusText || '') + '</span>';
   }
 
-  /* ---------------- 封面解析：道理鱼的封面要鉴权头，只能异步取字节 ---------------- */
+  /* ---------------- 封面解析：道理鱼的封面要鉴权头，只能异步取字节 ----------------
+     以前每解析一张封面就 paintNow()+paintList() 全量重建整表（N 张 = N 次全量重绘），
+     而且 base64 永久留在 item.cover 上（LIB_MAX_ROWS=1500 时能攒几十 MB，512MB 的平板最危险）。
+     现在：重绘合并成一次（250ms 内到达的封面共用一次重绘），缓存有条数上限，超了丢最早的。 */
+  var COVER_CAP = 60;
+  var coverOrder = [];
+  var coverRepaint = false;
+  function queueCoverRepaint() {
+    if (coverRepaint) return;
+    coverRepaint = true;
+    setTimeout(function () { coverRepaint = false; paintNow(); paintList(); }, 250);
+  }
+  function evictCovers() {
+    while (coverOrder.length > COVER_CAP) {
+      var old = coverOrder.shift();
+      if (old && old !== S.track) old.cover = '';
+    }
+  }
   function resolveCover(item) {
     if (!item || item.cover || !item.coverReq) return;
     var b = S.backend;
@@ -1302,8 +1319,9 @@
       delete S.coverPend[key];
       if (err || !src) { act('cover failed ' + err); return; }
       item.cover = src;
-      paintNow();
-      paintList();
+      if (coverOrder.indexOf(item) < 0) coverOrder.push(item);
+      evictCovers();
+      queueCoverRepaint();
     });
   }
 

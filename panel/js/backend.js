@@ -238,6 +238,20 @@
     return u.replace(/\/+$/, '');
   };
 
+  /* 原生 REST 回调表：id → 回调。以前这里每次 rest() 都覆写 window.__restCb（单槽），
+     并发请求（曲线一次发 N 条、自注册连发 5 个 POST、兜底轮询）只剩最后一个响应：
+     被丢掉的那个回调永不触发，调用方的 busy 标记永久卡死、Promise 永不 settle。
+     壳那边仍然调 window.__restCb(id, raw)，契约不变。 */
+  var restCbs = {};
+  if (!window.__restCb) {
+    window.__restCb = function (id, raw) {
+      var cb = restCbs[id];
+      if (!cb) return;            // 迟到的响应（回调已被超时清掉）不该再触发
+      delete restCbs[id];
+      cb(raw);
+    };
+  }
+
   /** REST 兜底：WebSocket 掉了也能读状态、发服务调用（Chromium 57 有 XHR） */
   HABackend.prototype.rest = function (method, path, body, onDone) {
     var self = this;
@@ -245,18 +259,20 @@
     /* 壳 App 里有原生 REST：file:// 页面直接 XHR 会被 CORS 拦，所以优先走桥 */
     if (bridge && bridge.rest) {
       var cbId = 'r' + (this.restSeq = (this.restSeq || 0) + 1);
-      window.__restCb = function (id, raw) {
-        if (id !== cbId) return;
+      var done = false;
+      var fin = function (ok, code, data) { if (done) return; done = true; delete restCbs[cbId]; onDone(ok, code, data); };
+      var timer = setTimeout(function () { fin(false, 0, null); }, 12000);   // 桥不回也要放手
+      restCbs[cbId] = function (raw) {
+        clearTimeout(timer);
         var r = null;
         try { r = JSON.parse(raw); } catch (e) { r = null; }
-        if (!r) { onDone(false, 0, null); return; }
-        if (r.error) { onDone(false, 0, null); return; }
+        if (!r || r.error) { fin(false, 0, null); return; }
         var data = null;
         try { data = r.body ? JSON.parse(r.body) : null; } catch (e) { data = null; }
-        onDone(r.status >= 200 && r.status < 300, r.status, data);
+        fin(r.status >= 200 && r.status < 300, r.status, data);
       };
       try { bridge.rest(cbId, this.httpBase(), this.token, method, path, body ? JSON.stringify(body) : ''); }
-      catch (e) { onDone(false, 0, null); }
+      catch (e) { clearTimeout(timer); fin(false, 0, null); }
       return;
     }
     var url = this.httpBase() + path;
