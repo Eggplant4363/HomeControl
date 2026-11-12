@@ -9,6 +9,8 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
+    <!-- 自升级：把下载到 cache/upd 的 APK 交给系统安装器（API 26+ 还要用户在系统设置里允许一次） -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <application
         android:allowBackup="false"
@@ -47,5 +49,12 @@
                 <action android:name="com.htc.intent.action.QUICKBOOT_POWERON" />
             </intent-filter>
         </receiver>
+
+        <!-- 自升级用：把 cache/upd 下的 APK 以 content:// 交给系统安装器（不对外导出，只按需授权） -->
+        <provider
+            android:name=".UpdateProvider"
+            android:authorities="com.homecontrol.panel.upd"
+            android:exported="false"
+            android:grantUriPermissions="true" />
     </application>
 </manifest>

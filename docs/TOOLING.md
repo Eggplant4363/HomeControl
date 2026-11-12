@@ -26,6 +26,7 @@
 | `powershell -File tools\deploy.ps1 -Serial <号>` | 装 APK + 推配置 + 验收 | 复用 `push.ps1`；按 SDK 分流 `pm grant`（Android 5/6 没有运行时权限，`pm grant` 会报错）；验收看 logcat `first states … 实体 N≥100` |
 | `powershell -File tools\verify.ps1 -Serial <号>` | 冷启动/重启后的完整检查 | 里有 `adb reboot`（破坏性，已注明） |
 | `powershell -File tools\smoke.ps1 -Serial <号>` | 点击链路冒烟 | 用固定像素点击（换分辨率要改，见 REFACTOR §4） |
+| `powershell -File tools\release.ps1 -Version 0.7.15` | 发 GitHub Release（面板「检查更新」的源） | 需要 `$env:GITHUB_TOKEN`（Contents 读写）；tag 用 `vX.Y.Z`、附件必须是 `.apk`；默认上传 `dist/homecontrol.apk`，可用 `-Apk` 指定；签名钥匙要和已装机版本一致，否则覆盖安装会失败 |
 
 ## 门禁与离线测试（不需要设备）
 

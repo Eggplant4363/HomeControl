@@ -349,6 +349,43 @@ WebSocket 帧统计）。注意这是模拟器数字，Chromium 57 真机还没�
 验收：`node tools\sim.js --mock --port 8791` + `node tools\e2e-settings.js`（CDP 真点击：
 开设置 → 切 3 列 → 隐藏传感器 → 点击语义改「打开面板」→ 恢复默认，全部断言）。
 
+### 自升级（应用内更新，2026-11-13）
+
+设置页「升级」一节：显示当前版本 → **点一下检查 GitHub 上有没有新版本 → 有就下载 → 直接拉起系统安装器**。
+整条链路在平板上完成，不用连电脑（上墙以后最需要的就是这个）。
+
+顺序是这样的（`panel/js/update.js` + `MainActivity` 里的 `updNet`/`updDownload`/`updInstall` 三个桥方法）：
+
+1. **检查**：GET `https://api.github.com/repos/Eggplant4363/HomeControl/releases/latest`，取 `tag_name` 当版本号，
+   在 `assets[]` 里挑第一个 `.apk`（多个取体积大的）。仓库还没有 release 时 GitHub 回 404，面板显示「还没有发布任何版本」。
+2. **比较**：`verCmp(a,b)` 逐段按数字比（`0.7.10 > 0.7.9`，`0.7 == 0.7.0`），只有严格更大才提示可升级。
+3. **下载**：Java 桥把 APK 写到 `getCacheDir()/upd/homecontrol.apk`，边下边按 `Content-Length` 的百分比回调进度。
+   安全检查：只认 http(s)、跟随 GitHub 的 302、拒绝 `text/html`、**头两个字节必须是 `PK`**、超过 200MB 直接拒、
+   小于 50KB 视为不完整，落地前先写 `.part` 再 `renameTo`。
+4. **安装**：用 `UpdateProvider`（authority `com.homecontrol.panel.upd`，只暴露 cache 目录里那一个文件）给出
+   `content://` URI，然后依次尝试 `ACTION_INSTALL_PACKAGE` / `ACTION_VIEW` 的 content:// 与 file:// 两种形态
+   （Android 7 起不再允许 `file://`）。MIUI 5.1 上只有 `ACTION_VIEW + content://` 能起来，所以是「按顺序试」而不是写死一条。
+5. **权限**：Android 8+ 还要求「安装未知应用」授权，面板会先显示「去授权」，点它跳到
+   `ACTION_MANAGE_UNKNOWN_APP_SOURCES` 的系统页面；授权回来再点安装即可。Android 5.1（平板2）没有这一步。
+
+要让升级真正可用，还需要两件事：
+
+- **发一个 release**：tag 用 `v0.7.14` 这种格式，附件上传 APK（文件名任意，`.apk` 结尾即可）。
+  `tools/release.ps1` 就是干这个的（走 GitHub API，需要 `GITHUB_TOKEN` 环境变量；仓库现在还没有任何 release）。
+- **签名一致**：新 APK 必须能覆盖装旧 APK。默认 `tools/build.ps1` 用仓库里的 debug keystore，
+  同一把钥匙签出来的才能原地覆盖；换成正式签名后要保证钥匙不变，否则系统会报「应用未安装」。
+
+排查时可以用 `window.__HC_UPDATE_API = 'http://<pc>:8795/release.json'` 把检查地址指到本地镜像
+（release JSON 照 GitHub 的形状写，`assets[].browser_download_url` 指向本地 APK），这样不用发版也能验完整条链。
+
+真机验收（2026-11-13，MI PAD 2 / Android 5.1 / Chromium 57）：
+① 真实 GitHub → 「仓库还没有发布任何版本」（网络 + TLS + 404 映射通）；
+② 指向本地镜像 → 「发现新版本 v0.7.15（177 KB）」→ 下载 0%…100% → 「下载完成，点下面的按钮安装」；
+③ 点安装 → 系统安装器弹出（`mCurrentFocus=com.android.packageinstaller/.PackageInstallerActivity`，截图 `build/padupd-6-installer.png`）。
+
+验收：`node tools\sim.js --mock --port 8794` + `node tools\e2e-update.js`（假桥 + 假 GitHub：无桥提示、检查、下载进度、
+安装、同版本/404/需要授权三个分支、只重绘 `#updSec` 不重建设置页，共 32 项）。
+
 ### 编辑卡片（默认一张都不显示）
 
 面板默认**不显示任何设备卡片**：第一次装好、点顶栏右边的 ✎ 进编辑模式，再一张张挑。所有编辑状态都存在本机

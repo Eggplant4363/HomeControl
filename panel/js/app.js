@@ -3531,6 +3531,9 @@ function bindDim() {
       '<button class="btn" data-act="music-cfg">' + esc(musicKindLabel(musicNow().kind)) + ' · 设置</button>' +
       '<button class="btn" data-act="music-open">打开</button></div></div>';
 
+    /* 升级（panel/js/update.js）：整块由它自己渲染，这里只负责留位置 */
+    if (window.HCUpdate) html += window.HCUpdate.sectionHtml();
+
     html += '<div class="set-sec">卡片</div>' +
       '<div class="cfg-actions"><button class="btn primary" data-act="edit-open">编辑卡片</button>' +
       '<button class="btn" data-act="edit-reset">清空所有卡片</button></div>' +
@@ -3575,6 +3578,20 @@ function bindDim() {
   function settingsHost() {
     return (S.sheetShow === 'panel' && el.view) ? el.view : el.sheetInner;
   }
+
+  /* panel/js/update.js 的状态变了就调这里：只换设置页里「升级」那一块。
+     整页重建会把用户的滚动位置和按钮焦点一起掀掉，检查更新时尤其明显 */
+  window.__hcUpdRepaint = function () {
+    if (!window.HCUpdate) return;
+    var host = settingsHost();
+    if (!host) return;
+    var box = host.querySelector('#updSec') || $('updSec');
+    if (!box || !box.parentNode) return;
+    var tmp = document.createElement('div');
+    tmp.innerHTML = window.HCUpdate.sectionHtml();
+    var fresh = tmp.firstChild;
+    if (fresh && fresh.nodeType === 1) box.parentNode.replaceChild(fresh, box);
+  };
 
   function openSettingsView() {
     if (!el.view) { openPanelSheet(); return; }
@@ -3760,6 +3777,16 @@ function bindDim() {
       if (act === 'music-save') { saveMusicCfg(false); return; }
       if (act === 'music-demo') { saveMusicCfg(true); return; }
       if (act === 'panel-reload') { reloadSoon('正在重新加载…'); return; }
+      if (act.indexOf('upd-') === 0) {
+        var up = window.HCUpdate;
+        if (!up) { toast('这个版本没有升级模块'); return; }
+        if (act === 'upd-check') up.check();
+        else if (act === 'upd-download') up.download();
+        else if (act === 'upd-install') up.install();
+        else if (act === 'upd-perm') up.openPerm();
+        else if (act === 'upd-none') up.reset();
+        return;
+      }
       if (act === 'scene-run') {
         doAct('scene-run', {
           entity: actEl.getAttribute('data-entity'),

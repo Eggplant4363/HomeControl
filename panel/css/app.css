@@ -766,6 +766,13 @@ body::before { content: none; }
 .seg { height: 32px; padding: 0 12px; margin-left: 6px; border-radius: 8px; border: 1px solid rgba(var(--surf),.12); background: rgba(var(--surf),.05); color: var(--text-3); font-size: 13px; }
 .seg.on { background: rgba(var(--accent-rgb),.22); border-color: rgba(var(--accent-rgb),.55); color: var(--text-2); }
 
+/* 设置页 · 升级（panel/js/update.js 渲染） */
+.upd-note { margin: 10px 0 2px; font-size: 13px; line-height: 1.55; color: var(--text-4); contain: layout style; }
+.upd-note.bad { color: #ff9a8a; }
+.upd-note.good { color: #7cc39a; }
+.upd-bar { height: 6px; margin: 10px 0 2px; border-radius: 3px; background: rgba(var(--surf),.09); overflow: hidden; contain: layout style paint; }
+.upd-bar i { display: block; height: 100%; width: 0; border-radius: 3px; background: rgb(var(--accent)); transition: width .2s; }
+
 
 /* ---------- 每行 3~6 列 + 卡片跨列 ---------- */
 .grid.cols-6 { grid-template-columns: repeat(6, 1fr); }

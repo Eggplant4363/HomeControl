@@ -126,6 +126,7 @@ function load(rel) {
 load('panel/js/config.js');
 load('panel/js/icons.js');
 load('panel/js/layout.js');
+load('panel/js/update.js');
 load('panel/js/app.js');
 
 var api = windowStub.__PANEL_TEST__;
@@ -547,6 +548,49 @@ var halfLit = api.tileHtml({ tile: halfTile, item: {} });
 eq(halfLit.indexOf(' half') >= 0, true, '调光卡半高时仍是半高模板');
 eq(halfLit.indexOf('80') >= 0 && halfLit.indexOf('%') >= 0, true, '调光半高卡右边显示 80%');
 api.setStates({});
+
+/* ---------------- 自升级（panel/js/update.js）：版本比较 / 资产挑选 / release 解析 ---------------- */
+console.log('自升级：版本比较、APK 挑选、release 解析');
+var UP = windowStub.HCUpdate;
+ok(!!UP, 'HCUpdate 已挂到 window');
+eq(UP.normVer('v0.7.14'), '0.7.14', 'normVer 去掉 v 前缀');
+eq(UP.normVer('release-0.7.14\n'), '0.7.14', 'normVer 从杂字符串里取版本');
+eq(UP.normVer(''), '', 'normVer 空串');
+eq(UP.verCmp('0.7.10', '0.7.9'), 1, '0.7.10 比 0.7.9 新（按数字不比字符串）');
+eq(UP.verCmp('0.7', '0.7.0'), 0, '缺段按 0 算：0.7 == 0.7.0');
+eq(UP.verCmp('v0.7.12', '0.7.12'), 0, '带 v 也能比');
+eq(UP.verCmp('1.0.0', '0.9.9'), 1, '主版本号优先');
+eq(UP.verCmp('0.7.12', '0.7.12'), 0, '同版本相等');
+
+var apkPick = UP.pickApk([
+  { name: 'app-release.apk', browser_download_url: 'https://x/a.apk', size: 160000 },
+  { name: 'app-debug.apk', browser_download_url: 'https://x/b.apk', size: 90000 },
+  { name: 'source.zip', browser_download_url: 'https://x/c.zip', size: 999999 }
+]);
+eq(apkPick.name, 'app-release.apk', 'pickApk 只认 .apk，多个取大的');
+eq(UP.pickApk([{ name: 'source.zip', size: 1 }]), null, 'pickApk 没有 APK 返回 null');
+eq(UP.pickApk(null), null, 'pickApk 空资产返回 null');
+
+var rel = UP.parseRelease(JSON.stringify({
+  tag_name: 'v0.7.14',
+  assets: [{ name: 'homecontrol.apk', browser_download_url: 'https://x/h.apk', size: 160000 }]
+}));
+eq(rel.ver, '0.7.14', 'parseRelease 取 tag 里的版本');
+eq(rel.url, 'https://x/h.apk', 'parseRelease 取下载地址');
+eq(rel.size, 160000, 'parseRelease 取文件大小');
+ok(!!UP.parseRelease('{"message":"Not Found"}').error, 'release 404（message）当成错误');
+ok(!!UP.parseRelease('{"tag_name":"v1.0.0","assets":[]}').error, '没有 APK 资产当成错误');
+ok(!!UP.parseRelease('not json').error, '不是 JSON 当成错误');
+ok(!!UP.parseRelease(JSON.stringify({
+  tag_name: 'v1.0.0',
+  assets: [{ name: 'h.apk', browser_download_url: 'https://x/h.apk', size: 100 * 1024 * 1024 }]
+})).error, '超过 80MB 的包拒收');
+eq(UP.mb(160000), '156 KB', 'mb 显示 KB');
+eq(UP.mb(1600000), '1.5 MB', 'mb 显示 MB');
+
+ok(UP.state().phase === 'idle', '初始状态是 idle');
+UP.reset();
+ok(UP.state().phase === 'idle' && UP.state().pct === 0, 'reset 回到 idle/0%');
 
 console.log('');
 if (failed === 0) {

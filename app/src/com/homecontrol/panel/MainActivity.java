@@ -1103,6 +1103,244 @@ public class MainActivity extends Activity {
             }
         }
 
+        /* ---------------- 自升级：检查 / 下载 / 安装 ----------------
+           JS 侧（panel/js/update.js）只负责状态机和文案，网络与安装都在这儿做：
+           检查走 httpText（和道理鱼那套通用请求同一条通道，TLS 策略一致），
+           下载把字节写到 cache/upd/，安装交给系统安装器（APK 通过 UpdateProvider 以 content:// 交付）。 */
+
+        private void postJs(String js) {
+            final String s = js;
+            ui.post(new Runnable() {
+                public void run() {
+                    try {
+                        if (web != null) web.evaluateJavascript(s, null);
+                    } catch (Throwable t) { Log.w(TAG, "postJs failed: " + t); }
+                }
+            });
+        }
+
+        private String cbJs(String fn, String cbId, String payload) {
+            return "window." + fn + " && window." + fn + "("
+                    + org.json.JSONObject.quote(cbId) + ","
+                    + org.json.JSONObject.quote(payload) + ")";
+        }
+
+        private String errJson(String msg) {
+            try {
+                org.json.JSONObject o = new org.json.JSONObject();
+                o.put("error", msg);
+                return o.toString();
+            } catch (Throwable t) { return "{\"error\":\"unknown\"}"; }
+        }
+
+        /** 取 GitHub Release 的 JSON（结果异步回 window.__hcUpdNetCb(cbId, {status|error, body})） */
+        @JavascriptInterface
+        public void updNet(final String cbId, final String url, final String headersJson) {
+            new Thread(new Runnable() {
+                public void run() {
+                    final String out = httpText(url, "GET", headersJson, "");
+                    Log.i(TAG, "updNet " + url + " -> " + (out.length() > 200 ? out.substring(0, 200) : out));
+                    postJs(cbJs("__hcUpdNetCb", cbId, out));
+                }
+            }).start();
+        }
+
+        /** 下载 APK：过程回 __hcUpdProg(cbId, pct)，结束回 __hcUpdDone(cbId, {path,bytes} | {error}) */
+        @JavascriptInterface
+        public void updDownload(final String cbId, final String url, final String fileName) {
+            new Thread(new Runnable() {
+                public void run() {
+                    final String out = updFetch(cbId, url, fileName);
+                    postJs(cbJs("__hcUpdDone", cbId, out));
+                }
+            }).start();
+        }
+
+        /** 把 APK 落到 cache/upd/。先写 .part 再改名，中途断了不会留下半个可安装包 */
+        private String updFetch(String cbId, String url, String fileName) {
+            HttpURLConnection c = null;
+            java.io.FileOutputStream fos = null;
+            File tmp = null;
+            try {
+                String name = fileName == null ? "" : fileName.replaceAll("[^A-Za-z0-9._-]", "_");
+                if (name.length() == 0) name = "update.apk";
+                if (!name.toLowerCase().endsWith(".apk")) name = name + ".apk";
+                File dir = UpdateProvider.dir(MainActivity.this);
+                File outFile = new File(dir, name);
+                tmp = new File(dir, name + ".part");
+
+                URL u = new URL(url);
+                if ("https".equals(u.getProtocol())) {
+                    HttpsURLConnection h = (HttpsURLConnection) u.openConnection();
+                    applyTls(h, u.getHost());
+                    c = h;
+                } else {
+                    c = (HttpURLConnection) u.openConnection();
+                }
+                c.setInstanceFollowRedirects(true);      /* GitHub 会 302 到 objects.githubusercontent.com */
+                c.setConnectTimeout(8000);
+                c.setReadTimeout(30000);
+                c.setRequestProperty("User-Agent", "HomeControl-Panel");
+                c.setRequestProperty("Accept", "application/octet-stream");
+                int code = c.getResponseCode();
+                if (code < 200 || code >= 300) return errJson("HTTP " + code);
+                String ctype = c.getContentType();
+                if (ctype != null && ctype.indexOf("html") > -1) return errJson("下载到的是网页不是安装包");
+
+                int total = c.getContentLength();
+                InputStream is = c.getInputStream();
+                fos = new java.io.FileOutputStream(tmp);
+                byte[] buf = new byte[16384];
+                int n;
+                long got = 0;
+                int lastPct = -1;
+                boolean apkMagic = false;
+                while ((n = is.read(buf)) > 0) {
+                    if (!apkMagic) {
+                        /* 头两个字节必须是 "PK"：代理/镜像把 404 页当 200 返回时在这里拦住 */
+                        if (got == 0 && buf[0] == 0x50 && (n < 2 || buf[1] == 0x4B)) apkMagic = true;
+                        else if (got == 0) return errJson("下载到的不是 APK（开头不是 ZIP）");
+                    }
+                    got += n;
+                    if (got > 200L * 1024 * 1024) return errJson("安装包太大（超过 200MB）");
+                    fos.write(buf, 0, n);
+                    if (total > 0) {
+                        int pct = (int) (got * 100 / total);
+                        if (pct != lastPct) {
+                            lastPct = pct;
+                            postJs("window.__hcUpdProg && window.__hcUpdProg("
+                                    + org.json.JSONObject.quote(cbId) + "," + pct + ")");
+                        }
+                    }
+                }
+                if (is != null) try { is.close(); } catch (Throwable t) { }
+                fos.close();
+                fos = null;
+                if (got < 50000) return errJson("安装包只有 " + got + " 字节，不像完整的 APK");
+                if (outFile.exists()) outFile.delete();
+                if (!tmp.renameTo(outFile)) return errJson("落盘失败（改名被拒）");
+                Log.i(TAG, "updDownload done " + outFile + " (" + got + " bytes)");
+                org.json.JSONObject out = new org.json.JSONObject();
+                out.put("path", outFile.getAbsolutePath());
+                out.put("bytes", got);
+                out.put("name", outFile.getName());
+                return out.toString();
+            } catch (Throwable t) {
+                Log.w(TAG, "updDownload failed " + url + " : " + t);
+                return errJson(t.getClass().getSimpleName() + ": " + t.getMessage());
+            } finally {
+                if (fos != null) try { fos.close(); } catch (Throwable t) { }
+                if (c != null) try { c.disconnect(); } catch (Throwable t) { }
+                if (tmp != null && tmp.exists() && !tmp.getName().endsWith(".apk")) {
+                    try { tmp.delete(); } catch (Throwable t) { }
+                }
+            }
+        }
+
+        /** 拉起系统安装器（APK 通过 UpdateProvider 的 content:// 交付） */
+        @JavascriptInterface
+        public void updInstall(final String cbId, final String path) {
+            ui.post(new Runnable() {
+                public void run() {
+                    String out;
+                    try { out = doInstall(path); } catch (Throwable t) {
+                        Log.w(TAG, "updInstall failed: " + t);
+                        out = errJson("install: " + t);
+                    }
+                    try {
+                        if (web != null) {
+                            web.evaluateJavascript("window.__hcUpdDone && window.__hcUpdDone("
+                                    + org.json.JSONObject.quote(cbId) + ","
+                                    + org.json.JSONObject.quote(out) + ")", null);
+                        }
+                    } catch (Throwable t) { Log.w(TAG, "updInstall cb failed: " + t); }
+                }
+            });
+        }
+
+        private String doInstall(String path) {
+            File f = new File(path == null ? "" : path);
+            if (!f.isFile()) return errJson("安装包不见了，重新下载一次");
+            if (Build.VERSION.SDK_INT >= 26 && !getPackageManager().canRequestPackageInstalls()) {
+                return errJson("need_permission");
+            }
+            String mime = "application/vnd.android.package-archive";
+            /* MI PAD 2（Android 5.1 / MIUI）上实测：ACTION_VIEW + content:// 没有任何 Activity 接
+               （ActivityNotFoundException），但 ACTION_INSTALL_PACKAGE 一直能用；file:// 到 7.0 才被禁。
+               所以按「插件本义 → VIEW，content → 外部缓存 file」顺序试，全都失败才报错。 */
+            String[] actions = new String[] { Intent.ACTION_INSTALL_PACKAGE, Intent.ACTION_VIEW };
+            Throwable last = null;
+            for (int a = 0; a < actions.length; a++) {
+                for (int u = 0; u < 2; u++) {
+                    if (u == 1 && Build.VERSION.SDK_INT >= 24) continue;   /* file:// 从 Android 7 起不给外用 */
+                    File src = f;
+                    if (u == 1) {
+                        src = stageForInstaller(f);
+                        if (src == null) continue;
+                    }
+                    Uri uri = (u == 1) ? Uri.fromFile(src) : UpdateProvider.uriFor(f.getName());
+                    Intent i = new Intent(actions[a]);
+                    i.setDataAndType(uri, mime);
+                    i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                    try {
+                        startActivity(i);
+                        Log.i(TAG, "updInstall " + actions[a] + " " + uri + " -> installer");
+                        return "{\"ok\":true}";
+                    } catch (Throwable t) {
+                        last = t;
+                        Log.w(TAG, "updInstall " + actions[a] + " failed: " + t);
+                    }
+                }
+            }
+            return errJson("没有安装器能打开安装包" + (last == null ? "" : "（" + last.getClass().getSimpleName() + "）"));
+        }
+
+        /** 把 cache 里的安装包复制到外部私有目录，给「只能用 file://」的老安装器用 */
+        private File stageForInstaller(File src) {
+            try {
+                File dir = new File(getExternalFilesDir(null), "upd");
+                if (!dir.isDirectory() && !dir.mkdirs()) return null;
+                File out = new File(dir, src.getName());
+                if (out.length() == src.length() && out.length() > 0) return out;
+                java.io.InputStream in = new java.io.FileInputStream(src);
+                java.io.OutputStream os = new java.io.FileOutputStream(out);
+                try {
+                    byte[] buf = new byte[8192];
+                    int n;
+                    while ((n = in.read(buf)) > 0) os.write(buf, 0, n);
+                    os.flush();
+                } finally {
+                    try { in.close(); } catch (Throwable t) { }
+                    try { os.close(); } catch (Throwable t) { }
+                }
+                return out;
+            } catch (Throwable t) {
+                Log.w(TAG, "stageForInstaller failed: " + t);
+                return null;
+            }
+        }
+
+        /** 打开「安装未知应用」的系统设置（只有 API 26+ 需要/才有这一页） */
+        @JavascriptInterface
+        public void updPerm() {
+            ui.post(new Runnable() {
+                public void run() {
+                    try {
+                        Intent i;
+                        if (Build.VERSION.SDK_INT >= 26) {
+                            i = new Intent(android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                                    Uri.parse("package:" + getPackageName()));
+                        } else {
+                            i = new Intent(android.provider.Settings.ACTION_SECURITY_SETTINGS);
+                        }
+                        i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                        startActivity(i);
+                        Log.i(TAG, "updPerm -> " + i.getAction());
+                    } catch (Throwable t) { Log.w(TAG, "updPerm failed: " + t); }
+                }
+            });
+        }
+
         @JavascriptInterface
         public void exitApp() {
             ui.post(new Runnable() {
