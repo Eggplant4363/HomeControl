@@ -73,7 +73,7 @@ const check = (ok, name, extra) => {
 
   /* ============ ① 编辑态与平时的卡片模板一致 ============ */
   console.log('=== 1. 编辑态图标/模板与平时一致 ===');
-  await setMode(false, { added: { 'switch.master_plug': 1, 'light.living_main': 1, 'light.living_strip': 1, 'sensor.living_temp': 1 }, hidden: {},
+  await setMode(false, { added: { 'switch.master_plug': 1, 'light.living_main': 1, 'sensor.living_temp': 1 }, hidden: {},
     order: ['switch.master_plug', 'light.living_main', 'sensor.living_temp'], span: {}, rows: {} });
   const TINY = '.tile[data-entity="switch.master_plug"]';
   const WIDE = '.tile[data-entity="light.living_main"]';
