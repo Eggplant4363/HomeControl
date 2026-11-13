@@ -67,6 +67,8 @@ public class MainActivity extends Activity {
     private static final long FIRST_BEAT_MS = 180000L;
     /** 加载失败自动重试的次数上限，超过就停在错误页等人处理，别整夜重试耗屏耗电 */
     private static final int MAX_RETRY = 10;
+    /** 离家熄屏的兜底等待（面板没传值时用这个）：没人碰屏幕这么久就自己熄灭 */
+    private static final int AWAY_OFF_MS = 4000;
 
     private WebView web;
     private FrameLayout root;
@@ -79,6 +81,44 @@ public class MainActivity extends Activity {
     /** 假 HA 服务器只在 debug 源码目录里（app/src_debug/），正式包里这个类根本不存在，所以用反射 */
     private Object mockHa;
     private TlsPolicy tls;
+    /** 离家熄屏/在家亮屏：当前策略（true=该亮着），以及熄屏前原来的屏幕超时 */
+    private volatile boolean screenHome = true;
+    private android.os.PowerManager.WakeLock wakeLock;
+    private volatile boolean blackout = false;
+
+    /**
+     * 全黑兜底：有的 MIUI 不认我们写的屏幕超时（它有自己的省电策略），这时把页面压成纯黑
+     * 并把背光压到最低 —— 视觉上等同于熄屏。回家时还原。
+     */
+    private void setBlackout(final boolean on) {
+        blackout = on;
+        try {
+            if (web != null) {
+                web.evaluateJavascript(
+                        "void (window.__hcBlackout && window.__hcBlackout(" + on + "))", null);
+            }
+        } catch (Throwable t) {
+            Log.w(TAG, "blackout js failed: " + t);
+        }
+        setScreenBrightness(on ? 0.02f : -1f);
+        Log.i(TAG, "blackout: " + (on ? "on" : "off"));
+    }
+
+    /** 只作用本窗口的屏幕亮度（不影响系统）；-1 = 恢复自动 */
+    private void setScreenBrightness(float v) {
+        try {
+            WindowManager.LayoutParams lp = getWindow().getAttributes();
+            lp.screenBrightness = v < 0 ? -1f : (v < 0.02f ? 0.02f : (v > 1f ? 1f : v));
+            getWindow().setAttributes(lp);
+        } catch (Throwable t) {
+            Log.w(TAG, "setScreenBrightness failed: " + t);
+        }
+    }
+
+    private int savedScreenOffMs = -1;
+    /** 设备原来的「充电时保持唤醒」值（墙机常插着电，不清掉它永远不会熄屏） */
+    private int savedStayOn = -1;
+    private static final String KEY_STAY_ON = "stay_on_while_plugged_in";
     /** 原生请求共用的两条线程：以前每个请求都 new Thread（自注册 5 个 POST + 兜底轮询 + 封面，
      * 全是新线程 + 一次完整 TCP/TLS 握手，老机器上 0.3~1.5s）。长请求最多占一条，剩下的排队。 */
     private final java.util.concurrent.ExecutorService netPool =
@@ -564,6 +604,148 @@ public class MainActivity extends Activity {
         }
     }
 
+    private android.os.PowerManager power() {
+        return (android.os.PowerManager) getSystemService(POWER_SERVICE);
+    }
+
+    /** 能不能改屏幕超时：Android 6+ 是特殊权限（要用户在本机授权），5.x 装包时就有 */
+    private boolean settingsWritable() {
+        try {
+            if (Build.VERSION.SDK_INT >= 23) return android.provider.Settings.System.canWrite(this);
+            return true;
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
+    /** 人回家了：重新常亮 + 主动把屏幕叫醒（屏幕熄着时光加 KEEP_SCREEN_ON 不会亮，必须唤醒一次） */
+    private void wakeScreen() {
+        try {
+            android.os.PowerManager pm = power();
+            if (pm == null) return;
+            if (wakeLock == null) {
+                /* ON_AFTER_SLEEP / isAcquired 不在公开 API 里（android.jar 里没有），只用 FULL_WAKE_LOCK + 唤醒标志 */
+                wakeLock = pm.newWakeLock(android.os.PowerManager.FULL_WAKE_LOCK
+                        | android.os.PowerManager.ACQUIRE_CAUSES_WAKEUP, "hc:home");
+            }
+            if (!wakeLock.isHeld()) {
+                /* acquire(ms) 要 API 21+；5.1 上退到一参 acquire，必须自己定时释放，不然常亮锁一直留着 */
+                if (Build.VERSION.SDK_INT >= 21) {
+                    wakeLock.acquire(3000L);
+                } else {
+                    final android.os.PowerManager.WakeLock wl = wakeLock;
+                    wakeLock.acquire();
+                    ui.postDelayed(new Runnable() {
+                        @Override
+                        public void run() {
+                            try {
+                                if (wl.isHeld()) wl.release();
+                            } catch (Throwable t) { }
+                        }
+                    }, 2500L);
+                }
+            }
+        } catch (Throwable t) {
+            Log.w(TAG, "wake failed: " + t);
+        }
+    }
+
+    private void setScreenTimeout(int ms) {
+        if (!settingsWritable()) {
+            Log.w(TAG, "screen timeout not writable（需要在本机设置里允许修改系统设置）");
+            return;
+        }
+        try {
+            if (savedScreenOffMs < 0) {
+                savedScreenOffMs = android.provider.Settings.System
+                        .getInt(getContentResolver(), android.provider.Settings.System.SCREEN_OFF_TIMEOUT, 60000);
+            }
+            android.provider.Settings.System.putInt(
+                    getContentResolver(), android.provider.Settings.System.SCREEN_OFF_TIMEOUT, ms);
+            Log.i(TAG, "screen timeout -> " + ms + "ms");
+        } catch (Throwable t) {
+            Log.w(TAG, "set screen timeout failed: " + t);
+        }
+    }
+
+    /** goToSleep 是 @hide + 签名级权限，普通应用调不到；能调就立刻熄，调不到靠短超时自己灭 */
+    private void tryGoToSleep() {
+        try {
+            android.os.PowerManager pm = power();
+            java.lang.reflect.Method m = pm.getClass().getMethod("goToSleep", long.class);
+            m.invoke(pm, System.currentTimeMillis());
+            Log.i(TAG, "screen off via goToSleep");
+        } catch (Throwable t) {
+            Log.i(TAG, "goToSleep unavailable, relying on screen timeout");
+        }
+    }
+
+    /**
+     * 离家熄屏 / 在家亮屏（面板按 HA 的 person.* 调桥 setScreenPolicy）。
+     * 亮屏：窗口保持常亮 + 唤醒屏幕 + 还原原来的屏幕超时；
+     * 熄屏：取消常亮，把屏幕超时压到 offMs（没人碰就自己熄灭），能拿到权限就直接熄。
+     */
+    private void applyScreenPolicy(final boolean home, final int offMs) {
+        screenHome = home;
+        ui.post(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    if (home) {
+                        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+                        setBlackout(false);
+                        wakeScreen();
+                        if (settingsWritable()) {
+                            if (savedScreenOffMs >= 0) {
+                                android.provider.Settings.System.putInt(getContentResolver(),
+                                        android.provider.Settings.System.SCREEN_OFF_TIMEOUT, savedScreenOffMs);
+                                Log.i(TAG, "screen timeout restored " + savedScreenOffMs + "ms");
+                                savedScreenOffMs = -1;
+                            }
+                            if (savedStayOn >= 0) {
+                                android.provider.Settings.System.putInt(getContentResolver(), KEY_STAY_ON, savedStayOn);
+                                Log.i(TAG, "stay-on restored " + savedStayOn);
+                                savedStayOn = -1;
+                            }
+                        }
+                    } else {
+                        getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+                        /* 墙机常年插着电：「充电时保持唤醒」不清掉的话，超时设多短都不会灭屏 */
+                        if (settingsWritable()) {
+                            try {
+                                if (savedStayOn < 0) {
+                                    savedStayOn = android.provider.Settings.System
+                                            .getInt(getContentResolver(), KEY_STAY_ON, 0);
+                                }
+                                android.provider.Settings.System.putInt(getContentResolver(), KEY_STAY_ON, 0);
+                            } catch (Throwable t) {
+                                Log.w(TAG, "stay-on not writable: " + t);
+                            }
+                        }
+                        setScreenTimeout(offMs > 0 ? offMs : AWAY_OFF_MS);
+                        tryGoToSleep();
+                        /* 有些 MIUI 不认我们写的超时（它有自己的省电策略），过一会儿检查一次：
+                           屏幕还亮着就把面板压成全黑 + 背光最低，效果等同于熄屏 */
+                        final int waitMs = (offMs > 0 ? offMs : AWAY_OFF_MS) + 1500;
+                        ui.postDelayed(new Runnable() {
+                            @Override
+                            public void run() {
+                                if (isFinishing() || screenHome) return;
+                                if (screenInteractive()) {
+                                    Log.i(TAG, "screen timeout not honored -> blackout 全黑兜底");
+                                    setBlackout(true);
+                                }
+                            }
+                        }, waitMs);
+                    }
+                    Log.i(TAG, "screen policy: " + (home ? "home 亮屏" : "away 熄屏"));
+                } catch (Throwable t) {
+                    Log.w(TAG, "screen policy failed: " + t);
+                }
+            }
+        });
+    }
+
     private void goImmersive() {
         int flags = View.SYSTEM_UI_FLAG_LAYOUT_STABLE
                 | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
@@ -634,6 +816,23 @@ public class MainActivity extends Activity {
                 web.removeJavascriptInterface("AndroidBridge");
                 web.stopLoading();
                 web.destroy();
+            }
+        } catch (Throwable t) { }
+        try {
+            if (wakeLock != null && wakeLock.isHeld()) wakeLock.release();
+        } catch (Throwable t) { }
+        /* 面板退掉了就别把设备留在「短熄屏 + 不保持唤醒」上：还原原来的两项设置 */
+        try {
+            if (settingsWritable()) {
+                if (savedScreenOffMs >= 0) {
+                    android.provider.Settings.System.putInt(getContentResolver(),
+                            android.provider.Settings.System.SCREEN_OFF_TIMEOUT, savedScreenOffMs);
+                    savedScreenOffMs = -1;
+                }
+                if (savedStayOn >= 0) {
+                    android.provider.Settings.System.putInt(getContentResolver(), KEY_STAY_ON, savedStayOn);
+                    savedStayOn = -1;
+                }
             }
         } catch (Throwable t) { }
         super.onDestroy();
@@ -710,6 +909,23 @@ public class MainActivity extends Activity {
                     + ",\"device\":\"" + Build.DEVICE + "\""
                     + ",\"ver\":\"" + appVersion() + "\""
                     + ",\"ua\":\"" + ua + "\"}";
+        }
+
+        /** 当前系统「自动锁屏」值（毫秒），回归脚本用它核对策略真的生效 */
+        @JavascriptInterface
+        public String screenTimeout() {
+            try {
+                return String.valueOf(android.provider.Settings.System.getInt(
+                        getContentResolver(), android.provider.Settings.System.SCREEN_OFF_TIMEOUT, -1));
+            } catch (Throwable t) {
+                return "-1";
+            }
+        }
+
+        /** 现在是不是走在全黑兜底上（回归脚本用来区分「真灭屏」与「全黑」） */
+        @JavascriptInterface
+        public boolean blackoutState() {
+            return blackout;
         }
 
         /** 设备自身的网络身份：上墙后排查「它到底连在哪个网」用得上 */
@@ -864,6 +1080,36 @@ public class MainActivity extends Activity {
                         Log.i(TAG, "setBrightness " + lp.screenBrightness);
                     } catch (Throwable t) {
                         Log.w(TAG, "setBrightness failed: " + t);
+                    }
+                }
+            });
+        }
+        /** 离家熄屏 / 在家亮屏：面板按 HA 的 person.* 决定，offMs 是没人碰屏幕多久后熄灭 */
+        @JavascriptInterface
+        public void setScreenPolicy(boolean home, int offMs) {
+            applyScreenPolicy(home, offMs);
+        }
+
+        /** 能不能改屏幕超时（Android 6+ 要用户授权）；面板设置里据此提示 */
+        @JavascriptInterface
+        public boolean screenWritable() {
+            return MainActivity.this.settingsWritable();
+        }
+
+        /** 跳到系统设置里的「修改系统设置」授权页（Android 6+ 改屏幕超时必须先授权） */
+        @JavascriptInterface
+        public void openWriteSettings() {
+            ui.post(new Runnable() {
+                @Override
+                public void run() {
+                    try {
+                        Intent i = new Intent(android.provider.Settings.ACTION_MANAGE_WRITE_SETTINGS);
+                        i.setData(Uri.fromParts("package", getPackageName(), null));
+                        i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                        startActivity(i);
+                        Log.i(TAG, "opened WRITE_SETTINGS grant page");
+                    } catch (Throwable t) {
+                        Log.w(TAG, "openWriteSettings failed: " + t);
                     }
                 }
             });

@@ -2988,6 +2988,17 @@
     } catch (e) { }
   }
 
+  /** Java 侧的全黑兜底：ROM 不认屏幕超时时，它调这个把页面压成纯黑（配合背光最低≈熄屏） */
+  window.__hcBlackout = function (on) {
+    var el = document.getElementById('blackout');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'blackout';
+      document.body.appendChild(el);
+    }
+    el.className = on ? 'on' : '';
+  };
+
   /** Android 6+ 改屏幕超时要在系统设置里允许一次；没允许就给出跳转按钮（5.x 装包就有，不用提） */
   function screenAuthRow() {
     var b = window.AndroidBridge;
@@ -4659,6 +4670,7 @@ function boot() {
     bulkCount: bulkCount, toggleBulk: toggleBulk, doBulk: doBulk, bulk: function () { return { on: S.bulk, sel: S.bulkSel }; },
     sortCards: sortCards, editToggle: editToggle, editSpan: editSpan, editMove: editMove,
     editAddAll: editAddAll, editSheetHtml: editSheetHtml, allCards: allCards, visibleRooms: visibleRooms, hiddenRooms: hiddenRooms, hasColor: hasColor, rgbCss: rgbCss, hsvToRgb: hsvToRgb, rgbToHs: rgbToHs, colorPresets: COLOR_PRESETS,
+    applyPrefs: applyPrefs, applyScreenPolicy: applyScreenPolicy, screenAuthRow: screenAuthRow,
     battGuard: battGuard, battSwitchLabel: battSwitchLabel, battSwitchSheetHtml: battSwitchSheetHtml, battSwitchNoise: battSwitchNoise
   };
 

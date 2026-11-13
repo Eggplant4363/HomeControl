@@ -121,6 +121,23 @@
 
 ---
 
+## 5b. 屏幕策略（离家熄屏 / 在家亮屏）
+
+判定在 JS（复用 `person.*`：有人 `home` → 亮屏，全部 `not_home` → 熄屏，没有 person 或全 `unknown` → 不动），执行在 Java（`Bridge.setScreenPolicy(home, offMs)` → `applyScreenPolicy`，UI 线程 post）。
+
+| 状态 | 动作 |
+|---|---|
+| 亮屏（home） | `addFlags(FLAG_KEEP_SCREEN_ON)` + `wakeScreen()`（`FULL_WAKE_LOCK\|ACQUIRE_CAUSES_WAKEUP`，限时自动释放）+ 还原保存的 `SCREEN_OFF_TIMEOUT` / `stay_on_while_plugged_in` + 关掉全黑 |
+| 熄屏（away） | `clearFlags(FLAG_KEEP_SCREEN_ON)` + 把 `SCREEN_OFF_TIMEOUT` 压到 `awayOff`（默认 5s）+ 清掉充电常亮 + 反射 `goToSleep`（不可用就靠超时）+ `offMs+1500ms` 后若屏幕仍亮 → `setBlackout(true)` |
+| 全黑兜底 | `#blackout`（JS 建的纯黑遮罩）+ 本窗口亮度 0.02 —— MIUI 不认我们写的超时（它有自己的省电策略），这条让屏幕看起来灭了 |
+| 卸载/退出 | `onDestroy` 还原两项系统设置，不把设备留在短熄屏值上 |
+
+改系统设置要 `WRITE_SETTINGS`（Android 6+ 是特殊权限：`Settings.System.canWrite()`；设置页有「去系统设置允许」按钮。MIUI 平板 5 那个授权页 `unable to resolve Intent`，开发用 `adb shell appops set com.homecontrol.panel WRITE_SETTINGS allow`，重装 APK 会重置）。Android 5.x 装包即有，所以平板 2 不需要授权。
+
+回归：`node tools/check-away.js <序列>`（造合成人 → 判离家 → 读 `AndroidBridge.screenTimeout()` 变短 → 判回家 → 读还原）。
+
+---
+
 ## 6. 数据流
 
 ```

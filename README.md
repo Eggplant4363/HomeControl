@@ -68,7 +68,7 @@ powershell -ExecutionPolicy Bypass -File tools\deploy.ps1 -SkipApk   # 只改了
 
 它会依次做：adb 在线检查（离线时直接告诉你「长按电源键 10 秒」而不是抛异常）→ 装 APK → 推 `panel\` 到 `/sdcard/HomeControl/panel/` → 改写 `url.txt` → force-stop + 启动 → 校验 `page finished` / 无脚本错误 / 前台是壳 App，最后打印 DEPLOY OK。
 
-版本号随构建更新：`versionName 0.7.17` / `versionCode 54`（`build.ps1` 的默认值就是当前版本；发新包就 `-VersionCode 55 -VersionName "0.7.18"` 并同步改这一行，不用再写一次性升版本脚本——装到已装更高 versionCode 的设备上会 `INSTALL_FAILED_VERSION_DOWNGRADE`），诊断页第一行就能看到「版本 0.7.17 · MI PAD 2」。
+版本号随构建更新：`versionName 0.7.19` / `versionCode 56`（`build.ps1` 的默认值就是当前版本；发新包就 `-VersionCode 57 -VersionName "0.7.20"` 并同步改这一行，不用再写一次性升版本脚本——装到已装更高 versionCode 的设备上会 `INSTALL_FAILED_VERSION_DOWNGRADE`），诊断页第一行就能看到「版本 0.7.19 · MI PAD 2」。
 
 面板把自己也注册进 Home Assistant（0.7.9）：走 `POST /api/states/<entity_id>`（实测 201，不存在就新建，不需要 MQTT），每分钟报一次 `sensor.homecontrol_panel`（在线状态、型号、App 版本、IP/SSID、皮肤、电量、充电、`last_seen`）、`binary_sensor.homecontrol_panel_connected`、`sensor.homecontrol_panel_battery`、`binary_sensor.homecontrol_panel_charging`、`switch.homecontrol_panel_dark_mode`。那个开关是双向的：面板写自己的皮肤，HA 里把开关拨了，面板跟着换皮肤（`selfWritten` 用来区分「HA 那边改了」和「我们自己写的」，不会自己跟自己打架）。注意 HA 的 REST 建的是实体，不是设备注册表里的设备，所以在 HA 界面上它们归在「未分配设备」下。
 ## 构建与部署
@@ -77,7 +77,7 @@ powershell -ExecutionPolicy Bypass -File tools\deploy.ps1 -SkipApk   # 只改了
 # 构建（路径由 tools\env.ps1 解析：SDK / build-tools / android.jar / JDK / adb，可用 HC_ANDROID_SDK 等环境变量覆盖）
 powershell -ExecutionPolicy Bypass -File .\tools\build.ps1                                  # debug 变体，含假 HA + 调试开关
 powershell -ExecutionPolicy Bypass -File .\tools\build.ps1 -Variant release -OutName homecontrol-release.apk   # 正式包：不含 MockHaServer
-powershell -ExecutionPolicy Bypass -File .\tools\build.ps1 -VersionCode 55 -VersionName "0.7.18"   # 发新包：版本号 +1（默认值就是当前版本）
+powershell -ExecutionPolicy Bypass -File .\tools\build.ps1 -VersionCode 57 -VersionName "0.7.20"   # 发新包：版本号 +1（默认值就是当前版本）
 
 # 安装
 adb install -r .\dist\homecontrol.apk
@@ -113,6 +113,7 @@ powershell -ExecutionPolicy Bypass -File .\tools\push.ps1 -Prod     # 生产形�
 - **误触撤销**：点卡片开关后，底部提示条给 5 秒「撤销」（`toggle()` 里调 `toast(text,'撤销',fn)`，`fn` 发反向 `turn_on`/`turn_off`）。墙上触摸屏手臂伸过去容易蹭到旁边卡片，撤销比重做一次便宜。整条提示可点——Chromium 57 里 pointer-events:none 的父元素即使子元素设 `auto` 也点不到（elementFromPoint 能命中但事件不派发），所以带动作时给 .toast.act 整条放开
 - **亮度条直接拖**：可调光的灯（`light` 且 `supported_color_modes` 含亮度）卡片上有一条 22px 高的进度条，手指按住任意位置就能拖，拖动中每 140ms 推一次 `light.turn_on {brightness_pct}`，本地先改、不跟着 HA 回包抖；关灯时条留在原位画到 0（半透明），一眼看出这盏灯能调。能力判断在 `panel/js/app.js` 的 `pctMeta()`，拖完那一下的 click 会被吞掉，不会顺手关灯
 - **顶栏住户头像 + 在家/离家**：「已连接」左边显示 `person.*` 的圆形头像（取 `attributes.entity_picture`，相对路径自动拼上 HA 地址，是公开图所以不需要带令牌；加载失败退回首字母），旁边一句在家人话。`home` → 「在家」（头像描绿环），`not_home` → 「离家」、自定义区域名原样显示、`unknown/unavailable` → 「状态未知」；家里有多个 person 时最多并排 3 个头像，文字显示「2/3 在家」。逻辑在 `panel/js/app.js` 的 `renderWho()` / `whoState()`，头像签名不变就不重绘，1254 个实体的高频回包不会反复重载图片
+- **没人在家就熄屏**（设置里 `离家熄屏 · 回家亮屏`，默认开）：判定复用上面那套 `person.*` —— 有人 `home` 亮屏，**全部 `not_home`** 才熄屏，没有 person 实体或全是 `unknown` 时不动屏幕（宁可一直亮着，别把屏关死）。亮屏 = 挂回 `FLAG_KEEP_SCREEN_ON` + 短暂唤醒锁 + 还原原来的自动锁屏值；熄屏 = 取消 keep-on + 把系统「自动锁屏」压到短值（设置里选 2/5/15 秒）+ 试反射 `goToSleep`（多数 ROM 不让用，靠超时）。改系统设置要 `WRITE_SETTINGS`：Android 5.x 装包即有，6+ 要授权一次（设置页有「去系统设置允许」按钮；MIUI 平板 5 那个授权页调不起来，正式部署用 `adb -s <序列> shell appops set com.homecontrol.panel WRITE_SETTINGS allow` 授一次，重装后要重授）。MIUI 不认我们写的超时（它有自己的省电策略）时，过一会儿检查一次：屏幕还亮就把面板压成**全黑 + 背光最低**，等同熄屏，回家自动恢复。回归 `node tools/check-away.js <序列>`
 - **房间多 / 实体多**：房间 tab 放不下时自动改为可横向滑动（选中的房间会自动滑进可视区）；某个房间实体超过 8 张时网格改为可纵向滑动，行高固定，不会把卡片挤出屏幕又没法翻。场景键超过 4 个时同样可横向滑动，且场景区最宽只占 46%，不会把房间 tab 挤没
 - **诊断页**：长按左上角时间 → 显示模式、HA 地址、令牌（打码）、连接状态、连通测试、房间/卡片/实体数、**设备网络（IP + Wi-Fi SSID）**、视口、内核版本、最近一次 JS 错误；带按钮「重新加载 / 清缓存并重载 / 连接设置 / 回模拟数据 / 关闭」。上墙后不用连电脑就能自己判断问题
 - **夜间静默重载**：每天 04:00 自动 reload 一次释放 WebView 内存（2GB 老设备长时间点亮会越用越慢），每天只执行一次，由 `panel/js/config.js` 的 `reloadHour` 控制（设 `null` 关闭）

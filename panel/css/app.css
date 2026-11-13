@@ -844,6 +844,15 @@ body::before { content: none; }
 .tile.tiny .t-size { margin-left: auto; font-size: 11px; }
 .tile.tiny .t-grip { width: 46px; height: 46px; }
 
+/* Java 侧的全黑兜底：有的 MIUI 不认我们写的屏幕超时（它有自己的省电策略），
+   这时把页面压成纯黑 + 背光压到最低，观感等同于熄屏；回家还原。 */
+#blackout {
+  position: fixed; left: 0; top: 0; right: 0; bottom: 0; z-index: 95;
+  background: #000; opacity: 0; pointer-events: none;
+  transition: opacity .8s linear;
+}
+#blackout.on { opacity: 1; }
+
 /* ---------------- 负一屏 · 音乐 ----------------
    从主屏往右滑拉出来的一整页。固定层只做位移/透明度（老机器的合成器很吃这个），
    内部列表自己滚，页面本身不整体重绘。 */

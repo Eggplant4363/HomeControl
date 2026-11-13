@@ -20,6 +20,7 @@ Home Assistant 的地址与长期访问令牌，以及一台在线的平板。
 | 开机/回桌面自启 | 设为默认桌面（`CATEGORY_HOME`），重启 33 秒后面板自动出现；`mCurrentFocus=com.homecontrol.panel/.MainActivity` |
 | 断线自动重连 | 停掉假 HA 后状态胶囊转「连接断开，重连中…」，恢复后自动 `已连接` |
 | 假死自愈 | 自检钩子阻塞主线程 60s → 45s 时 `watchdog: no heartbeat for 45s, reloading` → 页面自恢复。**熄屏时看门狗直接跳过**（Doze 会冻结 WebView 的 JS 定时器，旧版因此在熄屏状态下每 45s 重载一次；见 [docs/REFACTOR.md](docs/REFACTOR.md) R1） |
+| 离家熄屏 | 造两台合成 `person.*` 全 `not_home` → `AndroidBridge.screenTimeout()` 变短（默认 5s）；改回 `home` → 还原设备原值；关掉开关 → 也还原。MIUI 不认超时的 ROM 走全黑兜底（`AndroidBridge.blackoutState()`）。回归：`node tools/check-away.js <序列>`；`WRITE_SETTINGS` 授权见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) 5b |
 | 双击返回键逃生口 | 1.5s 内两次 BACK → 进入系统设置（默认桌面被替换时的后路） |
 | 平板内改配置 | 长按状态胶囊 → 写 `/sdcard/HomeControl/ha.json`（`writeText ok: ... (54 chars)`）→ 重连 |
 | 保存前探活 | 200 / 401 / `SocketTimeoutException` 三种结果分别提示，失败不关弹层 |
@@ -181,8 +182,8 @@ app/src/            安卓壳（Java，无第三方依赖）+ TlsPolicy
 app/src_debug/      只在 debug 变体编译的假 HA（release dex 里没有这个类）
 app/certs/          ISRG 锚证书源文件（构建拷进 assets/certs，本身不放进 assets）
 panel/              面板前端（HTML/CSS/JS，Chromium 57 兼容；唯一的真相，assets 不入库）
-tools/              构建/部署/推送 + 自检 + 真机回归（env.ps1、lib/cdp.js、check-{security,rest,temp,tls}.js…）
-dist/               homecontrol.apk（debug，181 KB）/ homecontrol-release.apk（169 KB），versionName 0.7.17 / versionCode 54
+tools/              构建/部署/推送 + 自检 + 真机回归（env.ps1、lib/cdp.js、check-{security,rest,temp,tls,away}.js…）
+dist/               homecontrol.apk（debug，185 KB）/ homecontrol-release.apk（173 KB），versionName 0.7.19 / versionCode 56
 docs/ARCHITECTURE.md 两层职责、Bridge 契约、TLS 与看门狗规则、构建七步
 docs/REFACTOR.md    本轮重构：已修清单+证据、验证矩阵、待办、踩坑表
 docs/PERFORMANCE.md 性能基线与批次 A/B/C 的改动、改后数字、有意不动的既有优化、下一轮候选

@@ -11,6 +11,8 @@
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
     <!-- 自升级：把下载到 cache/upd 的 APK 交给系统安装器（API 26+ 还要用户在系统设置里允许一次） -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- 离家熄屏：改屏幕超时（Android 6+ 是特殊权限，要用户在本机设置里允许；5.x 装包即有） -->
+    <uses-permission android:name="android.permission.WRITE_SETTINGS" />
 
     <application
         android:allowBackup="false"

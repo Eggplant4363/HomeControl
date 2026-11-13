@@ -6,7 +6,7 @@
 
 ---
 
-## 1. 已修（都有真机证据，设备 = MI PAD 2 `A3P4661B1BA6`，debug 变体 versionCode 54；**性能批次 A/B/C 见 [docs/PERFORMANCE.md](docs/PERFORMANCE.md)**，那一轮改的是热点而不是安全）
+## 1. 已修（都有真机证据，设备 = MI PAD 2 `A3P4661B1BA6`，debug 变体 versionCode 56；**性能批次 A/B/C 见 [docs/PERFORMANCE.md](docs/PERFORMANCE.md)**，那一轮改的是热点而不是安全）
 
 ### P0 安全
 

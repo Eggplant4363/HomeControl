@@ -79,7 +79,7 @@ stats(): {"renders":3,"entityEvents":18335,"tiles":3,"entities":1264}
 | C11 | `netInfo()` 60s TTL 缓存 | 每次枚举网卡 + `WifiManager.getConnectionInfo()`（MIUI 上几十 ms），自注册每分钟调一次 |
 | C12 | `httpProbe` 超时 6000/6000 → 2500/2500 | 这是**同步**桥调用：网络不通时页面 JS 被冻结最长 12s（现在最长 5s） |
 
-## 5. 改后数字（MI PAD 2，debug 包 versionCode 54，pid 3063）
+## 5. 改后数字（MI PAD 2，debug 包 versionCode 56，pid 3063）
 
 ```
 {"mtime20":15, "netInfo1":3, "battery1":1, "renderGrid3":0, "svg500":0,
@@ -90,7 +90,7 @@ stats(): {"renders":3,"entityEvents":18335,"tiles":3,"entities":1264}
 - `netInfo1` 3ms（C11 命中缓存，改前每次几十 ms）
 - `prefs200` 2ms（原有缓存，未改，作为对照）
 - `check-rest.js` 并发 5 条 → `{"got":5,"codes":[200,200,200,200,200]}`（证明 C9 的嵌对象契约可用）
-- 门禁：`node --check` 三个文件通过；`tools/lint-es5.js` → `ALL PASS (7 files, 0 modern-syntax hit, 5 style note)`；`tools/lint-css.js` → `ALL PASS`；`tools/test-ui.js` → `ALL PASS (215 checks)`；构建 debug 181KB / release 169KB（release 的 dex 不含 `MockHaServer`）
+- 门禁：`node --check` 三个文件通过；`tools/lint-es5.js` → `ALL PASS (7 files, 0 modern-syntax hit, 5 style note)`；`tools/lint-css.js` → `ALL PASS`；`tools/test-ui.js` → `ALL PASS (215 checks)`；构建 debug 185KB / release 173KB（release 的 dex 不含 `MockHaServer`）
 - 两台部署回归：MI PAD 2 `SECURITY OK 9/9`、`REST OK`、`TEMP OK`；Pad 5 `10.10.1.188:36161` DEPLOY OK、实体 1264
 
 ## 6. 有意不动的东西（这些已经是对的，别再"优化"）
