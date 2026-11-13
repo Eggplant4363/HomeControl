@@ -660,7 +660,7 @@
             coverArtPath: t.coverArtPath || alb.coverArtPath || alb.cover || ''
           },
           format: String(t.fileFormat || '').toLowerCase(),
-          rate: 1, raw: t
+          rate: 1
         };
   };
 
@@ -670,7 +670,7 @@
       if (err) { cb(err); return; }
       var q = '?token=' + encodeURIComponent(self.token);
       var id = encodeURIComponent(t.id);
-      var fmt = String(t.format || (t.raw && t.raw.fileFormat) || '').toLowerCase();
+      var fmt = String(t.format || '').toLowerCase();
       var direct = fmt === 'mp3' || fmt === 'm4a' || fmt === 'aac' || fmt === 'wav' || fmt === 'ogg';
       if (direct) {
         cb(null, self.base + '/api/tracks/' + id + '/stream' + q, 1);
@@ -774,12 +774,21 @@
   }
 
   /* ---------------- 网络：优先原生桥（file:// 里没有 CORS） ---------------- */
+  /* 原生桥的回调现在直接嵌对象（以前 Java 用 org.json 把 payload 再转义一遍，
+     560KB 的 /api/states 会变成 1.3MB 的字符串再被 JS 二次 parse）。
+     老包仍传字符串，所以两种都接。 */
+  function parseOut(v) {
+    if (v == null) return {};
+    if (typeof v === 'string') { try { return JSON.parse(v || '{}'); } catch (e) { return null; } }
+    return v;
+  }
+
   window.__musicHttpCb = function (id, out) {
     var cb = S.httpCbs[id];
     if (!cb) return;
     delete S.httpCbs[id];
-    var o;
-    try { o = JSON.parse(out || '{}'); } catch (e) { cb('返回解析失败'); return; }
+    var o = parseOut(out);
+    if (o === null) { cb('返回解析失败'); return; }
     if (o && o.error) { cb(String(o.error)); return; }
     cb(null, num(o.status, 0), String(o.body == null ? '' : o.body));
   };
@@ -793,8 +802,8 @@
     var cb = S.binCbs[id];
     if (!cb) return;
     delete S.binCbs[id];
-    var o;
-    try { o = JSON.parse(out || '{}'); } catch (e) { cb('返回解析失败'); return; }
+    var o = parseOut(out);
+    if (o === null) { cb('返回解析失败'); return; }
     if (o && o.error) { cb(String(o.error)); return; }
     if (!o.b64) { cb('没有数据'); return; }
     cb(null, String(o.mime || 'image/jpeg'), String(o.b64));
@@ -884,11 +893,11 @@
       next();
     });
     a.addEventListener('play', function () {
-      S.playing = true; paintTransport(); paintList(); startTick();
+      S.playing = true; paintTransport(); markPlaying(); startTick();
       if (S.track && S.status !== 'error' && S.status !== 'mock') setStatus('ok', '正在播放');
     });
     a.addEventListener('pause', function () {
-      S.playing = false; paintTransport(); paintList();
+      S.playing = false; paintTransport(); markPlaying();
       if (S.track && S.status !== 'error' && S.status !== 'mock') setStatus('ok', '已暂停');
     });
     a.addEventListener('error', function () {
@@ -955,7 +964,7 @@
     S.track = track;
     S.lyrics = null; S.lyricIdx = -1; paintLyrics();
     paintNow();
-    paintList();
+    paintList();          /* 切歌要重建列表（当前行要挪位置），这里不是每事件路径 */
     setStatus(S.status === 'error' ? 'error' : (S.status === 'mock' ? 'mock' : 'ok'), S.status === 'mock' ? '演示音源 · ' + (track.artist || '') : '正在播放');
     var key = String(track.id);
     if (S.backend && S.backend.lyrics) {
@@ -1092,13 +1101,15 @@
   function loadLibPage(skip) {
     if (S.libBusy || !S.backend || !S.backend.libTracks) return;
     if (skip >= S.lib.total) return;
+    /* 封顶：列表只画前 LIB_MAX_ROWS 行，再装进来既看不见也占内存（一首带 raw 的曲目 ~1KB） */
+    if (S.lib.items.length >= LIB_MAX_ROWS) { paintList(); return; }
     S.libBusy = true;
     S.backend.libTracks(skip, LIB_PAGE, function (err, res) {
       S.libBusy = false;
       if (err) { setStatus('error', '所有歌曲没加载出来：' + err); paintList(); return; }
       S.lib.total = num(res.total, S.lib.total);
       var items = res.items || [];
-      for (var i = 0; i < items.length; i++) S.lib.items.push(items[i]);
+      for (var i = 0; i < items.length && S.lib.items.length < LIB_MAX_ROWS; i++) S.lib.items.push(items[i]);
       paintList();
     });
   }
@@ -1182,6 +1193,43 @@
       '<span class="m-song-d">' + fmtTime(t.duration) + '</span></button>';
   }
 
+  /* 行级播放标记：以前每次播放/暂停都重建整张列表（LIB_MAX_ROWS=1500 时一次 3~6 万字符 innerHTML）。
+     现在只改「上一行」和「当前行」两个节点的 class 与图标。全量重绘后 onRow 会作废重算。 */
+  var onRow = -1;
+  function rowNode(i) {
+    var e = S.el;
+    if (!e.list || i < 0 || !e.list.children || i >= e.list.children.length) return null;
+    var b = e.list.children[i];
+    if (!b || !b.getAttribute) return null;
+    var act = b.getAttribute('data-mact');
+    if (act !== 'track' && act !== 'libtrack') return null;
+    return b;
+  }
+  function paintRow(b, on) {
+    if (!b) return;
+    b.className = 'm-song' + (on ? ' on' : '');
+    var ico = b.querySelector ? b.querySelector('.m-song-ico') : null;
+    if (ico) {
+      var h = svg(on && S.audio && !S.audio.paused ? 'wave' : 'play');
+      if (ico.innerHTML !== h) ico.innerHTML = h;
+    }
+  }
+  /* 当前曲目在可见列表里的行号（歌单视图用 S.tracks，所有歌曲视图用 S.lib.items） */
+  function currentRow() {
+    if (!S.track) return -1;
+    var list = S.view === 'lib' ? S.lib.items : S.tracks;
+    if (!list || !list.length) return -1;
+    for (var i = 0; i < list.length; i++) if (list[i] && list[i].id === S.track.id) return i;
+    return -1;
+  }
+  function markPlaying() {
+    var idx = currentRow();
+    if (onRow >= 0 && onRow !== idx) paintRow(rowNode(onRow), false);
+    paintRow(rowNode(idx), !!(S.track && S.audio && !S.audio.paused));
+    onRow = idx;
+  }
+  function resetRowMark() { onRow = -1; markPlaying(); }
+
   function paintLib() {
     var e = S.el;
     var items = S.lib.items;
@@ -1194,6 +1242,7 @@
       h += '<div class="m-lib-tip">全部 ' + S.lib.total + ' 首都已装好 · 开「随机」时不用装完，服务器直接给随机曲目</div>';
     }
     e.list.innerHTML = h;
+    resetRowMark();
   }
 
   function setVol(v) {
@@ -1300,7 +1349,12 @@
   function queueCoverRepaint() {
     if (coverRepaint) return;
     coverRepaint = true;
-    setTimeout(function () { coverRepaint = false; paintNow(); paintList(); }, 250);
+    setTimeout(function () {
+      coverRepaint = false;
+      paintNow();
+      /* 只有「歌单」视图的封面图在列表里；歌曲/所有歌曲视图不显示封面，别重绘整表 */
+      if (S.view === 'pl') paintList();
+    }, 250);
   }
   function evictCovers() {
     while (coverOrder.length > COVER_CAP) {
@@ -1308,15 +1362,20 @@
       if (old && old !== S.track) old.cover = '';
     }
   }
+  var coverFail = {};
   function resolveCover(item) {
     if (!item || item.cover || !item.coverReq) return;
     var b = S.backend;
     if (!b || !b.loadCover) return;
     var key = String(item.coverReq.coverArtUrl || item.coverReq.coverArtPath || '');
     if (!key || S.coverPend[key]) return;
+    var failedAt = coverFail[key];
+    if (failedAt && new Date().getTime() - failedAt < 600000) return;
     S.coverPend[key] = true;
     b.loadCover(item.coverReq, function (err, src) {
       delete S.coverPend[key];
+      if (err) { coverFail[key] = new Date().getTime(); return; }
+      delete coverFail[key];
       if (err || !src) { act('cover failed ' + err); return; }
       item.cover = src;
       if (coverOrder.indexOf(item) < 0) coverOrder.push(item);
@@ -1514,6 +1573,7 @@
           '<span class="m-song-d">' + fmtTime(t.duration) + '</span></button>';
       }
       e.list.innerHTML = h;
+      resetRowMark();
       return;
     }
     if (!S.playlists.length) {

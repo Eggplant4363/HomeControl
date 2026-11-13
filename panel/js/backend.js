@@ -264,8 +264,10 @@
       var timer = setTimeout(function () { fin(false, 0, null); }, 12000);   // 桥不回也要放手
       restCbs[cbId] = function (raw) {
         clearTimeout(timer);
-        var r = null;
-        try { r = JSON.parse(raw); } catch (e) { r = null; }
+        /* 新壳直接嵌对象（省掉一次 org.json 转义 + 一次 JSON.parse；560KB 的
+           /api/states 从 ~1.3MB 字符串降到 ~600KB 对象）。老壳传字符串，两种都接。 */
+        var r = raw;
+        if (typeof r === 'string') { try { r = JSON.parse(r); } catch (e) { r = null; } }
         if (!r || r.error) { fin(false, 0, null); return; }
         var data = null;
         try { data = r.body ? JSON.parse(r.body) : null; } catch (e) { data = null; }
