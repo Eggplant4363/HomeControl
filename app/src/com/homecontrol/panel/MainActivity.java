@@ -904,10 +904,13 @@ public class MainActivity extends Activity {
                 ua = WebSettings.getDefaultUserAgent(MainActivity.this);
             } catch (Throwable t) { }
             ua = ua.replace("\\", "/").replace("\"", "'");
+            /* beatAge = 距离上一次面板心跳过了多久（-1 = 从来没跳过）。诊断页与回归脚本靠它
+               判断 JS 定时器还活着（页面卡住时它会一直涨到看门狗阈值）。 */
             return "{\"sdk\":" + Build.VERSION.SDK_INT
                     + ",\"model\":\"" + Build.MODEL + "\""
                     + ",\"device\":\"" + Build.DEVICE + "\""
                     + ",\"ver\":\"" + appVersion() + "\""
+                    + ",\"beatAge\":" + (lastBeat == 0L ? -1 : (System.currentTimeMillis() - lastBeat))
                     + ",\"ua\":\"" + ua + "\"}";
         }
 

@@ -79,7 +79,7 @@ stats(): {"renders":3,"entityEvents":18335,"tiles":3,"entities":1264}
 | C11 | `netInfo()` 60s TTL 缓存 | 每次枚举网卡 + `WifiManager.getConnectionInfo()`（MIUI 上几十 ms），自注册每分钟调一次 |
 | C12 | `httpProbe` 超时 6000/6000 → 2500/2500 | 这是**同步**桥调用：网络不通时页面 JS 被冻结最长 12s（现在最长 5s） |
 
-## 5. 改后数字（MI PAD 2，debug 包 versionCode 56，pid 3063）
+## 5. 改后数字（MI PAD 2，debug 包 versionCode 57 / 0.7.20，pid 3063）
 
 ```
 {"mtime20":15, "netInfo1":3, "battery1":1, "renderGrid3":0, "svg500":0,
@@ -90,8 +90,17 @@ stats(): {"renders":3,"entityEvents":18335,"tiles":3,"entities":1264}
 - `netInfo1` 3ms（C11 命中缓存，改前每次几十 ms）
 - `prefs200` 2ms（原有缓存，未改，作为对照）
 - `check-rest.js` 并发 5 条 → `{"got":5,"codes":[200,200,200,200,200]}`（证明 C9 的嵌对象契约可用）
-- 门禁：`node --check` 三个文件通过；`tools/lint-es5.js` → `ALL PASS (7 files, 0 modern-syntax hit, 5 style note)`；`tools/lint-css.js` → `ALL PASS`；`tools/test-ui.js` → `ALL PASS (215 checks)`；构建 debug 185KB / release 173KB（release 的 dex 不含 `MockHaServer`）
+- 门禁：`node --check` 三个文件通过；`tools/lint-es5.js` → `ALL PASS (7 files, 0 modern-syntax hit, 5 style note)`；`tools/lint-css.js` → `ALL PASS`；`tools/test-ui.js` → `ALL PASS (251 checks)`；构建 debug 189KB / release 173KB（release 的 dex 不含 `MockHaServer`）
 - 两台部署回归：MI PAD 2 `SECURITY OK 9/9`、`REST OK`、`TEMP OK`；Pad 5 `10.10.1.188:36161` DEPLOY OK、实体 1264
+
+## 5b. 第二轮（候选里挑出来的三条，Pad 5 `10.10.1.188:36161` 实测）
+
+- **定时器合并**：原来 7 个各自独立的定时器（tick 1s / 看门狗 5s / camPaint 8s / heartbeat 4s / sparkPaint 20s / battGuard 30s / reportSelf 60s）合成一个 1s 主循环按 `beat % N` 分频（`panel/js/app.js` boot 里）。定时器条数是 Chromium 57 上的实打实开销，分频后回调落在同一帧。
+  验证：桥的 `info().beatAge`（新增字段，见下）每 5 秒采样 = `3632 → 699 → 1917 → 3040 ms`，全部 < 4600ms → heartbeat 仍按 4 秒在跑，看门狗语义没变（45000ms 阈值远没碰到）；logcat 30s 内 `watchdog reload` 0 次。
+  坑：**不能靠包装 `AndroidBridge.heartbeat` 来数次数**（Chromium 57 上给 Java 注入对象赋方法不生效，`wrap: wrapped` 但计数恒 0）→ 改成读桥自己的 `beatAge`。
+- **心跳可观测**：`Bridge.info()` 多一个 `beatAge`（距上次心跳的毫秒，`-1` = 从来没跳过）。诊断页与回归脚本用它判断 JS 定时器还活着；页面卡住时它会一路涨到看门狗阈值。
+- **`camSrc` 缓存**：`camAuthOf()` 把 `haHttpBase` + 归一化令牌算一次（改 HA 配置会重载面板，所以不用失效逻辑），原来每块摄像头卡片每 8 秒重读 localStorage + 两次 regex + encodeURIComponent。
+- **封面在 Java 侧缩放**（候选 3，已落地）：`Bridge.downscale(byte[], int max)` —— `BitmapFactory` 先 `inJustDecodeBounds` 量尺寸，`inSampleSize` 取 2 的幂直到 ≤512px，再 `JPEG q78` 重编码；`httpBinary` 在 `mime` 是 `image/*` 且原始 >120KB 时走它，并把返回的 `mime` 改成 `image/jpeg`（不然 JS 按原 mime 解 data URI 会失败）。失败回退原图。
 
 ## 6. 有意不动的东西（这些已经是对的，别再"优化"）
 
@@ -99,15 +108,15 @@ stats(): {"renders":3,"entityEvents":18335,"tiles":3,"entities":1264}
 
 ## 7. 下一轮候选（本轮没做，理由写清楚）
 
-1. **`panel/js/app.js` 拆模块**（hc-util/hc-theme/hc-store/hc-grid/hc-sheet/hc-self/hc-dim/hc-settings/hc-gestures，共享状态仍挂 `window.HC.S`）——纯搬迁，收益是可维护性而不是性能；app.js 现在 4482 行 / 203KB，是最大资产。风险在于并行会话正在改 app.js。
-2. **`MainActivity.java` 拆 `PanelWebView/PanelBridge/HttpGateway/Watchdog/DevUrlResolver`**——现在 1472 行，混了 10 个职责。
-3. **封面在 Java 侧 `BitmapFactory` + `inSampleSize` 缩到 ≤512px 再编码**——常规封面 ~50KB → base64 ~67KB，LRU 60 张最坏 ~120MB。要改桥的返回语义，风险中等。
-4. **`updDownload` 先 HEAD 取长度 + `update.js` 加锁防重入**——现在 `contentLength=-1`，进度条一直半截（症状：「检查中…」停住）。
-5. **曲线历史串行队列（max 2）**与弹层开着时暂停批量历史请求。
-6. **配置从 `/sdcard/HomeControl/` 迁到 `getFilesDir()`**——世界可读的长期令牌；要同时改 `app.js` 读写、`music.js`、`push.ps1`，工作量中等，属于安全而不是性能。
-7. **`subscribeEntities` 只在变化时写串**（`backend.js` 每帧全量拼）与 `send` 的 raw 双复制——量出来的收益很小，且那条路径是状态通道的主干，不动比动更安全。
-8. **把 1s tick / 5s watchdog / 20s spark / 8s cam / 4s heartbeat / 60s reportSelf 合并成一个 1s tick 按 modulo 派发**，暗屏时整体降频。审计里排到了第 12 位：收益是「少几条定时器」而不是少网络，而 heartbeat（4s 一次桥调用）是看门狗的依据，合并会改变自愈语义——先别动。
-9. **`camSrc` 缓存 `haHttpBase` + token**（现在每次每相机都重跑两次 regex）；`selectTile/paintPicked` 的 `className` regex replace（编辑态小活）；`setColumns` 写 `gridTemplate` 后 `setTimeout(0)` 再写 + 读 `clientWidth`（布局读后写）。这三条都是小开销，改它们的风险大于收益。
+1. **`panel/js/app.js` 拆模块**（hc-util/hc-theme/hc-store/hc-grid/hc-sheet/hc-self/hc-dim/hc-settings/hc-gestures，共享状态仍挂 `window.HC.S`）——纯搬迁，收益是可维护性而不是性能；app.js 现在 4703 行 / 203KB，是最大资产。风险在于并行会话正在改 app.js。
+2. **`MainActivity.java` 拆 `PanelWebView/PanelBridge/HttpGateway/Watchdog/DevUrlResolver`**——现在 1762 行，混了 10 个职责（外加电池保养与自升级）。
+3. ~~封面在 Java 侧缩到 ≤512px~~ —— **已做**（§5b）。
+4. ~~`updDownload` 先 HEAD 取长度~~ —— **不用做**：`updDownload` 已经有 `int total = c.getContentLength()`（GitHub CDN 的 GET 会给长度），进度条有分母。`update.js` 的下载重入锁仍然值得加（连点两次会起两条下载线程）。
+5. **曲线历史串行队列（max 2）**与弹层开着时暂停批量历史请求（并发上限已做了一半）。
+6. **配置从 `/sdcard/HomeControl/` 迁到 `getFilesDir()`**——世界可读的长期令牌；要同时改 `app.js` 读写、`music.js`、`push.ps1`、`safeConfigPath()` 白名单，工作量中等，属于安全而不是性能。**这是下一轮最该做的一条。**
+7. ~~`subscribeEntities` 只在变化时写串~~ —— **不存在**：`panel/js/backend.js:163` 只发一次 `subscribe_events / state_changed`（全量订阅），过滤在 JS 的 `emitEntity` 里；没有每帧拼串这条路。
+8. ~~定时器合并~~ —— **已做**（§5b）。暗屏整体降频没做：暗屏时 cam/spark 已经早退，剩下的只有 heartbeat（看门狗依据）与 1s tick（时钟本来就要走），再降频会牺牲自愈。
+9. ~~`camSrc` 缓存 base+token~~ —— **已做**（§5b）。剩下没做：`selectTile/paintPicked` 的 `className` regex replace（编辑态小活）、`setColumns` 写 `gridTemplate` 后 `setTimeout(0)` 再读 `clientWidth`——都是小开销，改它们的风险大于收益。
 10. `checkMemGuard` 的 `nodeCount` 每 10min 全 DOM 走查：**保留**，它是自愈护栏，不是热点。
 
 ## 8. 这一轮踩到的坑（也进了 `docs/REFACTOR.md` §5）

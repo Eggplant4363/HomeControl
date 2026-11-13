@@ -540,19 +540,31 @@
   /* 摄像头快照：HA 的 camera 实体带 entity_picture（已签名的 /api/camera_proxy/...），
      没有就自己拼 http base + /api/camera_proxy/<id>?token=<长期令牌>。
      注意：<img> 不能带 Authorization 头，所以必须用 URL 里的令牌。 */
+  /* HA 的 http 基址与令牌：改配置会重载面板，所以算一次就够（原来每块摄像头卡片每 8 秒
+     都重读一遍 localStorage + normalizeToken + encodeURIComponent） */
+  var camAuth = null;
+  function camAuthOf() {
+    if (!camAuth) {
+      var ha = S.ha || readHaFile() || {};
+      camAuth = {
+        base: haHttpBase(ha.url || (cfg.ha && cfg.ha.url) || ''),
+        token: encodeURIComponent(normalizeToken(ha.token || (cfg.ha && cfg.ha.token) || ''))
+      };
+    }
+    return camAuth;
+  }
+
   function camSrc(id) {
     var attrs = attrsOf(id);
-    var ha = S.ha || readHaFile() || {};
-    var base = haHttpBase(ha.url || (cfg.ha && cfg.ha.url) || '');
+    var a = camAuthOf();
     var pic = attrs && attrs.entity_picture;
     if (pic) {
       pic = String(pic);
       if (pic.indexOf('http') === 0 || pic.indexOf('data:') === 0) return pic;
-      return base + pic;
+      return a.base + pic;
     }
-    if (!base) return '';
-    return base + '/api/camera_proxy/' + encodeURIComponent(id) + '?token=' +
-      encodeURIComponent(normalizeToken(ha.token || (cfg.ha && cfg.ha.token) || ''));
+    if (!a.base) return '';
+    return a.base + '/api/camera_proxy/' + encodeURIComponent(id) + '?token=' + a.token;
   }
 
   /* 实时画面：go2rtc（或任意 MJPEG 源）。
@@ -4588,15 +4600,11 @@ function boot() {
     if (S.unconfigured) { firstRunHint(); maybeShowGuide(); }
 
     tick();
-    setInterval(tick, 1000);
-
-    /* 网络回来立刻重连：重启后 WiFi 常常比面板晚十几秒，别等指数退避 */
-    window.addEventListener('online', function () {
-      actLog('online → reconnect');
-      if (S.real && S.backend && S.backend.reconnect) S.backend.reconnect();
-    });
-    /* 看门狗：连不上超过 20 秒就主动重连一次（只在本地面板、真实模式生效） */
-    setInterval(function () {
+    /* 原来 7 个各自独立的定时器（1s/4s/5s/8s/20s/30s/60s）合成一个 1s 主循环，
+       按计数分频：定时器数量是 Chromium 57 上的实打实开销，而且分频后所有回调
+       落在同一帧里，屏幕刷新不用来回排程。 */
+    var beat = 0;
+    function wsWatchdog() {
       if (!S.real || !S.backend || !S.backend.reconnect) return;
       if (S.status && S.status.connected) { S.lastKick = 0; return; }
       var now = Date.now();
@@ -4605,11 +4613,25 @@ function boot() {
         actLog('watchdog reconnect');
         S.backend.reconnect();
       }
-    }, 5000);
+    }
+    setInterval(function () {
+      beat++;
+      tick();
+      if (beat % 5 === 0) wsWatchdog();
+      if (beat % 8 === 0) camPaint();
+      if (beat % 4 === 0) heartbeat();
+      if (beat % 20 === 0) sparkPaint();
+      if (beat % 30 === 0) battGuard();
+      if (beat % 60 === 0) reportSelf();
+    }, 1000);
+
+    /* 网络回来立刻重连：重启后 WiFi 常常比面板晚十几秒，别等指数退避 */
+    window.addEventListener('online', function () {
+      actLog('online → reconnect');
+      if (S.real && S.backend && S.backend.reconnect) S.backend.reconnect();
+    });
     setTimeout(camPaint, 600);
-    setInterval(camPaint, 8000);
     setTimeout(sparkPaint, 1200);
-    setInterval(sparkPaint, 20000);
 
     S.backend = S.real
       ? new window.HABackend({ url: ha.url, token: ha.token })
@@ -4620,12 +4642,9 @@ function boot() {
     S.backend.onStatus(setStatus);
     S.backend.start();
 
-    setInterval(heartbeat, 4000);
     /* 每分钟向 HA 报一次自己的状态；连上后 3 秒先报一次（这时实体才齐） */
-    setInterval(reportSelf, 60000);
     setTimeout(reportSelf, 3000);
     /* 电池保养：每 30 秒查一次；连上后 20 秒先查一次（状态表已刷、自身电量已报） */
-    setInterval(battGuard, 30000);
     setTimeout(battGuard, 20000);
     applyPrefs();
   bindDim();
