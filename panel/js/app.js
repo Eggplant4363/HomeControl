@@ -59,9 +59,16 @@
         return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
       });
     }
+    /* 图标字符串按名字缓存：一次重绘要拼几十次同样的壳，老 WebView 上拼接比查表贵 */
+    var svgCache = {};
     function svg(name) {
-      var d = ICONS[name] || ICONS.gear;
-      return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">' + d + '</svg>';
+      var key = name || 'gear';
+      var s = svgCache[key];
+      if (!s) {
+        var d = ICONS[key] || ICONS.gear;
+        s = svgCache[key] = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">' + d + '</svg>';
+      }
+      return s;
     }
     function num(v, d) { var n = parseFloat(v); return isNaN(n) ? d : n; }
     function pad(n) { return n < 10 ? '0' + n : '' + n; }
@@ -568,6 +575,8 @@
   /* 卡片缩略图：8 秒刷新一次（只在真实模式下有后端可拉） */
   function camPaint() {
     if (!el.grid || !el.grid.querySelectorAll) return;
+    /* 暗屏遮罩态下缩略图看不见：整夜每 8 秒下载 + 解码全是白做（这台板子稳态最大的网络开销） */
+    if (S.dimOn) return;
     /* 设置页/弹层打开时网格整块 visibility:hidden，刷新缩略图只会白下载、白解码 */
     if (document.body && document.body.className.indexOf('sheet-open') > -1) return;
     var nodes = el.grid.querySelectorAll('.cam-thumb');
@@ -623,10 +632,15 @@
 
   function sparkPaint() {
     if (!el.grid || !el.grid.querySelectorAll) return;
+    /* 暗屏时曲线看不见，历史请求整夜白发 */
+    if (S.dimOn) return;
     /* 同上：隐藏网格时不必每 20 秒给每张卡发一次历史请求 */
     if (document.body && document.body.className.indexOf('sheet-open') > -1) return;
     S.sparkCache = S.sparkCache || {};
     S.sparkBusy = S.sparkBusy || {};
+    /* 一轮最多发两条历史请求：一次 20 张卡并发打满桥的线程池，老板子上会卡 UI */
+    var inflight = 0;
+    for (var bk in S.sparkBusy) if (S.sparkBusy[bk]) inflight++;
     var nodes = el.grid.querySelectorAll('.t-spark');
     for (var i = 0; i < nodes.length; i++) {
       var box = nodes[i];
@@ -646,6 +660,8 @@
       }
       if (S.sparkBusy[id]) continue;
       if (!S.backend || !S.backend.restHistory) continue;
+      if (inflight >= 2) continue;      /* 本轮并发上限，剩下的下一轮（20 秒后）再拉 */
+      inflight++;
       S.sparkBusy[id] = 1;
       (function (sid) {
         S.backend.restHistory(sid, SPARK_HOURS, function (list) {
@@ -662,15 +678,26 @@
     }
   }
 
+  /* 回调到达时按 id 直接找节点：旧实现每次都 querySelectorAll 扫一遍网格再比属性。
+     节点表由 sparkPaint/renderGrid 重建（网格重建后旧节点没了，下次再扫一次）。 */
+  var sparkNodes = null;
   function sparkDraw(id, html) {
-    if (!el.grid || !el.grid.querySelectorAll) return;
-    var nodes = el.grid.querySelectorAll('.t-spark');
-    for (var i = 0; i < nodes.length; i++) {
-      if (nodes[i].getAttribute('data-spark') !== id) continue;
-      nodes[i].setAttribute('data-h', html);
-      nodes[i].innerHTML = html;
-      nodes[i].className = html ? 't-spark' : 't-spark none';
+    if (!sparkNodes) {
+      sparkNodes = {};
+      if (el.grid && el.grid.querySelectorAll) {
+        var nodes = el.grid.querySelectorAll('.t-spark');
+        for (var i = 0; i < nodes.length; i++) {
+          var sid = nodes[i].getAttribute('data-spark');
+          if (sid) sparkNodes[sid] = nodes[i];
+        }
+      }
     }
+    var box = sparkNodes[id];
+    if (!box || !box.parentNode) { sparkNodes = null; return; }
+    if (box.getAttribute('data-h') === html) return;
+    box.setAttribute('data-h', html);
+    box.innerHTML = html;
+    box.className = html ? 't-spark' : 't-spark none';
   }
 
   function camPaintBig() {
@@ -690,7 +717,7 @@
   function tileHtml(item) {
     var tile = item.tile;
     var naCls = isNa(stateOf(tile.entity)) ? ' na' : '';
-    var span = cardSpan(tile.entity, num(prefs().cols, 4));
+    var span = cardSpan(tile.entity, num(prefs().cols, 4), tile);
     /* 行跨度不再是编辑态专属：默认尺寸也会让摄像头/温湿度计占两行 */
     var rows = cellRows(tile);
     var notAdded = S.editing && !cardVisible(tile.entity);
@@ -781,8 +808,9 @@
     if (!node) return;
     var tile = item.tile, st = stateOf(tile.entity), attrs = attrsOf(tile.entity);
     /* 保留 span-N（卡片宽度）与 selected（编辑态选中），否则每次状态推送都会把宽度/选中抹掉 */
-    var sp = cardSpan(tile.entity, num(prefs().cols, 4));
-    var rw = rowSpan(tile.entity);
+    /* updateTile 每次状态推送都跑一次：尺寸直接用手里的 tile 算，不再按实体反查 */
+    var sp = cardSpan(tile.entity, num(prefs().cols, 4), tile);
+    var rw = cellRows(tile);
     var tiny = sp === 1 && rw === 1;
     var half = rw < 1;
     var tcls = 'tile type-' + tile.type + ' mode-' + iconMode(tile) + (isNa(st) ? ' na' : '') + (tiny ? ' tiny' : '') + (half ? ' half' : '') + (isOn(tile) ? ' on' : '') + (sp > 1 ? ' span-' + sp : '') + (rw > 1 ? ' rows-' + rw : '');
@@ -995,8 +1023,12 @@
     return document.documentElement.className.indexOf('hc-light') > -1;
   }
 
+  var themeLight = null;
   function applyTheme(name) {
     var light = name === 'light';
+    /* 皮肤没变就别全量重建网格：卡片描边色只依赖 isLight()，类没换卡片也不用换 */
+    if (themeLight === light) return;
+    themeLight = light;
     document.documentElement.className = light ? 'hc-light' : '';
     renderGrid(true);
   }
@@ -1149,36 +1181,8 @@
   function accLine(triple) {
     return toneOf(triple, isLight() ? 62 : 58, 0.5);
   }
-  /* 旧实现（明亮皮肤把亮度压到 0.36）保留成死代码会被 lint 抱怨，这里直接删掉后续分支 */
-  function legacyThemeAcc(triple) {
-    if (!isLight()) return triple;
-    var p = String(triple).split(',');
-    if (p.length < 3) return triple;
-    var r = num(p[0], 0) / 255, g = num(p[1], 0) / 255, b = num(p[2], 0) / 255;
-    var mx = Math.max(r, g, b), mn = Math.min(r, g, b);
-    var l = (mx + mn) / 2;
-    var d = mx - mn;
-    var s = d === 0 ? 0 : d / (1 - Math.abs(2 * l - 1));
-    if (s < 0.18) return triple;
-    var h = 0;
-    if (mx === r) h = ((g - b) / d) % 6;
-    else if (mx === g) h = (b - r) / d + 2;
-    else h = (r - g) / d + 4;
-    h = (h * 60 + 360) % 360;
-    l = Math.min(l, 0.36);
-    s = Math.max(s, 0.55);
-    var c = (1 - Math.abs(2 * l - 1)) * s;
-    var x = c * (1 - Math.abs((h / 60) % 2 - 1));
-    var m = l - c / 2;
-    var rr = 0, gg = 0, bb = 0;
-    if (h < 60) { rr = c; gg = x; bb = 0; }
-    else if (h < 120) { rr = x; gg = c; bb = 0; }
-    else if (h < 180) { rr = 0; gg = c; bb = x; }
-    else if (h < 240) { rr = 0; gg = x; bb = c; }
-    else if (h < 300) { rr = x; gg = 0; bb = c; }
-    else { rr = c; gg = 0; bb = x; }
-    return Math.round((rr + m) * 255) + ',' + Math.round((gg + m) * 255) + ',' + Math.round((bb + m) * 255);
-  }
+  /* 旧实现（明亮皮肤把亮度压到 0.36）已删：tone 引擎（toneOf）本来就按皮肤亮度输出，
+     这套 HSL 压暗分支没人调用，留着只会让 lint 与阅读都多一堆死代码。 */
 
   function visibleRooms(rooms, hidden) {
     var out = [];
@@ -1241,9 +1245,9 @@
   }
 
   /** 卡片横跨几列（1~N），编辑里可改；没改过的按设备类型给默认值（照米家） */
-  function cardSpan(entity, cols) {
+  function cardSpan(entity, cols, tile) {
     var ex = editState().span[entity];
-    var n = ex === undefined ? defaultCellW(tileByEntity(entity)) : num(ex, 1);
+    var n = ex === undefined ? defaultCellW(tile || tileByEntity(entity)) : num(ex, 1);
     if (n < 1) n = 1;
     if (cols && n > cols) n = cols;
     return n;
@@ -1317,14 +1321,14 @@
   function sortCards(list) {
     var ord = editState().order, pos = {};
     for (var i = 0; i < ord.length; i++) pos[ord[i]] = i;
+    /* 比较键先算好存下来：比较器每次拼 name+entity，一帧排序要拼几十次 */
+    for (var j = 0; j < list.length; j++) {
+      list[j]._k = (list[j].tile.name || '') + '\u0000' + list[j].tile.entity;
+      list[j]._p = pos[list[j].tile.entity] === undefined ? 1e9 : pos[list[j].tile.entity];
+    }
     list.sort(function (a, b) {
-      var ea = a.tile.entity, eb = b.tile.entity;
-      var pa = pos[ea] === undefined ? 1e9 : pos[ea];
-      var pb = pos[eb] === undefined ? 1e9 : pos[eb];
-      if (pa !== pb) return pa - pb;
-      var ka = (a.tile.name || '') + '\u0000' + ea;
-      var kb = (b.tile.name || '') + '\u0000' + eb;
-      return ka < kb ? -1 : (ka > kb ? 1 : 0);
+      if (a._p !== b._p) return a._p - b._p;
+      return a._k < b._k ? -1 : (a._k > b._k ? 1 : 0);
     });
     return list;
   }
@@ -1395,9 +1399,10 @@
 
   function renderGrid(force) {
     S.renderCount = (S.renderCount || 0) + 1;
+    sparkNodes = null;              /* 旧的曲线节点全没了，按 id 的节点表要作废 */
     var items = itemsFor(S.room);
     var sig = S.room + '|' + (S.editing ? 'E' : 'N') + '|' + items.map(function (it) {
-      return it.tile.entity + ':' + cardSpan(it.tile.entity, num(prefs().cols, 4)) + 'x' + cellRows(it.tile);
+      return it.tile.entity + ':' + cardSpan(it.tile.entity, num(prefs().cols, 4), it.tile) + 'x' + cellRows(it.tile);
     }).join(',');
     S.items = items;
     /* 实体 → 卡片 / 下标 的 O(1) 索引，供 tileByEntity / updateByEntity 用；每次渲染只建一次 */
@@ -2681,17 +2686,20 @@
     else if (tile.type === 'camera') body = cameraSheet(tile, id, st, attrs);
     else body = sensorSheet(tile, id, st, attrs);
 
-    el.sheetInner.innerHTML =
-      '<div class="sheet-head"><div><div class="sheet-name">' + esc(displayName(tile)) + '</div>' +
-      '<div class="sheet-room">' + esc((item.room ? item.room + ' · ' : '') + id) + '</div></div>' +
-      (tile && tile.entity ? '<button class="sheet-rename" data-act="rename-open" title="重命名">' + svg('edit') + '</button>' : '') +
-      '<button class="sheet-close" data-act="close">' + svg('close') + '</button></div>' +
-      '<div class="sheet-body">' + body + '</div>';
-
+    /* 弹层开着时每个状态事件都重排一次整块 markup + 重绑 5 个监听。
+       描边色先写（它可能只随色温变，markup 不变）；markup 没变就不动 DOM、不重绑监听。 */
     var rawA = accentFor(tile);
     el.sheet.style.setProperty('--accent', themeAcc(rawA));
     el.sheet.style.setProperty('--acc-c', accContainer(rawA));
     el.sheet.style.setProperty('--acc-line', accLine(rawA));
+    var html = '<div class="sheet-head"><div><div class="sheet-name">' + esc(displayName(tile)) + '</div>' +
+      '<div class="sheet-room">' + esc((item.room ? item.room + ' · ' : '') + id) + '</div></div>' +
+      (tile && tile.entity ? '<button class="sheet-rename" data-act="rename-open" title="重命名">' + svg('edit') + '</button>' : '') +
+      '<button class="sheet-close" data-act="close">' + svg('close') + '</button></div>' +
+      '<div class="sheet-body">' + body + '</div>';
+    if (html === S.sheetHtml) return;
+    S.sheetHtml = html;
+    el.sheetInner.innerHTML = html;
     bindSheetInputs();
   }
 
@@ -2767,12 +2775,20 @@
     maybeNightlyReload();
   }
 
+  /* 天气：每推送都扫一遍状态表再写 innerHTML。读数没变就直接返回。 */
+  var weatherSig = null;
   function renderWeather() {
     var w = null;
     for (var id in S.states) if (id.indexOf('weather.') === 0) { w = S.states[id]; break; }
-    if (!w) { el.weather.innerHTML = ''; return; }
-    var info = WEATHER[w.state] || [w.state, 'cloud'];
+    if (!w) {
+      if (weatherSig !== '') { weatherSig = ''; el.weather.innerHTML = ''; }
+      return;
+    }
     var attrs = w.attributes || {};
+    var sig = w.state + '|' + (attrs.temperature == null ? '' : Math.round(num(attrs.temperature, 0)));
+    if (sig === weatherSig) return;
+    weatherSig = sig;
+    var info = WEATHER[w.state] || [w.state, 'cloud'];
     var temp = attrs.temperature != null ? '<span class="w-temp">' + Math.round(num(attrs.temperature, 0)) + '°</span>' : '';
     el.weather.innerHTML = svg(info[1]) + '<span>' + esc(info[0]) + '</span>' + temp;
   }
@@ -2971,7 +2987,9 @@
       nightEnd: d.nightEnd == null ? 7 : d.nightEnd,
       nightIdleSec: d.nightIdleSec == null ? 20 : d.nightIdleSec,
       level: d.level == null ? 0.88 : d.level,
-      nightLevel: d.nightLevel == null ? 0.95 : d.nightLevel
+      nightLevel: d.nightLevel == null ? 0.95 : d.nightLevel,
+      /* 暗屏亮度以前没透传：enterDim 只能一直用兜底 0.35，config.js 里的 dim.brightness 形同虚设 */
+      brightness: d.brightness == null ? 0.35 : d.brightness
     };
   }
 
@@ -3045,6 +3063,8 @@ function startPixelShift() {
   var app = document.getElementById('app');
   if (!app || every <= 0 || max <= 0) return;
   var step = function () {
+    /* 暗屏时整页重栅格毫无意义（遮罩盖着，画面也没内容在变） */
+    if (S.dimOn) return;
     var dx = Math.round((Math.random() * 2 - 1) * max);
     var dy = Math.round((Math.random() * 2 - 1) * max);
     if (!dx && !dy) dx = max;
@@ -3334,18 +3354,9 @@ function bindDim() {
     if (b && b.heartbeat) b.heartbeat();
   }
 
-  function watchReload() {
-    var b = window.AndroidBridge;
-    if (!b || !b.mtime) return;
-    var path = '/sdcard/HomeControl/panel/.rev';
-    var last = b.mtime(path);
-    setInterval(function () {
-      var m = b.mtime(path);
-      if (!m) return;
-      if (!last) { last = m; return; }
-      if (m !== last) { last = m; if (location.reload) location.reload(); }
-    }, 1500);
-  }
+  /* 开发热更新只看 watchDevReload（panel/js/app.js 尾部）：它自己会在 60 秒内
+     没等到 .rev 就停止轮询。以前这里还有个每 1.5 秒跑一次的 watchReload，
+     正式包里 .rev 永远不存在 → 一辈子每 1.5 秒让壳去 stat 一次 /sdcard，纯白跑。 */
 
   /* ---------------- 事件绑定 ---------------- */
   /* 用壳 App 的原生 HTTP 探一下地址/令牌：200=通、401/403=令牌错、error=连不上 */
@@ -3693,7 +3704,6 @@ function bindDim() {
     S.sheetItem = null;
     S.sheetEntity = null;
     el.sheetInner.innerHTML = diagSheetHtml();
-    freezeGrid(true);
     el.mask.className = 'mask show';
     el.sheet.className = 'sheet show';
     /* 探活会阻塞几秒，先出页面再测，避免弹层迟迟不出现 */
@@ -4418,7 +4428,6 @@ function boot() {
     /* 每分钟向 HA 报一次自己的状态；连上后 3 秒先报一次（这时实体才齐） */
     setInterval(reportSelf, 60000);
     setTimeout(reportSelf, 3000);
-    watchReload();
     applyPrefs();
   bindDim();
   startPixelShift();

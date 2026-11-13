@@ -359,7 +359,7 @@ body::before { content: none; }
   display: flex; flex-direction: column;
   overflow: hidden;
   scrollbar-width: none; -ms-overflow-style: none;
-  will-change: transform;
+  /* will-change 只在弹层真正打开时挂：常驻会给一块 99% 时间不用的面板留一个独立合成层 */
   backface-visibility: hidden;
   contain: layout paint;
   -webkit-overflow-scrolling: auto;
@@ -369,13 +369,14 @@ body::before { content: none; }
   overflow-y: auto; -webkit-overflow-scrolling: touch;
   padding: 20px 32px 24px;
   scrollbar-width: none; -ms-overflow-style: none;
-  /* 老 WebView：显式提为独立滚动合成层，滚动时只重绘自己 */
-  will-change: transform; backface-visibility: hidden;
+  /* 老 WebView：显式提为独立滚动合成层，滚动时只重绘自己（同样只在打开时挂） */
+  backface-visibility: hidden;
   transform: translateZ(0);
   contain: layout style paint;
 }
 .sheet::-webkit-scrollbar { display: none; }
-.sheet.show { transform: translate3d(0, 0, 0); }
+.sheet.show { transform: translate3d(0, 0, 0); will-change: transform; }
+.sheet.show .sheet-inner { will-change: transform; }
 
 .sheet-head { display: flex; align-items: flex-start; }
 .sheet-name { font-size: 20px; font-weight: 600; color: var(--text-1); }
