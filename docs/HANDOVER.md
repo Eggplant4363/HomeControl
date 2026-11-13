@@ -182,9 +182,10 @@ app/src_debug/      只在 debug 变体编译的假 HA（release dex 里没有�
 app/certs/          ISRG 锚证书源文件（构建拷进 assets/certs，本身不放进 assets）
 panel/              面板前端（HTML/CSS/JS，Chromium 57 兼容；唯一的真相，assets 不入库）
 tools/              构建/部署/推送 + 自检 + 真机回归（env.ps1、lib/cdp.js、check-{security,rest,temp,tls}.js…）
-dist/               homecontrol.apk（debug，165 KB）/ homecontrol-release.apk（153 KB），versionName 0.7.12 / versionCode 49
+dist/               homecontrol.apk（debug，181 KB）/ homecontrol-release.apk（169 KB），versionName 0.7.17 / versionCode 54
 docs/ARCHITECTURE.md 两层职责、Bridge 契约、TLS 与看门狗规则、构建七步
 docs/REFACTOR.md    本轮重构：已修清单+证据、验证矩阵、待办、踩坑表
+docs/PERFORMANCE.md 性能基线与批次 A/B/C 的改动、改后数字、有意不动的既有优化、下一轮候选
 docs/TOOLING.md     每个脚本跑什么、需要什么前提、失败了怎么办（env 变量表 + 端口表 + 三条咬人的坑）
 docs/USAGE.md       使用手册（含首次上墙、掉线处理、截图索引）
 docs/screens/       29 张实机/PC 截图

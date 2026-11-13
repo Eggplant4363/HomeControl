@@ -1,4 +1,4 @@
-# Manual APK build: aapt2 -> javac -> d8 -> zip -> zipalign -> apksigner.
+﻿# Manual APK build: aapt2 -> javac -> d8 -> zip -> zipalign -> apksigner.
 # No Gradle, no dependencies beyond the Android SDK build-tools and a JDK 17.
 # 版本号和变体走参数（以前每次升版本都要复制一个 patch-version-NN.js，那种仪式已经终结）。
 #   tools\build.ps1                    → debug 包（带假 HA、当前版本 49）
@@ -8,8 +8,8 @@
 [CmdletBinding()]
 param(
     [string]$OutName = "homecontrol.apk",
-    [int]$VersionCode = 53,
-    [string]$VersionName = "0.7.16",
+    [int]$VersionCode = 54,
+    [string]$VersionName = "0.7.17",
     [string]$Variant = "debug"          # debug | release
 )
 
@@ -33,9 +33,20 @@ foreach ($p in @($bt, $androidJar, $javac)) {
     if (-not (Test-Path $p)) { throw "missing build dependency: $p" }
 }
 
-$b = Join-Path $root "build"
+# 变体各自一套中间产物目录：debug 与 release 的 javac 源集不同（debug 多 app/src_debug），
+# 共用 build\classes 会让 release 把上一轮 debug 的 MockHaServer.class 一起 dex 进去
+# （沙箱把 build\classes 做成 reparse point，逐项删也删不掉里面的旧 class）。
+$b = Join-Path $root $(if ($Variant -eq "release") { "build-release" } else { "build" })
 $dist = Join-Path $root "dist"
-Remove-Item $b -Recurse -Force -ErrorAction SilentlyContinue
+# 逐项删，跳过 reparse point：DSH 文件沙箱会把写进 build/ 的临时文件做成符号链接
+# （Attributes 带 ReparsePoint、Target 为空），Remove-Item -Recurse 碰到它们的空目标
+# 会报「Cannot bind argument to parameter 'Path' because it is null」直接中断构建。
+if (Test-Path $b) {
+    foreach ($e in Get-ChildItem $b -Force) {
+        if (($e.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) { continue }
+        Remove-Item $e.FullName -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
 New-Item -ItemType Directory -Force "$b\res", "$b\classes", "$b\dex", "$b\gen", $dist | Out-Null
 
 # 1. bundle the web panel + TLS 信任锚 into assets/（assets 是构建产物，不进 git）
@@ -116,6 +127,12 @@ Write-Host "[5/7] d8 ok"
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 Add-Type -AssemblyName System.IO.Compression
 $unsigned = Join-Path $b "unsigned.apk"
+$aligned = Join-Path $b "aligned.apk"
+# 沙箱把上一次构建留下的文件做成 reparse point：Copy-Item -Force 覆盖它们会失败，
+# ZipFile::Open(Update) 报「being used by another process」。先删再拷。
+foreach ($stale in @($unsigned, $aligned)) {
+    if (Test-Path $stale) { Remove-Item $stale -Force -ErrorAction SilentlyContinue }
+}
 Copy-Item $baseApk $unsigned -Force
 $zip = [System.IO.Compression.ZipFile]::Open($unsigned, [System.IO.Compression.ZipArchiveMode]"Update")
 $null = [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip, (Join-Path $b "dex\classes.dex"), "classes.dex", [System.IO.Compression.CompressionLevel]"Optimal")

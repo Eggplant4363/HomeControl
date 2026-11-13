@@ -6,7 +6,7 @@
 
 ---
 
-## 1. 已修（都有真机证据，设备 = MI PAD 2 `A3P4661B1BA6`，debug 变体 versionCode 48）
+## 1. 已修（都有真机证据，设备 = MI PAD 2 `A3P4661B1BA6`，debug 变体 versionCode 54；**性能批次 A/B/C 见 [docs/PERFORMANCE.md](docs/PERFORMANCE.md)**，那一轮改的是热点而不是安全）
 
 ### P0 安全
 
@@ -153,3 +153,7 @@ powershell -File tools\verify.ps1 -Serial A3P4661B1BA6
 | 临时脚本/备份跑一半就没了 | `build.ps1` 会 wipe `build/`（本轮就把 `build/dev-verify*.js`、`build/probe-state.js` 抹掉过两次，第二次报 `Cannot find module`） | 临时脚本放 `backup/tmp/`，设备配置备份放 `backup/`；`tools/lib/cdp.js` 的 `adbOut` 中转文件仍在 `ROOT/build/`（构建之后会重建目录，不影响） |
 | `node tools/check-*.js` 打印完结果后进程还活着十几秒 | `WS.call` 的 20s 超时定时器吊住 event loop | 不是错误；批量跑时每条单独跑并直接读 stdout（PowerShell 的 `Select-Object -Last N` 会把输出缓冲到进程退出，看着像"卡住"） |
 | `probe-globals.js` 里 `typeof window.__PANEL_TEST__` = `object`，但脚本判定它是 undefined | 判断写成了 `window.HC && window.HC.__PANEL_TEST__`——这个面板没有 `window.HC` 这个全局，测试对象直接挂在 `window.__PANEL_TEST__` | 测试钩子取 `window.__PANEL_TEST__`（`tools/check-temp.js` 已改成这个） |
+| `build.ps1` 报 `Cannot bind argument to parameter 'Path' because it is null`（这次不是 BOM） | DSH 文件沙箱会把写进 `build/` 的文件做成 **reparse point**（`Attributes` 带 `ReparsePoint`、`Target` 为空），`Remove-Item -Recurse` 遍历到它们的空目标就中断 | 已修：逐项删并跳过 reparse point（`tools/build.ps1` 第 38 行附近）；`unsigned.apk`/`aligned.apk` 先 `Remove-Item` 再 `Copy-Item`，否则 `ZipFile::Open(Update)` 报 `being used by another process` |
+| release 包里居然有 `MockHaServer` | debug 与 release 共用 `build\classes`，沙箱让那个目录删不干净，上一轮 debug 的 `.class` 被一起 dex 进去 | 已修：变体各用一套中间目录（`build` / `build-release`，后者已加进 `.gitignore`）；每次发版用 python 读 `classes.dex` 断言 `Lcom/homecontrol/panel/MockHaServer;` **不在** release 里 |
+| javac 报「内部类 MainActivity.Bridge 中的静态声明非法」 | 把 `contentLength()` 写成了 `private static`，而 `Bridge` 是**非静态**内部类 | 改成实例方法（内部类能直接调外层实例方法）；Java 8 + SDK 22 的约束要一起守 |
+| javac 报「字符文字的行结尾不合法」 | node 一次性脚本里用模板字面量写 Java 的 `'\n'`，`\n` 被 JS 展开成**真换行**，字符字面量被劈成两行 | 往 Java 源码里写转义要写 `'\\n'`；改完立刻 `build.ps1` 编译验证，别等真机 |

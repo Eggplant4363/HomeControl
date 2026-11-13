@@ -12,6 +12,7 @@ app/build/
 app/assets/panel/
 app/assets/certs/
 tools/build/
+build-release/
 
 # ── 本机与设备私有数据（不要进仓库）──────────────────────────
 # ha.json 里有本机 HA 地址与长期访问令牌，只提交 ha.json.example
