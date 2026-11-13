@@ -79,6 +79,10 @@ public class MainActivity extends Activity {
     /** 假 HA 服务器只在 debug 源码目录里（app/src_debug/），正式包里这个类根本不存在，所以用反射 */
     private Object mockHa;
     private TlsPolicy tls;
+    /** 原生请求共用的两条线程：以前每个请求都 new Thread（自注册 5 个 POST + 兜底轮询 + 封面，
+     * 全是新线程 + 一次完整 TCP/TLS 握手，老机器上 0.3~1.5s）。长请求最多占一条，剩下的排队。 */
+    private final java.util.concurrent.ExecutorService netPool =
+            java.util.concurrent.Executors.newFixedThreadPool(2);
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -117,8 +121,18 @@ public class MainActivity extends Activity {
     }
 
     /** 开发/联调开关：debug.flag 存在才放开调试能力（CDP、url.txt、假 HA） */
+    private static long debugCheckedAt = 0L;
+    private static boolean debugCached = false;
+
+    /** debug.flag 的 stat 缓存：boot 路径上这个判断要跑三次，每次都是一次 /sdcard stat。
+        60 秒 TTL —— push.ps1 改开关最迟 60 秒生效，重装/重启立刻生效。 */
     private static boolean debugEnabled() {
-        return new File(DEBUG_FLAG).exists();
+        long now = System.currentTimeMillis();
+        if (now - debugCheckedAt > 60000L) {
+            debugCached = new File(DEBUG_FLAG).exists();
+            debugCheckedAt = now;
+        }
+        return debugCached;
     }
 
     /**
@@ -167,7 +181,9 @@ public class MainActivity extends Activity {
         if (Build.VERSION.SDK_INT >= 19 && debugEnabled()) {
             try { WebView.setWebContentsDebuggingEnabled(true); } catch (Throwable t) { }
         }
-        tls = new TlsPolicy(this);
+        // TlsPolicy 不在这里建：系统信任库初始化 + 解析两个 PEM 锚要 100~300ms，开机那一页
+        // 可能根本不需要 https。第一次真用到（applyTls）才建。
+        tls = null;
 
         web.setWebChromeClient(new WebChromeClient() {
             @Override
@@ -283,18 +299,58 @@ public class MainActivity extends Activity {
         return ASSET_PAGE;
     }
 
-    /** 面板自己配置的服务器主机（ha.json 的 url、music.json 的 baseUrl），WebView 放行 SSL 只用它 */
-    private String configuredHosts() {
-        StringBuilder sb = new StringBuilder();
+    /* 配置文件里的地址主机名：结果按「两个配置文件的长度之和」缓存 —— 配置没变就零 IO。
+       onReceivedSslError 跑在 UI 线程上，平板 2 每个新连接（WS 握手 / 每条音频流 / 封面）都要走
+       一遍这条路，以前每次都要读两个文件 + 现编正则（10~40ms）。取主机改成手工扫字符串，不写正则。 */
+    private java.util.Set<String> hostCache = null;
+    private long hostStamp = -1L;
+
+    /** 面板自己配置的服务器主机（ha.json 的 url、music.json 的 baseUrl/base），WebView 放行 SSL 只用它 */
+    private java.util.Set<String> configuredHosts() {
+        long stamp = fileLen(CONFIG_DIR + "ha.json") + 7L * fileLen(CONFIG_DIR + "music.json");
+        java.util.Set<String> cached = hostCache;
+        if (cached != null && hostStamp == stamp) return cached;
+        java.util.Set<String> set = new java.util.HashSet<String>();
+        addHost(set, readConfig(CONFIG_DIR + "ha.json"), "url");
         String music = readConfig(CONFIG_DIR + "music.json");
-        sb.append(hostOf(readConfig(CONFIG_DIR + "ha.json"), "url")).append(' ')
-          /* 音乐页存的字段叫 baseUrl；早先这里读的是 "base"，道理鱼的主机因此一直没进白名单，
-             音频流在 WebView 里被 cancel 掉（平板 2 上表现为「播放失败（音频地址不可达）」）。 */
-          .append(hostOf(music, "baseUrl")).append(' ')
-          .append(hostOf(music, "base")).append(' ');
-        SharedPreferences sp = getSharedPreferences(PREFS, MODE_PRIVATE);
-        sb.append(hostOf(sp.getString(KEY_URL, ""), "")).append(' ');
-        return sb.toString();
+        /* 音乐页存的字段叫 baseUrl；早先这里读的是 "base"，道理鱼的主机因此一直没进白名单，
+           音频流在 WebView 里被 cancel 掉（平板 2 上表现为「播放失败（音频地址不可达）」）。
+           老键 "base" 也一起读，兼容早先写错字段的平板。 */
+        addHost(set, music, "baseUrl");
+        addHost(set, music, "base");
+        String pageHost = schemeHost(getSharedPreferences(PREFS, MODE_PRIVATE).getString(KEY_URL, ""));
+        if (pageHost != null && pageHost.length() > 0) set.add(pageHost.toLowerCase());
+        hostCache = set;
+        hostStamp = stamp;
+        return set;
+    }
+
+    private static long fileLen(String p) {
+        try { return new File(p).length(); } catch (Throwable t) { return 0L; }
+    }
+
+    /** 从一段 JSON 文本里取某个字段的地址主机名：手工找 "key": 后的引号值，交给 schemeHost */
+    private static void addHost(java.util.Set<String> set, String text, String key) {
+        if (text == null || text.length() == 0) return;
+        String q = String.valueOf('"');
+        String form = q + key + q + ":";
+        int i = text.indexOf(form);
+        if (i < 0) {
+            form = q + key + q + " :";
+            i = text.indexOf(form);
+        }
+        if (i < 0) return;
+        int v = text.indexOf(q, i + form.length());
+        if (v < 0) return;
+        int from = v + 1;
+        int to = from;
+        while (to < text.length() && to - from < 80) {
+            char c = text.charAt(to);
+            if (c == '"' || c == '\n' || c == '\r') break;
+            to++;
+        }
+        String host = schemeHost(text.substring(from, to));
+        if (host != null && host.length() > 0) set.add(host.toLowerCase());
     }
 
     /**
@@ -311,19 +367,12 @@ public class MainActivity extends Activity {
         if (host == null || host.length() == 0) return;
         if (TlsPolicy.isPrivateHost(host)) return;      // 局域网本来就一直放行
         synchronized (verifiedHosts) {
-            if (verifiedHosts.size() >= 8 && !verifiedHosts.contains(host)) return;
-            if (verifiedHosts.contains(host)) return;
-            verifiedHosts.add(host);
+            String lower = host.toLowerCase();
+            if (verifiedHosts.size() >= 8 && !verifiedHosts.contains(lower)) return;
+            if (verifiedHosts.contains(lower)) return;
+            verifiedHosts.add(lower);
             Log.i(TAG, "ssl allow (verified by bridge): " + host);
         }
-    }
-
-    /** 从一段 JSON 文本里取某个字段的地址主机名（不做 JSON 解析，只要 host；http/https/ws/wss 都认） */
-    private static String hostOf(String text, String key) {
-        if (text == null || text.length() == 0) return "";
-        java.util.regex.Matcher m = java.util.regex.Pattern
-                .compile("\"" + key + "\"\\s*:\\s*\"(?:https?|wss?)://([^/\"]+)").matcher(text);
-        return m.find() ? m.group(1) : "";
     }
 
     /** WebView 的 SSL 放行范围：局域网、面板自己配置的服务器主机，或原生桥真验过的主机 */
@@ -331,14 +380,10 @@ public class MainActivity extends Activity {
         String host = schemeHost(url);
         if (host == null || host.length() == 0) return false;
         if (TlsPolicy.isPrivateHost(host)) return true;
-        String hosts = configuredHosts();
-        for (String h : hosts.split(" ")) {
-            if (h.length() > 0 && h.equalsIgnoreCase(host)) return true;
-        }
+        if (configuredHosts().contains(host.toLowerCase())) return true;
         synchronized (verifiedHosts) {
-            if (verifiedHosts.contains(host)) return true;
+            return verifiedHosts.contains(host.toLowerCase());
         }
-        return false;
     }
 
     /**
@@ -476,9 +521,11 @@ public class MainActivity extends Activity {
             @Override
             public void run() {
                 try {
+                    if (isFinishing()) return;      /* 别给一个正在销毁的 Activity 续期 */
                     long now = System.currentTimeMillis();
                     if (!screenInteractive()) {
                         lastBeat = now;   // 熄屏期间不算卡死，醒来后 onResume 会重新计时
+                        ui.postDelayed(this, 30000L);   /* 熄屏时 30 秒醒一次就够，但别再彻底停下 */
                         return;
                     }
                     if (!everBeat) {
@@ -577,6 +624,8 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        ui.removeCallbacksAndMessages(null);        /* 看门狗/重试/横幅的 pending 回调全部作废 */
+        try { netPool.shutdownNow(); } catch (Throwable t) { }
         try {
             if (mockHa != null) mockHa.getClass().getMethod("stop").invoke(mockHa);
         } catch (Throwable t) { }
@@ -666,6 +715,8 @@ public class MainActivity extends Activity {
         /** 设备自身的网络身份：上墙后排查「它到底连在哪个网」用得上 */
         @JavascriptInterface
         public String netInfo() {
+            long now = System.currentTimeMillis();
+            if (netInfoCache != null && now - netInfoAt < 60000L) return netInfoCache;
             String ip = "";
             String ssid = "";
             try {
@@ -690,8 +741,12 @@ public class MainActivity extends Activity {
                     if (s != null) ssid = s.replace("\"", "").replace("\\", "/");
                 }
             } catch (Throwable t) { }
-            return "{\"ip\":\"" + ip + "\",\"ssid\":\"" + ssid + "\"}";
+            netInfoCache = "{\"ip\":\"" + ip + "\",\"ssid\":\"" + ssid + "\"}";
+            netInfoAt = now;
+            return netInfoCache;
         }
+        private String netInfoCache = null;
+        private long netInfoAt = 0L;
 
         /** 电池状态：注册成 HA 实体时上报电量。sticky intent，不用注册 receiver */
         @JavascriptInterface
@@ -813,6 +868,17 @@ public class MainActivity extends Activity {
                 }
             });
         }
+        /** 懒建：第一次域名请求时才付信任库初始化的钱（以前 onCreate 里同步建，boot 白等 100~300ms） */
+        private TlsPolicy tlsPolicy() {
+            TlsPolicy t = tls;
+            if (t == null) {
+                synchronized (MainActivity.this) {
+                    if (tls == null) tls = new TlsPolicy(MainActivity.this);
+                }
+            }
+            return tls;
+        }
+
         private SSLContext trustAllCtx = null;
 
         /** 局域网自建 HA 常用自签证书：探活/REST 兜底时一律放行 */
@@ -836,7 +902,7 @@ public class MainActivity extends Activity {
                     public boolean verify(String h2, SSLSession s) { return true; }
                 });
             } else {
-                h.setSSLSocketFactory(tls.context().getSocketFactory());
+                h.setSSLSocketFactory(tlsPolicy().context().getSocketFactory());
                 // 域名连接保持默认主机名校验，不放开
             }
         }
@@ -869,6 +935,12 @@ public class MainActivity extends Activity {
             return c;
         }
 
+        /** 响应声明的长度（没声明给 4096），给 BAOS 一个靠谱的初值 */
+        private int contentLength(HttpURLConnection c) {
+            int len = c.getContentLength();
+            return len > 0 && len < 8000000 ? len : 4096;
+        }
+
         private String restCall(String baseUrl, String token, String method, String path, String payload) {
             HttpURLConnection c = null;
             try {
@@ -883,7 +955,7 @@ public class MainActivity extends Activity {
                 InputStream is = code >= 400 ? c.getErrorStream() : c.getInputStream();
                 String text = "";
                 if (is != null) {
-                    ByteArrayOutputStream bo = new ByteArrayOutputStream();
+                    ByteArrayOutputStream bo = new ByteArrayOutputStream(contentLength(c) + 64);
                     byte[] buf = new byte[4096];
                     int n;
                     while ((n = is.read(buf)) > 0) bo.write(buf, 0, n);
@@ -911,7 +983,7 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public void rest(final String cbId, final String baseUrl, final String token,
                          final String method, final String path, final String payload) {
-            new Thread(new Runnable() {
+            netPool.execute(new Runnable() {
                 public void run() {
                     final String out = restCall(baseUrl, token, method, path, payload);
                     ui.post(new Runnable() {
@@ -920,13 +992,13 @@ public class MainActivity extends Activity {
                                 if (web != null) {
                                     web.evaluateJavascript("window.__restCb && window.__restCb("
                                             + org.json.JSONObject.quote(cbId) + ","
-                                            + org.json.JSONObject.quote(out) + ")", null);
+                                            + out + ")", null);
                                 }
                             } catch (Throwable t) { Log.w(TAG, "rest cb failed: " + t); }
                         }
                     });
                 }
-            }).start();
+            });
         }
         /** 用原生 HTTP 探一下 HA 是否可达、令牌是否有效（WebView 里做 REST 会被 CORS 拦） */
         @JavascriptInterface
@@ -942,6 +1014,9 @@ public class MainActivity extends Activity {
                 /* 注意：u 只是基地址，/api/ 由 openHa 拼 path 补上；
                    之前这里又拼了一次 "/api/"，实际请求成了 /api//api/（404）。 */
                 c = openHa(u, token, "GET", "/api/", false);
+                /* 同步桥调用会冻结页面里的 JS：超时压到 2.5 秒，卡死最长 5 秒而不是 12 秒 */
+                c.setConnectTimeout(2500);
+                c.setReadTimeout(2500);
                 int code = c.getResponseCode();
                 if (code >= 200 && code < 400) rememberVerifiedHost(u);   /* 开机探活验过的主机也记下来 */
                 Log.i(TAG, "httpProbe " + u + " -> " + code);
@@ -964,7 +1039,7 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public void httpReq(final String cbId, final String method, final String url,
                             final String headersJson, final String body) {
-            new Thread(new Runnable() {
+            netPool.execute(new Runnable() {
                 public void run() {
                     final String out = httpText(url, method, headersJson, body);
                     ui.post(new Runnable() {
@@ -973,13 +1048,13 @@ public class MainActivity extends Activity {
                                 if (web != null) {
                                     web.evaluateJavascript("window.__musicHttpCb && window.__musicHttpCb("
                                             + org.json.JSONObject.quote(cbId) + ","
-                                            + org.json.JSONObject.quote(out) + ")", null);
+                                            + out + ")", null);
                                 }
                             } catch (Throwable t) { Log.w(TAG, "httpReq cb failed: " + t); }
                         }
                     });
                 }
-            }).start();
+            });
         }
 
         private String httpGetText(String url) {
@@ -991,7 +1066,7 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public void httpBinary(final String cbId, final String method, final String url,
                                final String headersJson) {
-            new Thread(new Runnable() {
+            netPool.execute(new Runnable() {
                 public void run() {
                     final String out = httpBytes(url, method, headersJson);
                     ui.post(new Runnable() {
@@ -1000,13 +1075,13 @@ public class MainActivity extends Activity {
                                 if (web != null) {
                                     web.evaluateJavascript("window.__musicBinaryCb && window.__musicBinaryCb("
                                             + org.json.JSONObject.quote(cbId) + ","
-                                            + org.json.JSONObject.quote(out) + ")", null);
+                                            + out + ")", null);
                                 }
                             } catch (Throwable t) { Log.w(TAG, "httpBinary cb failed: " + t); }
                         }
                     });
                 }
-            }).start();
+            });
         }
 
         private String httpBytes(String url, String method, String headersJson) {
@@ -1044,15 +1119,20 @@ public class MainActivity extends Activity {
                 int total = 0;
                 if (code >= 200 && code < 300) {
                     InputStream is = c.getInputStream();
-                    ByteArrayOutputStream bo = new ByteArrayOutputStream();
+                    ByteArrayOutputStream bo = new ByteArrayOutputStream(contentLength(c) + 64);
                     byte[] buf = new byte[8192];
                     int n;
+                    boolean truncated = false;
                     while (is != null && (n = is.read(buf)) > 0) {
                         total += n;
-                        if (total > 1500000) { bo.write(buf, 0, 0); break; }   /* 太大就不要了，封面用不到 */
+                        if (total > 1500000) { truncated = true; break; }   /* 太大就不要了，别把半张图当成功 */
                         bo.write(buf, 0, n);
                     }
                     if (is != null) try { is.close(); } catch (Throwable t) { }
+                    if (truncated) {
+                        Log.w(TAG, "httpBinary truncated: " + url + " (" + total + " bytes)");
+                        return "{\"error\":\"too-large\"}";
+                    }
                     b64 = android.util.Base64.encodeToString(bo.toByteArray(), android.util.Base64.NO_WRAP);
                 }
                 Log.i(TAG, "httpBinary " + url + " -> " + code + " (" + total + " bytes, " + b64.length() + " b64) " + mime);
@@ -1113,7 +1193,7 @@ public class MainActivity extends Activity {
                 InputStream is = code >= 400 ? c.getErrorStream() : c.getInputStream();
                 String text = "";
                 if (is != null) {
-                    ByteArrayOutputStream bo = new ByteArrayOutputStream();
+                    ByteArrayOutputStream bo = new ByteArrayOutputStream(contentLength(c) + 64);
                     byte[] buf = new byte[8192];
                     int n;
                     while ((n = is.read(buf)) > 0) bo.write(buf, 0, n);
@@ -1170,24 +1250,24 @@ public class MainActivity extends Activity {
         /** 取 GitHub Release 的 JSON（结果异步回 window.__hcUpdNetCb(cbId, {status|error, body})） */
         @JavascriptInterface
         public void updNet(final String cbId, final String url, final String headersJson) {
-            new Thread(new Runnable() {
+            netPool.execute(new Runnable() {
                 public void run() {
                     final String out = httpText(url, "GET", headersJson, "");
                     Log.i(TAG, "updNet " + url + " -> " + (out.length() > 200 ? out.substring(0, 200) : out));
                     postJs(cbJs("__hcUpdNetCb", cbId, out));
                 }
-            }).start();
+            });
         }
 
         /** 下载 APK：过程回 __hcUpdProg(cbId, pct)，结束回 __hcUpdDone(cbId, {path,bytes} | {error}) */
         @JavascriptInterface
         public void updDownload(final String cbId, final String url, final String fileName) {
-            new Thread(new Runnable() {
+            netPool.execute(new Runnable() {
                 public void run() {
                     final String out = updFetch(cbId, url, fileName);
                     postJs(cbJs("__hcUpdDone", cbId, out));
                 }
-            }).start();
+            });
         }
 
         /** 把 APK 落到 cache/upd/。先写 .part 再改名，中途断了不会留下半个可安装包 */
@@ -1285,7 +1365,7 @@ public class MainActivity extends Activity {
                         if (web != null) {
                             web.evaluateJavascript("window.__hcUpdDone && window.__hcUpdDone("
                                     + org.json.JSONObject.quote(cbId) + ","
-                                    + org.json.JSONObject.quote(out) + ")", null);
+                                    + out + ")", null);
                         }
                     } catch (Throwable t) { Log.w(TAG, "updInstall cb failed: " + t); }
                 }
