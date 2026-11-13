@@ -101,7 +101,7 @@
    * @param entities[{entity_id,area_id,device_id,name,original_name,entity_category,hidden_by,disabled_by}]
    */
   function build(states, areas, devices, entities) {
-    var devArea = {}, devName = {}, entArea = {}, entName = {}, areaName = {}, areaIcon = {};
+    var devArea = {}, devName = {}, entArea = {}, entName = {}, entById = {}, areaName = {}, areaIcon = {};
     (devices || []).forEach(function (d) {
       if (!d || !d.id) return;
       devArea[d.id] = d.area_id || null;
@@ -109,6 +109,7 @@
     });
     (entities || []).forEach(function (e) {
       if (!e || !e.entity_id) return;
+      entById[e.entity_id] = e;
       var a = e.area_id || devArea[e.device_id] || null;
       if (a) entArea[e.entity_id] = a;
       if (e.name || e.original_name) entName[e.entity_id] = e.name || e.original_name;
@@ -156,11 +157,7 @@
 
       if ((type === 'light' || type === 'switch') && (NOISE_ID.test(String(id)) || NOISE_NAME.test(shortName(id, st)))) continue;
 
-      var rec = null;
-      var ents = entities || [];
-      for (var i = 0; i < ents.length; i++) {
-        if (ents[i] && ents[i].entity_id === id) { rec = ents[i]; break; }
-      }
+      var rec = entById[id] || null;
       if (isHidden(rec)) continue;
 
       var areaId = entArea[id] || null;

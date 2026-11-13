@@ -768,6 +768,15 @@
     return spanText(cardSpan(entity, 99), num(prefs().cols, 4));
   }
 
+  /* 每张卡的子节点引用缓存：状态推送每秒多次，updateTile 每次要查 8 个 data-role，
+     查一次缓存到 node.__c，之后直接命中。renderGrid 重建 innerHTML 会换新节点，缓存随之重建。 */
+  function tileChild(node, sel) {
+    var c = node.__c || (node.__c = {});
+    var v = c[sel];
+    if (v === undefined) v = c[sel] = node.querySelector(sel);
+    return v;
+  }
+
   function updateTile(node, item) {
     if (!node) return;
     var tile = item.tile, st = stateOf(tile.entity), attrs = attrsOf(tile.entity);
@@ -791,7 +800,7 @@
     }
 
     /* 图标与数值只在真的变了才写 DOM：每 6 秒一次的状态推送不该反复重建节点 */
-    var ico = node.querySelector('[data-role="ico"]');
+    var ico = tileChild(node, '[data-role="ico"]');
     if (ico) {
       var icoName = iconFor(tile);
       if (ico.getAttribute('data-icon') !== icoName) {
@@ -812,7 +821,7 @@
       if (meterBar) meterBar.style.display = isNaN(lvl) ? 'none' : '';
     }
 
-    var val = node.querySelector('[data-role="val"]');
+    var val = tileChild(node, '[data-role="val"]');
     if (val) {
       /* 1×1 传感卡用大字读数（t-big），宽卡还是原来的 t-val */
       var vcls = tiny ? 't-big' + (isNa(st) ? ' muted' : '') : valClass(tile, st);
@@ -822,7 +831,7 @@
     }
 
     /* 半高卡右侧的小读数 */
-    var hval = node.querySelector('[data-role="hval"]');
+    var hval = tileChild(node, '[data-role="hval"]');
     if (hval) {
       var hcls = 't-hval' + (isNa(st) ? ' muted' : '');
       var hhtml = valHtml(tile, st, attrs);
@@ -833,7 +842,7 @@
     /* 百分比进度条：关着就画到 0（但条还在，点一下就能把灯调亮）。
        正在被手指拖的那一条不跟服务器回包走，否则拖到一半会被拉回去。
        不支持调光的灯（onoff）把条藏掉——骨架是渲染时就画好的，所以这里只切显隐。 */
-    var pbar = node.querySelector('[data-role="pbar"]');
+    var pbar = tileChild(node, '[data-role="pbar"]');
     if (pbar) {
       var pm = pctMeta(tile, attrs);
       if (!pm) {
@@ -851,7 +860,7 @@
     }
 
     /* 传感器曲线：只有数值型传感器才显示，第一次露出来时立刻补画 */
-    var spk = node.querySelector('.t-spark');
+    var spk = tileChild(node, '.t-spark');
     if (spk) {
       var wantSpark = isNumberSensor(tile, attrs) && !isNa(st);
       var scls = wantSpark ? 't-spark' : 't-spark none';
@@ -859,7 +868,7 @@
       if (wantSpark && !spk.getAttribute('data-h')) setTimeout(sparkPaint, 30);
     }
 
-    var sub = node.querySelector('[data-role="sub"]');
+    var sub = tileChild(node, '[data-role="sub"]');
     if (sub) {
       var stxt = subText(tile, st, attrs);
       /* 名称下面那行是「房间 · 状态」；单房间视图里 item.room 为空，就只留状态。
@@ -870,13 +879,13 @@
     }
 
     /* 1×1 卡片下方只有名称：状态由圆钮的颜色负责，不再写状态词 */
-    var cn = node.querySelector('[data-role="cardname"]');
+    var cn = tileChild(node, '[data-role="cardname"]');
     if (cn) {
       var cnname = displayName(tile);
       if (cn.textContent !== cnname) cn.textContent = cnname;
     }
 
-    var set = node.querySelector('[data-role="set"]');
+    var set = tileChild(node, '[data-role="set"]');
     if (set) {
       if (tile.type === 'climate') {
         var cur = num(attrs.current_temperature, NaN);
@@ -1260,6 +1269,8 @@
   }
 
   function tileByEntity(entity) {
+    /* 实体 → 卡片的 O(1) 索引（renderGrid 里建），状态推送每秒多次，别每次线性扫 */
+    if (S.tileMap && S.tileMap[entity]) return S.tileMap[entity];
     var list = S.items || [];
     for (var i = 0; i < list.length; i++) {
       if (list[i].tile && list[i].tile.entity === entity) return list[i].tile;
@@ -1389,6 +1400,14 @@
       return it.tile.entity + ':' + cardSpan(it.tile.entity, num(prefs().cols, 4)) + 'x' + cellRows(it.tile);
     }).join(',');
     S.items = items;
+    /* 实体 → 卡片 / 下标 的 O(1) 索引，供 tileByEntity / updateByEntity 用；每次渲染只建一次 */
+    var tileMap = {}, tileIndex = {};
+    for (var ti = 0; ti < items.length; ti++) {
+      var te = items[ti].tile && items[ti].tile.entity;
+      if (te) { tileMap[te] = items[ti].tile; tileIndex[te] = ti; }
+    }
+    S.tileMap = tileMap;
+    S.tileIndex = tileIndex;
     if (!force && sig === S.sig) {
       for (var i = 0; i < items.length; i++) updateTile(S.tileEls[i], items[i]);
       return;
@@ -2079,8 +2098,17 @@
   }
 
   function updateByEntity(id) {
-    for (var i = 0; i < S.items.length; i++) {
-      if (S.items[i].tile.entity === id) updateTile(S.tileEls[i], S.items[i]);
+    /* 实体 → 下标 的 O(1) 索引；状态推送每秒多次，别线性扫 S.items */
+    var i = (S.tileIndex && S.tileIndex[id] !== undefined) ? S.tileIndex[id] : -1;
+    if (i >= 0 && S.tileEls && S.tileEls[i] && S.items && S.items[i]) {
+      updateTile(S.tileEls[i], S.items[i]);
+      return;
+    }
+    for (var j = 0; j < (S.items || []).length; j++) {
+      if (S.items[j] && S.items[j].tile && S.items[j].tile.entity === id) {
+        updateTile(S.tileEls[j], S.items[j]);
+        return;
+      }
     }
   }
 
