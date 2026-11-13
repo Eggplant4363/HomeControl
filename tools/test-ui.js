@@ -549,6 +549,32 @@ eq(halfLit.indexOf(' half') >= 0, true, '调光卡半高时仍是半高模板');
 eq(halfLit.indexOf('80') >= 0 && halfLit.indexOf('%') >= 0, true, '调光半高卡右边显示 80%');
 api.setStates({});
 
+/* ---------------- 电池保养：开关挑选与噪音过滤 ---------------- */
+console.log('电池保养：开关挑选与噪音过滤');
+api.setStates({
+  'switch.plug_main': { entity_id: 'switch.plug_main', state: 'on', attributes: { friendly_name: '插线板 开关' } },
+  'switch.tu_ya_cha_zuo_socket_1': { entity_id: 'switch.tu_ya_cha_zuo_socket_1', state: 'unavailable', attributes: { friendly_name: '涂鸦插座 插口1' } },
+  'switch.cam_mute': { entity_id: 'switch.cam_mute', state: 'off', attributes: { friendly_name: '摄像机 静音' } },
+  'switch.kettle_keep_relay': { entity_id: 'switch.kettle_keep_relay', state: 'off', attributes: { friendly_name: '水壶 保温' } },
+  'switch.dehum_alarm': { entity_id: 'switch.dehum_alarm', state: 'off', attributes: { friendly_name: '除湿机 提示音' } },
+  'switch.pc_children_lock': { entity_id: 'switch.pc_children_lock', state: 'off', attributes: { friendly_name: '台式电脑 童锁' } }
+});
+eq(api.battSwitchNoise('switch.cam_mute'), true, '英文实体 id（mute）判成噪音');
+eq(api.battSwitchNoise('switch.kettle_keep_relay'), true, '英文实体 id（keep_relay）判成噪音');
+eq(api.battSwitchNoise('switch.dehum_alarm', '除湿机 提示音'), true, '中文友好名（提示音）判成噪音');
+eq(api.battSwitchNoise('switch.pc_children_lock', '台式电脑 童锁'), true, '中文友好名（童锁）判成噪音');
+eq(api.battSwitchNoise('switch.plug_main', '插线板 开关'), false, '主电源开关不是噪音');
+var bs = api.battSwitchSheetHtml();
+eq(bs.indexOf('插线板 开关') >= 0, true, '充电开关列表里有插线板');
+eq(bs.indexOf('涂鸦插座 插口1') >= 0, true, '离线插座也列出');
+eq(bs.indexOf('· 离线') >= 0, true, '离线开关带「· 离线」标记');
+eq(bs.indexOf('摄像机 静音') < 0, true, '功能开关（静音）被藏掉');
+eq(bs.indexOf('水壶 保温') < 0, true, '功能开关（保温）被藏掉');
+eq(bs.indexOf('除湿机 提示音') < 0, true, '功能开关（提示音）被藏掉');
+eq(bs.indexOf('台式电脑 童锁') < 0, true, '功能开关（童锁）被藏掉');
+eq(api.battSwitchLabel(), '未选择', '没选开关时显示「未选择」');
+api.setStates({});
+
 /* ---------------- 自升级（panel/js/update.js）：版本比较 / 资产挑选 / release 解析 ---------------- */
 console.log('自升级：版本比较、APK 挑选、release 解析');
 var UP = windowStub.HCUpdate;

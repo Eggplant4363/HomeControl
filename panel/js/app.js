@@ -957,7 +957,7 @@
 
   /* ---------------- 面板设置（显示/交互/屏幕） ---------------- */
   var PREFS_KEY = 'hc.prefs';
-  var PREF_DEF = { cols: 4, allCards: false, size: 'md', sensors: true, offline: false, tap: 'toggle', undo: 5, autoDim: true, bright: 100, night: true, burn: true, theme: 'dark' };
+  var PREF_DEF = { cols: 4, allCards: false, size: 'md', sensors: true, offline: false, tap: 'toggle', undo: 5, autoDim: true, bright: 100, night: true, burn: true, theme: 'dark', battGuard: false, battSwitch: '', battLow: 40, battHigh: 80, awayScreen: true, awayOff: 5000 };
   /* prefs() 同样按 localStorage 原始串缓存：改设置 → 串变了 → 自动重算 */
   var prefsRaw = null, prefsObj = null;
 
@@ -1015,6 +1015,7 @@
     if (p.autoDim) { if (!S.dimOn) scheduleDim(); } else { clearTimeout(S.dimTimer); }
     setBacklight(p.bright >= 100 ? -1 : num(p.bright, 100) / 100);
     applyTheme(p.theme);
+    applyScreenPolicy();      /* 关掉了「离家熄屏」就立刻恢复常亮 */
   }
 
   /* ---------------- 皮肤（深色 / 明亮） ---------------- */
@@ -1122,6 +1123,109 @@
   /* 状态刷新时也跟一次（不等 60 秒的定时上报） */
   function selfFollow(states) {
     followHa(states && states[SELF.dark]);
+  }
+
+  /* ---------- 电池保养：电量低于低阈值就打开充电开关、高于高阈值就关掉 ----------
+     这台平板常年插电，一直 100% 会让电池鼓包。这里读自己的电量（桥优先，兜底读
+     HA 里自身上报的传感器），配一个智能开关当充电器电源，每 30 秒查一次。 */
+  function battGuard() {
+    var p = prefs();
+    if (!p.battGuard) return;
+    var sw = p.battSwitch;
+    if (!sw) return;
+    var level = -1;
+    var info = selfInfo();
+    if (info.battery >= 0) level = info.battery;
+    else {
+      var be = S.states && S.states[SELF.batt];
+      if (be) level = num(be.state, -1);
+    }
+    if (level < 0) return;                            /* 读不到电量就不动作 */
+    var se = S.states && S.states[sw];
+    if (!se || se.state === 'unavailable' || se.state === 'unknown') return;
+    var isOn = se.state === 'on';
+    var low = num(p.battLow, 40), high = num(p.battHigh, 80);
+    if (level >= high && isOn) {
+      actLog('battGuard ' + level + '% >= ' + high + '% → 断开充电 ' + sw);
+      patch(sw, 'off', null);
+      callService('switch', 'turn_off', { entity_id: sw }).then(function () {
+        S.battLast = { at: Date.now(), act: 'off', level: level };
+        toast('电池保养：已断开充电（' + level + '%）');
+      }, function () { patch(sw, 'on', null); });
+    } else if (level <= low && !isOn) {
+      actLog('battGuard ' + level + '% <= ' + low + '% → 开始充电 ' + sw);
+      patch(sw, 'on', null);
+      callService('switch', 'turn_on', { entity_id: sw }).then(function () {
+        S.battLast = { at: Date.now(), act: 'on', level: level };
+        toast('电池保养：已开始充电（' + level + '%）');
+      }, function () { patch(sw, 'off', null); });
+    }
+  }
+
+  function battSwitchLabel() {
+    var sw = prefs().battSwitch;
+    if (!sw) return '未选择';
+    var e = S.states && S.states[sw];
+    if (e && e.attributes && e.attributes.friendly_name) return e.attributes.friendly_name;
+    return sw.split('.')[1] || sw;
+  }
+
+  /* 藏掉「设备功能开关」（静音/LED/蜂鸣器/倒计时/移动侦测/保温/提示音/童锁…），只留主电源、插座、USB 这类真能断电的开关 */
+  function battSwitchNoise(id, name) {
+    id = id || ''; name = name || '';
+    /* 英文实体 id 里的功能开关关键字（不同厂商不一致，先靠 id 拦一批） */
+    if (/_(?:mute|led|buzzer|keep_relay|count_down|update_power|motion|wdr|glimmer|watermark|ejected|auto_keep_warm|child_lock|enable)(?:_|$)/.test(id)) return true;
+    /* 中文友好名里的功能开关关键字（更稳，各家实体 id 关键字不统一） */
+    if (/静音|保温|指示灯|蜂鸣|提示音|童锁|儿童锁|物理控制锁|背光|勿扰|侦测|使能|标定|翻转|防倒|移动侦测/.test(name)) return true;
+    return false;
+  }
+
+  function battSwitchSheetHtml() {
+    var cur = prefs().battSwitch || '';
+    var html = '<div class="sheet-title">充电开关</div>' +
+      '<div class="sheet-desc">选一个智能开关当这台平板的充电器电源。电量低于「开始充电」就打开它、高于「停止充电」就关掉它。' +
+      '这里只列出真正能断电的开关，设备的功能开关（静音/指示灯之类）已藏掉。</div>';
+    var keys = S.states ? Object.keys(S.states) : [];
+    var list = [];
+    for (var i = 0; i < keys.length; i++) {
+      var id = keys[i];
+      if (id.indexOf('switch.') !== 0) continue;
+      if (id === SELF.dark || id.indexOf('switch.homecontrol_panel_') === 0) continue;   /* 面板自注册的夜间模式开关（自己的或别的屏的）都不是充电开关 */
+      var st = S.states[id];
+      var nm = (st && st.attributes && st.attributes.friendly_name) || id.split('.')[1] || id;
+      if (battSwitchNoise(id, nm)) continue;
+      var avail = !!(st && st.state !== 'unavailable' && st.state !== 'unknown');
+      list.push({ id: id, name: nm, avail: avail });
+    }
+    list.sort(function (a, b) {
+      if (a.avail !== b.avail) return a.avail ? -1 : 1;   /* 在线的排前面 */
+      return a.name < b.name ? -1 : (a.name > b.name ? 1 : 0);
+    });
+    var rows = [];
+    for (var j = 0; j < list.length; j++) {
+      var it = list[j], sel = it.id === cur;
+      rows.push('<div class="p-row"><div class="p-name">' + esc(it.name) +
+        (it.avail ? '' : ' · 离线') + '</div>' +
+        '<button class="p-sw' + (sel ? ' on' : '') + '" data-act="batt-switch-set:' + esc(it.id) + '">' +
+        (sel ? '已选' : '选择') + '</button></div>');
+    }
+    if (!rows.length) rows.push('<div class="empty">没有可用的 switch 实体（先连上 Home Assistant）</div>');
+    html += rows.join('');
+    html += '<div class="cfg-actions">' +
+      '<button class="btn" data-act="batt-switch-clear"' + (cur ? '' : ' disabled') + '>清除选择</button>' +
+      '<button class="btn primary" data-act="close">返回</button></div>';
+    return html;
+  }
+
+  function openBattSwitchSheet() {
+    if (S.sheetShow === 'panel') closeSettingsView();
+    S.sheetOpenedAt = Date.now();
+    S.sheetItem = null;
+    S.sheetEntity = null;
+    el.sheetInner.innerHTML = battSwitchSheetHtml();
+    el.mask.className = 'mask show';
+    el.sheet.className = 'sheet show';
+    actLog('open batt switch picker');
   }
 
   /* 按 CIELAB 把实体强调色映射到当前皮肤的 tone 档（Material 3 的做法：
@@ -2860,6 +2964,44 @@
     }
   }
 
+  /**
+   * 离家熄屏 / 在家亮屏（桥 setScreenPolicy）。规则保守：
+   *   有人 home → 亮屏；所有人都 not_home → 熄屏；
+   *   HA 里没有 person.* 或状态全 unknown → 不动屏幕（宁可一直亮着，别把屏关死）。
+   * home 传数字（renderWho 已经数过），不传就自己数一遍。
+   */
+  function applyScreenPolicy(list, home) {
+    var b = window.AndroidBridge;
+    if (!b || !b.setScreenPolicy) return;
+    if (!prefs().awayScreen) { try { b.setScreenPolicy(true, 0); } catch (e) { } return; }
+    if (!list) list = personList();
+    if (!list.length) return;
+    if (home == null) {
+      home = 0;
+      for (var j = 0; j < list.length; j++) if (whoState(list[j]).home) home++;
+    }
+    var away = 0;
+    for (var i = 0; i < list.length; i++) if (String(list[i].state) === 'not_home') away++;
+    try {
+      if (home > 0) b.setScreenPolicy(true, 0);
+      else if (away > 0) b.setScreenPolicy(false, num(prefs().awayOff, 5000));
+    } catch (e) { }
+  }
+
+  /** Android 6+ 改屏幕超时要在系统设置里允许一次；没允许就给出跳转按钮（5.x 装包就有，不用提） */
+  function screenAuthRow() {
+    var b = window.AndroidBridge;
+    if (!b || !b.screenWritable) return '';
+    var old = false;
+    try { old = num((JSON.parse(b.info() || '{}') || {}).sdk, 0) < 23; } catch (e) { }
+    if (old) return '';
+    var ok;
+    try { ok = b.screenWritable(); } catch (e) { ok = false; }
+    if (ok) return '<div class="set-row"><div class="set-k">熄屏授权</div><div class="set-v">已允许</div></div>';
+    return '<div class="set-row"><div class="set-k">熄屏授权</div><div class="set-v">' +
+      '<button class="btn" data-act="screen-auth">去系统设置允许</button></div></div>';
+  }
+
   function renderWho() {
     if (!el.who) return;
     var list = personList();
@@ -2883,11 +3025,13 @@
     var t = el.who.querySelector('.who-t');
     if (s === S.whoSig && t) {                       /* 只更新文字，避免频繁重载头像图片 */
       if (t.textContent !== txt) t.textContent = txt;
+      applyScreenPolicy(list, home);                 /* 文字没变但状态可能刚翻：策略照旧要更新 */
       return;
     }
     S.whoSig = s;
     el.who.innerHTML = whoHtml(list) + '<span class="who-t">' + esc(txt) + '</span>';
     bindWhoImgs();
+    applyScreenPolicy(list, home);
   }
 
   function setStatus(st) {
@@ -3552,6 +3696,9 @@ function bindDim() {
 
     html += '<div class="set-sec">屏幕</div>' +
       segRow('空闲自动调暗', 'autoDim', [{ v: true, t: '开' }, { v: false, t: '关' }]) +
+      segRow('离家熄屏 · 回家亮屏', 'awayScreen', [{ v: true, t: '开' }, { v: false, t: '关' }]) +
+      segRow('没人碰多久后熄屏', 'awayOff', [{ v: 2000, t: '2 秒' }, { v: 5000, t: '5 秒' }, { v: 15000, t: '15 秒' }]) +
+      screenAuthRow() +
       segRow('唤醒亮度', 'bright', [{ v: 40, t: '40%' }, { v: 70, t: '70%' }, { v: 100, t: '100%' }]) +
       segRow('夜间调暗', 'night', [{ v: true, t: '开' }, { v: false, t: '关' }]) +
       segRow('防烧屏位移', 'burn', [{ v: true, t: '开' }, { v: false, t: '关' }]);
@@ -3569,6 +3716,14 @@ function bindDim() {
       '<div class="set-row"><div class="set-k">音乐</div><div class="set-v">' +
       '<button class="btn" data-act="music-cfg">' + esc(musicKindLabel(musicNow().kind)) + ' · 设置</button>' +
       '<button class="btn" data-act="music-open">打开</button></div></div>';
+
+    html += '<div class="set-sec">电池保养</div>' +
+      '<div class="sheet-desc">常年插电会把电池顶在 100%，容易鼓包。开了以后每 30 秒查一次：电量低于「开始充电」就打开充电开关、高于「停止充电」就关掉。</div>' +
+      segRow('自动保养', 'battGuard', [{ v: true, t: '开' }, { v: false, t: '关' }]) +
+      '<div class="set-row"><div class="set-k">充电开关</div><div class="set-v">' +
+      '<button class="btn" data-act="batt-switch">' + esc(battSwitchLabel()) + '</button></div></div>' +
+      segRow('开始充电', 'battLow', [{ v: 30, t: '30%' }, { v: 40, t: '40%' }, { v: 50, t: '50%' }]) +
+      segRow('停止充电', 'battHigh', [{ v: 70, t: '70%' }, { v: 80, t: '80%' }, { v: 90, t: '90%' }]);
 
     /* 升级（panel/js/update.js）：整块由它自己渲染，这里只负责留位置 */
     if (window.HCUpdate) html += window.HCUpdate.sectionHtml();
@@ -3794,11 +3949,21 @@ function bindDim() {
         if (pkey === 'size') { setColumns(el.grid, num(prefs().cols, 4)); }
         else if (pkey === 'allCards') renderGrid(true);
         else if (pkey === 'sensors' || pkey === 'offline') renderGrid(true);
+        if (pkey.indexOf('batt') === 0) battGuard();
+        if (pkey === 'awayScreen' || pkey === 'awayOff') applyScreenPolicy();
+        return;
+      }
+      if (act === 'screen-auth') {
+        try {
+          AndroidBridge.openWriteSettings();
+          toast('在系统设置里允许「修改系统设置」，回来就能离家熄屏');
+        } catch (e) { toast('打不开系统设置'); }
         return;
       }
       if (act === 'pref-reset') {
         resetPrefs();
-        ['cols', 'size', 'sensors', 'offline', 'tap', 'undo', 'autoDim', 'bright', 'night', 'burn'].forEach(repaintSegRow);
+        ['cols', 'size', 'sensors', 'offline', 'tap', 'undo', 'autoDim', 'bright', 'night', 'burn', 'awayScreen', 'awayOff'].forEach(repaintSegRow);
+        applyScreenPolicy();
         gridClassOnly();
         renderTabs();
         toast('已恢复默认设置');
@@ -3814,6 +3979,22 @@ function bindDim() {
       if (act === 'music-kind') { S.musicKindSel = actEl.getAttribute('data-val'); markSeg('music', actEl); return; }
       if (act === 'music-save') { saveMusicCfg(false); return; }
       if (act === 'music-demo') { saveMusicCfg(true); return; }
+      if (act === 'batt-switch') { openBattSwitchSheet(); return; }
+      if (act.indexOf('batt-switch-set:') === 0) {
+        setPref('battSwitch', act.slice(16));
+        closeSheet();
+        setTimeout(openSettingsView, 60);
+        battGuard();
+        toast('已设置充电开关，开始守护');
+        return;
+      }
+      if (act === 'batt-switch-clear') {
+        setPref('battSwitch', '');
+        closeSheet();
+        setTimeout(openSettingsView, 60);
+        toast('已清除充电开关');
+        return;
+      }
       if (act === 'panel-reload') { reloadSoon('正在重新加载…'); return; }
       if (act.indexOf('upd-') === 0) {
         var up = window.HCUpdate;
@@ -4428,6 +4609,9 @@ function boot() {
     /* 每分钟向 HA 报一次自己的状态；连上后 3 秒先报一次（这时实体才齐） */
     setInterval(reportSelf, 60000);
     setTimeout(reportSelf, 3000);
+    /* 电池保养：每 30 秒查一次；连上后 20 秒先查一次（状态表已刷、自身电量已报） */
+    setInterval(battGuard, 30000);
+    setTimeout(battGuard, 20000);
     applyPrefs();
   bindDim();
   startPixelShift();
@@ -4474,7 +4658,8 @@ function boot() {
     cellRows: cellRows, rowSpan: rowSpan, resizeCard: resizeCard, sizeSheetHtml: sizeSheetHtml, spanText: spanText,
     bulkCount: bulkCount, toggleBulk: toggleBulk, doBulk: doBulk, bulk: function () { return { on: S.bulk, sel: S.bulkSel }; },
     sortCards: sortCards, editToggle: editToggle, editSpan: editSpan, editMove: editMove,
-    editAddAll: editAddAll, editSheetHtml: editSheetHtml, allCards: allCards, visibleRooms: visibleRooms, hiddenRooms: hiddenRooms, hasColor: hasColor, rgbCss: rgbCss, hsvToRgb: hsvToRgb, rgbToHs: rgbToHs, colorPresets: COLOR_PRESETS
+    editAddAll: editAddAll, editSheetHtml: editSheetHtml, allCards: allCards, visibleRooms: visibleRooms, hiddenRooms: hiddenRooms, hasColor: hasColor, rgbCss: rgbCss, hsvToRgb: hsvToRgb, rgbToHs: rgbToHs, colorPresets: COLOR_PRESETS,
+    battGuard: battGuard, battSwitchLabel: battSwitchLabel, battSwitchSheetHtml: battSwitchSheetHtml, battSwitchNoise: battSwitchNoise
   };
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
