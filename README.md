@@ -68,7 +68,7 @@ powershell -ExecutionPolicy Bypass -File tools\deploy.ps1 -SkipApk   # 只改了
 
 它会依次做：adb 在线检查（离线时直接告诉你「长按电源键 10 秒」而不是抛异常）→ 装 APK → 推 `panel\` 到 `/sdcard/HomeControl/panel/` → 改写 `url.txt` → force-stop + 启动 → 校验 `page finished` / 无脚本错误 / 前台是壳 App，最后打印 DEPLOY OK。
 
-版本号随构建更新：`versionName 0.7.12` / `versionCode 49`（`build.ps1` 的默认值就是当前版本；发新包就 `-VersionCode 50 -VersionName "0.7.13"` 并同步改这一行，不用再写一次性升版本脚本——装到已装更高 versionCode 的设备上会 `INSTALL_FAILED_VERSION_DOWNGRADE`），诊断页第一行就能看到「版本 0.7.12 · MI PAD 2」。
+版本号随构建更新：`versionName 0.7.16` / `versionCode 53`（`build.ps1` 的默认值就是当前版本；发新包就 `-VersionCode 54 -VersionName "0.7.17"` 并同步改这一行，不用再写一次性升版本脚本——装到已装更高 versionCode 的设备上会 `INSTALL_FAILED_VERSION_DOWNGRADE`），诊断页第一行就能看到「版本 0.7.16 · MI PAD 2」。
 
 面板把自己也注册进 Home Assistant（0.7.9）：走 `POST /api/states/<entity_id>`（实测 201，不存在就新建，不需要 MQTT），每分钟报一次 `sensor.homecontrol_panel`（在线状态、型号、App 版本、IP/SSID、皮肤、电量、充电、`last_seen`）、`binary_sensor.homecontrol_panel_connected`、`sensor.homecontrol_panel_battery`、`binary_sensor.homecontrol_panel_charging`、`switch.homecontrol_panel_dark_mode`。那个开关是双向的：面板写自己的皮肤，HA 里把开关拨了，面板跟着换皮肤（`selfWritten` 用来区分「HA 那边改了」和「我们自己写的」，不会自己跟自己打架）。注意 HA 的 REST 建的是实体，不是设备注册表里的设备，所以在 HA 界面上它们归在「未分配设备」下。
 ## 构建与部署
@@ -162,7 +162,8 @@ adb push music.json /sdcard/HomeControl/music.json
 - `file://` 页面里 XHR 会被 CORS 拦（道理鱼不返回 `Access-Control-Allow-Origin`），所以所有接口请求都走壳 App 的原生桥 `AndroidBridge.httpReq(cbId, method, url, headersJson, body)`，回调 `window.__musicHttpCb(id, {'{'}status,body{'}'})`；`<audio>` / `<img>` 不受 CORS 限制，可以直接用
 - 道理鱼的封面 `GET /api/cover?path=…` **必须带 `Authorization: Bearer`**（`?token=` 不认），而 `<img>` 加不了请求头 → 走原生桥 `AndroidBridge.httpBinary(cbId, method, url, headersJson)` 取字节转 base64 的 `data:` URI（`window.__musicBinaryCb` 回调，同一 URL 只取一次）
 - 曲库是 FLAC（一首 85MB，平板放不动）：按曲目格式选流 —— mp3/m4a/aac/wav/ogg 直接 `/api/tracks/{id}/stream?token=`，其余走 `/api/tracks/{id}/transcode?token=&format=mp3&bitrate=192`；万一播放失败再退一次转码
-- `WebViewClient.onReceivedSslError` 按**主机范围**放行（不是无脑 `proceed()`）：Android 5.1 的 WebView（Chromium 57）信任库里没有 Let's Encrypt 的 ISRG 根证书，音频流与 WebSocket 走 WebView 自己的网络栈（Java 桥的 `TlsPolicy` 管不到它），不放行就播不出歌、也没有实时推送。放行只限局域网 + 面板自己配置的服务器（`ha.json` 的 url、`music.json` 的 base、弹层里填的地址），没配过的域名一律 `cancel()`；错误码不看（Chromium 57 对同一张证书在页面里报 2、在 WSS 握手里报 3，分类不可靠）。真校验在 Java 侧：`TlsPolicy` 逐环验签 + 有效期 + 主机名（实测 badssl 被 Java 侧 `SSLHandshakeException: untrusted root` 拒掉）
+- `WebViewClient.onReceivedSslError` 按**主机范围**放行（不是无脑 `proceed()`）：Android 5.1 的 WebView（Chromium 57）信任库里没有 Let's Encrypt 的 ISRG 根证书，音频流与 WebSocket 走 WebView 自己的网络栈（Java 桥的 `TlsPolicy` 管不到它），不放行就播不出歌、也没有实时推送。放行只限局域网 + 面板自己配置的服务器（`ha.json` 的 url、`music.json` 的 `baseUrl`（也认旧键 `base`）、弹层里填的地址），没配过的域名一律 `cancel()`；错误码不看（Chromium 57 对同一张证书在页面里报 2、在 WSS 握手里报 3，分类不可靠）。真校验在 Java 侧：`TlsPolicy` 逐环验签 + 有效期 + 主机名（实测 badssl 被 Java 侧 `SSLHandshakeException: untrusted root` 拒掉）
+- 还有一条**运行时放行**：原生桥（REST / `httpReq` / `httpBinary` / 开机探活）请求成功时，把那个 https 域名记进 `verifiedHosts`（上限 8，跳过局域网），日志 `ssl allow (verified by bridge): <host>`。意义是「我们自己的证书校验已经通过过这个域名」，所以 WebView 同一主机的音频流也就放行了——音乐只在设置弹层里配过（只写进 localStorage，设备上并没有 `music.json`）也能播。平板 2 上「获取音乐地址失败」就是这两处：`music.json` 读的是 `base` 而设置存的是 `baseUrl`，加上没有运行时放行，音频流一直 `ssl error cancel`。
 - 拖动时页面**不**先置 `open`，松手后按位移/速度一次性决定开或收（早期版本先置 `open` → 后半段手势被守卫丢掉，右滑打不开）
 - 手势只从左边 64px 内起手才算拉出（`EDGE_PULL`），另外落点落在 `.t-bar`（卡片亮度条）、`input`/`.slider`（设置滑条）、`.toolbar`（场景/房间横滚）、`.sheet`/`.mask`/`.view` 这些控件上时直接放弃，避免和它们抢横滑。Android 10+ 手势导航会把屏幕左边缘留给系统返回，所以 MainActivity 在 API 29+ 用 `setSystemGestureExclusionRects` 把左侧 56dp 宽的竖带排除在系统手势之外（返回手势在右边缘仍可用）——小米平板 5（Android 13）上从边缘滑不出音乐页就是这条在起作用。
 

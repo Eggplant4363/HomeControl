@@ -283,14 +283,39 @@ public class MainActivity extends Activity {
         return ASSET_PAGE;
     }
 
-    /** 面板自己配置的服务器主机（ha.json 的 url、music.json 的 base），WebView 放行 SSL 只用它 */
+    /** 面板自己配置的服务器主机（ha.json 的 url、music.json 的 baseUrl），WebView 放行 SSL 只用它 */
     private String configuredHosts() {
         StringBuilder sb = new StringBuilder();
+        String music = readConfig(CONFIG_DIR + "music.json");
         sb.append(hostOf(readConfig(CONFIG_DIR + "ha.json"), "url")).append(' ')
-          .append(hostOf(readConfig(CONFIG_DIR + "music.json"), "base")).append(' ');
+          /* 音乐页存的字段叫 baseUrl；早先这里读的是 "base"，道理鱼的主机因此一直没进白名单，
+             音频流在 WebView 里被 cancel 掉（平板 2 上表现为「播放失败（音频地址不可达）」）。 */
+          .append(hostOf(music, "baseUrl")).append(' ')
+          .append(hostOf(music, "base")).append(' ');
         SharedPreferences sp = getSharedPreferences(PREFS, MODE_PRIVATE);
         sb.append(hostOf(sp.getString(KEY_URL, ""), "")).append(' ');
         return sb.toString();
+    }
+
+    /**
+     * 运行时放行过的域名主机：原生桥（httpReq/httpBinary/httpProbe）已经用 TlsPolicy
+     * **真验过**证书 + 主机名的那些主机，WebView 的音频流/封面也必然是同一个主机。
+     * 音乐服务器只在 localStorage 里配过（没落盘 music.json）时，配置白名单读不到它，
+     * 靠这里补上——护栏仍然是「我们自己的证书校验通过过」，不是信任所有证书。
+     */
+    private final java.util.Set<String> verifiedHosts = new java.util.HashSet<String>();
+
+    private void rememberVerifiedHost(String url) {
+        if (url == null || !url.startsWith("https://")) return;   // 只有 https 需要这条通道
+        String host = schemeHost(url);
+        if (host == null || host.length() == 0) return;
+        if (TlsPolicy.isPrivateHost(host)) return;      // 局域网本来就一直放行
+        synchronized (verifiedHosts) {
+            if (verifiedHosts.size() >= 8 && !verifiedHosts.contains(host)) return;
+            if (verifiedHosts.contains(host)) return;
+            verifiedHosts.add(host);
+            Log.i(TAG, "ssl allow (verified by bridge): " + host);
+        }
     }
 
     /** 从一段 JSON 文本里取某个字段的地址主机名（不做 JSON 解析，只要 host；http/https/ws/wss 都认） */
@@ -301,7 +326,7 @@ public class MainActivity extends Activity {
         return m.find() ? m.group(1) : "";
     }
 
-    /** WebView 的 SSL 放行范围：局域网，或面板自己配置的服务器主机 */
+    /** WebView 的 SSL 放行范围：局域网、面板自己配置的服务器主机，或原生桥真验过的主机 */
     private boolean sslHostAllowed(String url) {
         String host = schemeHost(url);
         if (host == null || host.length() == 0) return false;
@@ -309,6 +334,9 @@ public class MainActivity extends Activity {
         String hosts = configuredHosts();
         for (String h : hosts.split(" ")) {
             if (h.length() > 0 && h.equalsIgnoreCase(host)) return true;
+        }
+        synchronized (verifiedHosts) {
+            if (verifiedHosts.contains(host)) return true;
         }
         return false;
     }
@@ -851,6 +879,7 @@ public class MainActivity extends Activity {
                     os.close();
                 }
                 int code = c.getResponseCode();
+                if (code >= 200 && code < 400) rememberVerifiedHost(baseUrl);   /* HA 域名验过也放行（WebView 的 WS/REST 走同一主机） */
                 InputStream is = code >= 400 ? c.getErrorStream() : c.getInputStream();
                 String text = "";
                 if (is != null) {
@@ -914,6 +943,7 @@ public class MainActivity extends Activity {
                    之前这里又拼了一次 "/api/"，实际请求成了 /api//api/（404）。 */
                 c = openHa(u, token, "GET", "/api/", false);
                 int code = c.getResponseCode();
+                if (code >= 200 && code < 400) rememberVerifiedHost(u);   /* 开机探活验过的主机也记下来 */
                 Log.i(TAG, "httpProbe " + u + " -> " + code);
                 return "{\"status\":" + code + "}";
             } catch (Throwable t) {
@@ -1006,6 +1036,9 @@ public class MainActivity extends Activity {
                     } catch (Throwable t) { Log.w(TAG, "httpBytes bad headers: " + t); }
                 }
                 int code = c.getResponseCode();
+                /* 原生桥这次请求是 TlsPolicy 真验过证书 + 主机名的：把这个域名记进运行时放行集，
+                   WebView 自己的音频流（同一个主机）就能放行。 */
+                if (code >= 200 && code < 300) rememberVerifiedHost(url);
                 String mime = c.getContentType() == null ? "application/octet-stream" : c.getContentType();
                 String b64 = "";
                 int total = 0;
@@ -1076,6 +1109,7 @@ public class MainActivity extends Activity {
                     os.close();
                 }
                 int code = c.getResponseCode();
+                if (code >= 200 && code < 400) rememberVerifiedHost(url);   /* 登录/曲目/歌词验过的主机也放行音频流 */
                 InputStream is = code >= 400 ? c.getErrorStream() : c.getInputStream();
                 String text = "";
                 if (is != null) {
