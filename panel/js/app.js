@@ -2995,6 +2995,10 @@
       el = document.createElement('div');
       el.id = 'blackout';
       document.body.appendChild(el);
+      // 全黑时遮罩吃掉点击（.on 是 pointer-events:auto），碰一下就醒，别穿透到下面的卡片
+      el.addEventListener('click', function () {
+        if (window.AndroidBridge && AndroidBridge.wakeBlackout) AndroidBridge.wakeBlackout();
+      });
     }
     el.className = on ? 'on' : '';
   };

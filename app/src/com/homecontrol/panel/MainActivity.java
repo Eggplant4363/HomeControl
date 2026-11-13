@@ -928,6 +928,14 @@ public class MainActivity extends Activity {
             return blackout;
         }
 
+        /** 全黑状态下被碰一下：醒过来。遮罩吞掉点击，不会穿透到下面的卡片误触开关。 */
+        @JavascriptInterface
+        public void wakeBlackout() {
+            ui.post(new Runnable() {
+                public void run() { setBlackout(false); }
+            });
+        }
+
         /** 设备自身的网络身份：上墙后排查「它到底连在哪个网」用得上 */
         @JavascriptInterface
         public String netInfo() {
@@ -1187,6 +1195,32 @@ public class MainActivity extends Activity {
             return len > 0 && len < 8000000 ? len : 4096;
         }
 
+        /** 封面缩到 ≤max 边长再编码：50KB 原图 base64 后 ~67KB，缓存 60 张就是 ~120MB，2GB 平板吃不消 */
+        private byte[] downscale(byte[] raw, int max) {
+            try {
+                android.graphics.BitmapFactory.Options o = new android.graphics.BitmapFactory.Options();
+                o.inJustDecodeBounds = true;
+                android.graphics.BitmapFactory.decodeByteArray(raw, 0, raw.length, o);
+                int side = Math.max(o.outWidth, o.outHeight);
+                if (side <= 0) return raw;
+                int sample = 1;
+                while (side / sample > max) sample *= 2;
+                if (sample <= 1) return raw;
+                o.inJustDecodeBounds = false;
+                o.inSampleSize = sample;
+                android.graphics.Bitmap bm = android.graphics.BitmapFactory.decodeByteArray(raw, 0, raw.length, o);
+                if (bm == null) return raw;
+                java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream(64 * 1024);
+                bm.compress(android.graphics.Bitmap.CompressFormat.JPEG, 78, out);
+                bm.recycle();
+                byte[] small = out.toByteArray();
+                return small.length > 0 && small.length < raw.length ? small : raw;
+            } catch (Throwable t) {
+                Log.w(TAG, "downscale failed: " + t.getMessage());
+                return raw;
+            }
+        }
+
         private String restCall(String baseUrl, String token, String method, String path, String payload) {
             HttpURLConnection c = null;
             try {
@@ -1379,7 +1413,12 @@ public class MainActivity extends Activity {
                         Log.w(TAG, "httpBinary truncated: " + url + " (" + total + " bytes)");
                         return "{\"error\":\"too-large\"}";
                     }
-                    b64 = android.util.Base64.encodeToString(bo.toByteArray(), android.util.Base64.NO_WRAP);
+                    byte[] raw = bo.toByteArray();
+                    if (mime != null && mime.startsWith("image/") && raw.length > 120000) {
+                        raw = downscale(raw, 512);
+                        mime = "image/jpeg";   /* 重编码过就是 JPEG，别让 JS 按原 mime 解 */
+                    }
+                    b64 = android.util.Base64.encodeToString(raw, android.util.Base64.NO_WRAP);
                 }
                 Log.i(TAG, "httpBinary " + url + " -> " + code + " (" + total + " bytes, " + b64.length() + " b64) " + mime);
                 org.json.JSONObject out = new org.json.JSONObject();

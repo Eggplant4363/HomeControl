@@ -851,7 +851,7 @@ body::before { content: none; }
   background: #000; opacity: 0; pointer-events: none;
   transition: opacity .8s linear;
 }
-#blackout.on { opacity: 1; }
+#blackout.on { opacity: 1; pointer-events: auto; }
 
 /* ---------------- 负一屏 · 音乐 ----------------
    从主屏往右滑拉出来的一整页。固定层只做位移/透明度（老机器的合成器很吃这个），
