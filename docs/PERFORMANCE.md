@@ -106,6 +106,9 @@ stats(): {"renders":3,"entityEvents":18335,"tiles":3,"entities":1264}
 5. **曲线历史串行队列（max 2）**与弹层开着时暂停批量历史请求。
 6. **配置从 `/sdcard/HomeControl/` 迁到 `getFilesDir()`**——世界可读的长期令牌；要同时改 `app.js` 读写、`music.js`、`push.ps1`，工作量中等，属于安全而不是性能。
 7. **`subscribeEntities` 只在变化时写串**（`backend.js` 每帧全量拼）与 `send` 的 raw 双复制——量出来的收益很小，且那条路径是状态通道的主干，不动比动更安全。
+8. **把 1s tick / 5s watchdog / 20s spark / 8s cam / 4s heartbeat / 60s reportSelf 合并成一个 1s tick 按 modulo 派发**，暗屏时整体降频。审计里排到了第 12 位：收益是「少几条定时器」而不是少网络，而 heartbeat（4s 一次桥调用）是看门狗的依据，合并会改变自愈语义——先别动。
+9. **`camSrc` 缓存 `haHttpBase` + token**（现在每次每相机都重跑两次 regex）；`selectTile/paintPicked` 的 `className` regex replace（编辑态小活）；`setColumns` 写 `gridTemplate` 后 `setTimeout(0)` 再写 + 读 `clientWidth`（布局读后写）。这三条都是小开销，改它们的风险大于收益。
+10. `checkMemGuard` 的 `nodeCount` 每 10min 全 DOM 走查：**保留**，它是自愈护栏，不是热点。
 
 ## 8. 这一轮踩到的坑（也进了 `docs/REFACTOR.md` §5）
 
