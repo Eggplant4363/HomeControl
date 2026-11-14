@@ -420,6 +420,47 @@ eq(o6, o3, '顺序：3 列与 6 列切换后顺序不变');
 var colsOpts = (api.panelSheetHtml().match(/data-key="cols"/g) || []).length;
 eq(colsOpts, 4, '每行卡片可选 3/4/5/6');
 
+/* 添加卡片：按设备分组（dev_id 相同的实体归一台设备；无设备的归「其它设备」） */
+(function () {
+  var cfg = api.cfgRef;
+  var savedRooms = cfg.rooms;
+  var savedPrefs = windowStub.localStorage.getItem('hc.prefs');
+  windowStub.localStorage.setItem('hc.prefs', JSON.stringify({ cols: 4, size: 'md', allCards: false }));
+  api.setReal(false);
+  cfg.rooms = [
+    { id: 'r1', name: '客厅', tiles: [
+      { type: 'light', entity: 'light.a', name: 'A 灯', dev: '吸顶灯', dev_id: 'dev1' },
+      { type: 'light', entity: 'light.b', name: 'B 灯', dev: '吸顶灯', dev_id: 'dev1' },
+      { type: 'sensor', entity: 'sensor.t', name: '温度', dev: '温湿度计', dev_id: 'dev2' }
+    ] },
+    { id: 'r2', name: '主卧', tiles: [
+      { type: 'switch', entity: 'switch.c', name: 'C 开关', dev: '插座', dev_id: 'dev3' },
+      { type: 'scene', entity: 'scene.night', name: '睡觉', dev: '', dev_id: '' }
+    ] }
+  ];
+  var html = api.addSheetHtml();
+  eq(html.indexOf('ed-dev') >= 0, true, '添加面板：有设备分组头');
+  eq(html.indexOf('data-act="add-device:dev1"') >= 0, true, '添加面板：dev1 设备头在列');
+  eq(html.indexOf('data-act="add-device:dev3"') >= 0, true, '添加面板：dev3 设备头在列');
+  eq(html.indexOf('data-act="add-device:__none__"') >= 0, true, '添加面板：无设备实体归「其它设备」');
+  eq(html.indexOf('ed-row ed-sub') >= 0, true, '添加面板：实体行带 ed-sub 缩进');
+  eq(html.indexOf('data-act="add-toggle:light.a"') >= 0, true, '添加面板：单条实体仍可 add-toggle');
+  /* 整组切换的收集逻辑 + 翻转 */
+  windowStub.localStorage.setItem('hc.edit', JSON.stringify({ added: {}, order: [] }));
+  api.writeEdit(JSON.parse(windowStub.localStorage.getItem('hc.edit')));
+  var devEnts = api.deviceEntities('dev1').slice().sort();
+  eq(devEnts.join(','), 'light.a,light.b', '设备分组：dev1 收集到两个灯');
+  eq(api.deviceEntities('__none__').join(','), 'scene.night', '设备分组：无设备实体归「其它设备」');
+  eq(api.cardVisible('light.a'), false, '设备分组：整组加入前 A 灯不可见');
+  var allOn = devEnts.every(function (e) { return api.cardVisible(e); });
+  devEnts.forEach(function (e) { api.setCardVisible(e, !allOn); });
+  eq(api.cardVisible('light.a'), true, '设备分组：整组加入后 A 灯可见');
+  eq(api.cardVisible('light.b'), true, '设备分组：整组加入后 B 灯可见');
+  eq(api.cardVisible('sensor.t'), false, '设备分组：别组实体不受影响');
+  cfg.rooms = savedRooms;
+  if (savedPrefs == null) windowStub.localStorage.removeItem('hc.prefs'); else windowStub.localStorage.setItem('hc.prefs', savedPrefs);
+})();
+
 /* 跨列：占 1/2/3 列，且不超过当前列数 */
 windowStub.localStorage.setItem('hc.edit', JSON.stringify({ added: { x: 1 }, span: { x: 2 } }));
 api.writeEdit(JSON.parse(windowStub.localStorage.getItem('hc.edit')));

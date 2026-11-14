@@ -1681,20 +1681,39 @@
   function addSheetHtml() {
     var list = allCards();
     var h = '<div class="cfg-head">添加卡片</div>' +
-      '<div class="cfg-desc">点一行就把它加到这块屏上，想加几个就点几个，加完点「完成」。</div>';
+      '<div class="cfg-desc">按设备分组：点设备名整组加入 / 移除，点下面单条只加那一条。加完点「完成」。</div>';
     if (!list.length) {
       h += '<div class="cfg-desc">' + (S.real && !S.layoutReady ? '正在读取设备…' : '还没有读到任何设备（先连上 Home Assistant）') + '</div>';
     } else {
-      var lastRoom = null;
-      h += '<div class="ed-list">';
+      /* 按设备分组（dev_id 相同算一台设备；没有设备的实体归到「其它设备」） */
+      var devs = [], byKey = {};
       list.forEach(function (it) {
-        var rn = it.room || '未分配房间';
-        if (rn !== lastRoom) { h += '<div class="ed-room">' + esc(rn) + '</div>'; lastRoom = rn; }
-        var on = cardVisible(it.tile.entity);
-        h += '<button class="ed-row' + (on ? ' on' : '') + '" data-act="add-toggle:' + esc(it.tile.entity) + '">' +
-          '<span class="ed-box">' + (on ? '✓' : '') + '</span>' +
-          '<span class="ed-name">' + esc(displayName(it.tile)) + '</span>' +
-          '<span class="ed-id">' + esc(it.tile.entity) + '</span></button>';
+        var key = it.tile.dev_id || '__none__';
+        if (!byKey[key]) {
+          byKey[key] = { key: key, name: key === '__none__' ? '其它设备' : (it.tile.dev || '未命名设备'), ents: [] };
+          devs.push(byKey[key]);
+        }
+        byKey[key].ents.push(it);
+      });
+      devs.sort(function (a, b) {
+        if (a.key === '__none__') return 1;
+        if (b.key === '__none__') return -1;
+        return String(a.name).localeCompare(String(b.name));
+      });
+      h += '<div class="ed-list">';
+      devs.forEach(function (d) {
+        var allOn = d.ents.every(function (it) { return cardVisible(it.tile.entity); });
+        h += '<button class="ed-dev' + (allOn ? ' on' : '') + '" data-act="add-device:' + esc(d.key) + '">' +
+          '<span class="ed-box">' + (allOn ? '✓' : '') + '</span>' +
+          '<span class="ed-name">' + esc(d.name) + '</span>' +
+          '<span class="ed-id">' + d.ents.length + ' 个实体</span></button>';
+        d.ents.forEach(function (it) {
+          var on = cardVisible(it.tile.entity);
+          h += '<button class="ed-row ed-sub' + (on ? ' on' : '') + '" data-act="add-toggle:' + esc(it.tile.entity) + '">' +
+            '<span class="ed-box">' + (on ? '✓' : '') + '</span>' +
+            '<span class="ed-name">' + esc(displayName(it.tile)) + '</span>' +
+            '<span class="ed-id">' + esc(it.tile.entity) + '</span></button>';
+        });
       });
       h += '</div>';
     }
@@ -1824,6 +1843,26 @@
     var on = !cardVisible(entity);
     setCardVisible(entity, on);
     actLog((on ? 'card on ' : 'card off ') + entity);
+    renderGrid(true);
+    if (S.sheetShow === 'add') el.sheetInner.innerHTML = addSheetHtml();
+  }
+
+  /** 某台设备（dev_id）下所有可显示实体的 id 列表；无设备的实体归「__none__」 */
+  function deviceEntities(key) {
+    var list = allCards(), ents = [];
+    list.forEach(function (it) {
+      if ((it.tile.dev_id || '__none__') === key) ents.push(it.tile.entity);
+    });
+    return ents;
+  }
+
+  /** 整台设备加入 / 移除：把该 device_id 下所有可显示的实体一次全开或全关 */
+  function addDeviceToggle(key) {
+    var ents = deviceEntities(key);
+    if (!ents.length) return;
+    var allOn = ents.every(cardVisible);
+    ents.forEach(function (e) { setCardVisible(e, !allOn); });
+    actLog('add device ' + key + (allOn ? ' off' : ' on') + ' x' + ents.length);
     renderGrid(true);
     if (S.sheetShow === 'add') el.sheetInner.innerHTML = addSheetHtml();
   }
@@ -4040,6 +4079,7 @@ function bindDim() {
       if (act === 'edit-add') { openAddSheet(); return; }
       /* 添加卡片列表里点一行：这张卡加进去 / 拿掉（列表自身重画，不关弹层） */
       if (act.indexOf('add-toggle:') === 0) { addToggle(act.slice(11)); el.sheetInner.innerHTML = addSheetHtml(); return; }
+      if (act.indexOf('add-device:') === 0) { addDeviceToggle(act.slice(11)); return; }
       if (act === 'add-done') { closeSheet(); setTimeout(function () { toast('已保存'); }, 60); return; }
       if (act === 'add-room') {
         var rr = roomById(S.room);
@@ -4783,7 +4823,7 @@ function boot() {
     cellRows: cellRows, rowSpan: rowSpan, resizeCard: resizeCard, sizeSheetHtml: sizeSheetHtml, spanText: spanText,
     bulkCount: bulkCount, toggleBulk: toggleBulk, doBulk: doBulk, bulk: function () { return { on: S.bulk, sel: S.bulkSel }; },
     sortCards: sortCards, editToggle: editToggle, editSpan: editSpan, editMove: editMove,
-    editAddAll: editAddAll, editSheetHtml: editSheetHtml, allCards: allCards, visibleRooms: visibleRooms, hiddenRooms: hiddenRooms, hasColor: hasColor, rgbCss: rgbCss, hsvToRgb: hsvToRgb, rgbToHs: rgbToHs, colorPresets: COLOR_PRESETS,
+    editAddAll: editAddAll, editSheetHtml: editSheetHtml, addSheetHtml: addSheetHtml, addToggle: addToggle, addDeviceToggle: addDeviceToggle, deviceEntities: deviceEntities, allCards: allCards, visibleRooms: visibleRooms, hiddenRooms: hiddenRooms, hasColor: hasColor, rgbCss: rgbCss, hsvToRgb: hsvToRgb, rgbToHs: rgbToHs, colorPresets: COLOR_PRESETS,
     applyPrefs: applyPrefs, applyScreenPolicy: applyScreenPolicy, screenAuthRow: screenAuthRow,
     battGuard: battGuard, battSwitchLabel: battSwitchLabel, battSwitchSheetHtml: battSwitchSheetHtml, battSwitchNoise: battSwitchNoise,
     setIcon: setIcon, iconsFor: iconsFor, iconSheetHtml: iconSheetHtml

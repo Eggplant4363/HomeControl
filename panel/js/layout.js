@@ -162,11 +162,14 @@
 
       var areaId = entArea[id] || null;
       var dev = (rec && rec.device_id && devName[rec.device_id]) || '';
+      /* device_id 保留下来：添加卡片时按「设备」分组，而不是按房间 */
+      var devId = (rec && rec.device_id) || '';
       pushTile(areaId, {
         type: type,
         entity: id,
         name: cleanLabel(entName[id] || shortName(id, st)) || cleanLabel(shortName(id, st)),
         dev: dev,
+        dev_id: devId,
         _order: TYPE_ORDER[type] == null ? 5 : TYPE_ORDER[type],
         _sub: String(id)
       });
@@ -190,7 +193,7 @@
         id: key === '__none__' ? 'other' : key,
         name: name,
         icon: key === '__none__' ? 'home' : (areaIcon[key] || 'home'),
-        tiles: list.map(function (t) { return { type: t.type, entity: t.entity, name: t.name, dev: t.dev || '' }; })
+        tiles: list.map(function (t) { return { type: t.type, entity: t.entity, name: t.name, dev: t.dev || '', dev_id: t.dev_id || '' }; })
       });
     });
 
