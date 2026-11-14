@@ -416,6 +416,20 @@ var o6 = orderOf();
 eq(o3, 'b,a,c', '顺序：按自定义顺序排');
 eq(o6, o3, '顺序：3 列与 6 列切换后顺序不变');
 
+/* 拖放换位置：纯函数 orderForDrop(order, 拖的, 目标, 目标之后?) —— 只挪这一项 */
+eq(api.orderForDrop(['a', 'b', 'c'], 'a', 'c', false).join(','), 'b,a,c', '拖放：a 插到 c 前面');
+eq(api.orderForDrop(['a', 'b', 'c'], 'a', 'c', true).join(','), 'b,c,a', '拖放：a 插到 c 后面');
+eq(api.orderForDrop(['a', 'b', 'c'], 'c', 'a', false).join(','), 'c,a,b', '拖放：c 插到 a 前面');
+eq(api.orderForDrop(['a', 'b', 'c'], 'b', 'a', true).join(','), 'a,b,c', '拖放：本来就在那，顺序不变');
+eq(api.orderForDrop(['a', 'b', 'c'], 'b', 'b', false).join(','), 'a,b,c', '拖放：拖到自己是空操作');
+eq(api.orderForDrop(['a', 'b', 'c'], 'a', 'zz', false).join(','), 'a,b,c', '拖放：目标不在顺序里就原样返回');
+eq(api.orderForDrop(['a', 'b', 'c'], 'zz', 'a', false).join(','), 'zz,a,b,c', '拖放：顺序里没有的项也能插进去');
+eq(api.orderForDrop(['a', 'b', 'c'], '', 'a', false).join(','), 'a,b,c', '拖放：没给实体就原样返回');
+eq(api.orderForDrop(['a', 'b', 'c'], 'a', 'c', false).length, 3, '拖放：不会多出/丢掉一项');
+eq(api.orderForDrop(['a'], 'a', 'a', true).join(','), 'a', '拖放：只有一张卡时保持原样');
+/* 跨房间：order 是全局的，只动被拖的那一项，别的房间的排列不受影响 */
+eq(api.orderForDrop(['r1a', 'r2a', 'r1b'], 'r1a', 'r1b', true).join(','), 'r2a,r1b,r1a', '拖放：跨房间条目位置保持');
+
 /* 每行 3~6 */
 var colsOpts = (api.panelSheetHtml().match(/data-key="cols"/g) || []).length;
 eq(colsOpts, 4, '每行卡片可选 3/4/5/6');
@@ -459,6 +473,53 @@ eq(colsOpts, 4, '每行卡片可选 3/4/5/6');
   eq(api.cardVisible('sensor.t'), false, '设备分组：别组实体不受影响');
   cfg.rooms = savedRooms;
   if (savedPrefs == null) windowStub.localStorage.removeItem('hc.prefs'); else windowStub.localStorage.setItem('hc.prefs', savedPrefs);
+})();
+
+/* ---- 字号角色档：同屏同角色一个字号（type scale），文字不按卡片现场算 ---- */
+(function () {
+  var tok = {};
+  var node = {
+    style: {
+      setProperty: function (k, v) { tok[k] = v; },
+      gridTemplateColumns: '', gridAutoFlow: '', gridAutoRows: '', gridTemplateRows: ''
+    },
+    setAttribute: function () {}
+  };
+  var savedPrefs = windowStub.localStorage.getItem('hc.prefs');
+  /* 桩里没 innerWidth → 走 (1024)-48=976 兜底：4 列 md 的卡 235px */
+  windowStub.localStorage.setItem('hc.prefs', JSON.stringify({ cols: 4, size: 'md', allCards: false }));
+  api.setColumns(node, 4);
+  eq(tok['--fsz'], '207px', '角色档：4 列 md 几何档 fsz=207');
+  eq(tok['--fsz-t'], '101px', '角色档：4 列 md 几何档 fsz-t=101');
+  eq(tok['--fsz-n'], '18px', '角色档：名字档 18px（宽卡/小卡/半高卡通用）');
+  eq(tok['--fsz-v'], '38px', '角色档：数值档 38px（全模板共用）');
+  eq(tok['--fsz-s'], '14px', '角色档：辅助档 14px');
+  /* 6 列 sm = 下限标定点：正好等于改之前的写死值 15/34/12，字不会比旧版小 */
+  windowStub.localStorage.setItem('hc.prefs', JSON.stringify({ cols: 6, size: 'sm', allCards: false }));
+  api.setColumns(node, 6);
+  eq(tok['--fsz'], '174px', '角色档：6 列 sm 几何档钳到下限 174');
+  eq(tok['--fsz-n'], '15px', '角色档：6 列 sm 名字=15px（旧写死值）');
+  eq(tok['--fsz-v'], '34px', '角色档：6 列 sm 数值=34px（旧写死值）');
+  eq(tok['--fsz-s'], '12px', '角色档：6 列 sm 辅助=12px（旧写死值）');
+  /* 字号升序：读数 > 名字 > 辅助，同屏只有一个这套阶梯（2×2 Display 除外） */
+  ok(parseInt(tok['--fsz-v'], 10) > parseInt(tok['--fsz-n'], 10) && parseInt(tok['--fsz-n'], 10) > parseInt(tok['--fsz-s'], 10),
+     '角色档：数值 > 名字 > 辅助 阶梯成立');
+  if (savedPrefs == null) windowStub.localStorage.removeItem('hc.prefs'); else windowStub.localStorage.setItem('hc.prefs', savedPrefs);
+})();
+
+/* CSS 字号体检：除 2×2 Display 档外，字号不许再按卡片比例现场算 */
+(function () {
+  var css = fs.readFileSync(path.join(root, 'panel', 'css', 'app.css'), 'utf8');
+  eq(css.indexOf('font-size: var(--fsz-n)') >= 0, true, 'CSS：名称（.t-name/.t-line/.t-hname）走 var(--fsz-n)');
+  eq(css.indexOf('font-size: var(--fsz-v)') >= 0, true, 'CSS：数值（.t-val/.t-big）走 var(--fsz-v)');
+  eq(css.indexOf('font-size: var(--fsz-s)') >= 0, true, 'CSS：辅助行（.t-sub/.t-set/.t-hval/.u）走 var(--fsz-s)');
+  eq((css.match(/font-size: calc\(var\(--fsz\)/g) || []).length, 1, 'CSS：按卡片比例的字号只剩 2×2 Display 档一条');
+  eq(css.indexOf('font-size: calc(var(--fsz) * .31)') >= 0, true, 'CSS：Display 档保留（2×2 气候数值）');
+  eq(css.indexOf('font-size: calc(var(--fsz-t)') >= 0, false, 'CSS：小卡/半高卡不再按 --fsz-t 定字号');
+  ['.229', '.194', '.275', '.135', '.152', '.146', '.145', '.126'].forEach(function (r) {
+    eq(css.indexOf('font-size: calc(var(--fsz) * ' + r) >= 0, false, 'CSS：旧比例 ' + r + ' 的字号已删');
+    eq(css.indexOf('font-size: calc(var(--fsz-t) * ' + r) >= 0, false, 'CSS：旧 --fsz-t 比例 ' + r + ' 的字号已删');
+  });
 })();
 
 /* 跨列：占 1/2/3 列，且不超过当前列数 */

@@ -194,9 +194,11 @@ body::before { content: none; }
   overflow-y: auto; padding: 16px 0 4px; align-content: start;
 }
 
-/* 卡片内容尺寸全部走比例：JS 在 setColumns 里把网格的真实尺寸写成 --cellw / --cellh / --unit，
-   这里用 calc() 按卡片短边的比例取图标与字号 —— 换设备、改列数、改「卡片大小」都自动跟着缩放，
-   不再靠 .cols-3/.cols-5/.size-sm 之类写死像素（老 WebView 没有 clamp()/max()，下限由 JS 的钳位保证）。 */
+/* 卡片内容尺寸走比例：JS 在 setColumns 里把网格的真实尺寸写成 --cellw / --cellh / --unit，
+   这里用 calc() 按卡片短边的比例取图标与几何 —— 换设备、改列数、改「卡片大小」都自动跟着缩放
+   （老 WebView 没有 clamp()/max()，下限由 JS 的钳位保证）。
+   文字不按卡片算：JS 另发三个「角色档」令牌 --fsz-n（名称）/--fsz-v（读数）/--fsz-s（辅助行），
+   同一屏里同角色只有一个字号 —— 业界 type scale 的规矩，卡片大小不改字。 */
 .tile {
   --cw: calc(var(--cellw) - 28px);
   --ch: calc(var(--cellh) - 28px);
@@ -248,11 +250,11 @@ body::before { content: none; }
 
 /* 名字是这张卡的主语，房间/状态是它下面那行小字。 */
 .t-name {
-  font-size: calc(var(--fsz) * .086); font-weight: 600; line-height: 1.35; color: var(--text-2);
+  font-size: var(--fsz-n); font-weight: 600; line-height: 1.35; color: var(--text-2);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .t-sub {
-  font-size: calc(var(--fsz) * .068); line-height: 1.35; color: var(--text-4); margin-top: 2px;
+  font-size: var(--fsz-s); line-height: 1.35; color: var(--text-4); margin-top: 2px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .t-power {
@@ -272,15 +274,16 @@ body::before { content: none; }
 .tile.na .t-power { display: none; }
 
 .tile-mid { flex: 1; display: flex; flex-direction: column; justify-content: center; min-height: 0; }
-/* 数字是主角：等宽数字，300 字重，靠尺寸而不是超细笔画拉开层级。 */
+/* 数字是主角：等宽数字，300 字重。字号走角色档 --fsz-v：同一屏里所有卡的数值同档，
+   层级靠字重/颜色拉，不靠「每张卡现场算」——那是观感不齐的根源。 */
 .t-val {
-  font-size: calc(var(--fsz) * .229); font-weight: 300; line-height: 1.02; letter-spacing: 0; color: var(--text-2);
+  font-size: var(--fsz-v); font-weight: 300; line-height: 1.02; letter-spacing: 0; color: var(--text-2);
   font-variant-numeric: tabular-nums;
 }
 .t-val.lit { color: var(--text-1); }
-.t-val.muted { font-size: calc(var(--fsz) * .126); font-weight: 400; color: var(--text-3); }
-.t-val .u { font-size: calc(var(--fsz) * .08); font-weight: 400; letter-spacing: 0; color: var(--text-4); margin-left: 3px; }
-.t-val.small { font-size: calc(var(--fsz) * .194); }
+.t-val.muted { font-size: calc(var(--fsz-v) * .7); font-weight: 400; color: var(--text-3); }
+.t-val .u { font-size: var(--fsz-s); font-weight: 400; letter-spacing: 0; color: var(--text-4); margin-left: 3px; }
+.t-val.small { font-size: calc(var(--fsz-v) * .8); }
 /* 传感器卡片：左侧数值 + 右侧迷你历史曲线 */
 .t-midrow { display: flex; align-items: center; min-height: 0; }
 /* 数值固定不动，曲线吃掉剩余宽度（不再用百分比，否则窄卡里会和单位重叠） */
@@ -341,13 +344,13 @@ body::before { content: none; }
 }
 .t-step svg { width: calc(var(--fsz) * .085); height: calc(var(--fsz) * .085); }
 .t-step:active { background: rgba(var(--surf),.11); }
-.t-set { flex: 1; min-width: 0; text-align: center; font-size: calc(var(--fsz) * .068); color: var(--text-4); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.t-set { flex: 1; min-width: 0; text-align: center; font-size: var(--fsz-s); color: var(--text-4); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* 名称和状态已经搬到卡片头部（照米家：左图标 / 中间名字+状态 / 右边电源钮），
    底部不再有 foot 行。 */
 
 /* 传感器卡片数字稍小 */
-.tile.sensor .t-val { font-size: calc(var(--fsz) * .194); }
+/* 传感器数值走角色档 --fsz-v（.t-val 已统一，不再单独定字号） */
 
 /* ---------------- 弹层 ---------------- */
 /* 遮罩：纯黑实心 + 独立合成层。弹层打开时 #app 已经被换成不透明纯黑底，
@@ -604,17 +607,17 @@ body::before { content: none; }
 /* 摄像头：圆退成线描圈（画面不在 1×1 里出现）；场景：实心灰块感，一眼是「一条指令」 */
 .tile.tiny.mode-frame .t-round { background: transparent; border: 1px solid rgba(var(--surf),.14); color: var(--text-4); }
 .tile.tiny.mode-scene .t-round { background: rgba(var(--surf),.12); color: var(--text-2); }
-/* 传感类：大字读数 + 单位坐在正中，下方只有名称、居中 */
+/* 传感类：大字读数 + 单位坐在正中，下方只有名称、居中。字号走角色档（与宽卡/半高卡同档） */
 .t-big {
-  font-size: calc(var(--fsz-t) * .38); font-weight: 300; line-height: 1; color: var(--text-1);
+  font-size: var(--fsz-v); font-weight: 300; line-height: 1; color: var(--text-1);
   font-variant-numeric: tabular-nums; white-space: nowrap;
 }
-.t-big .u { font-size: calc(var(--fsz-t) * .145); font-weight: 400; color: var(--text-4); margin-left: 3px; letter-spacing: .04em; }
+.t-big .u { font-size: var(--fsz-s); font-weight: 400; color: var(--text-4); margin-left: 3px; letter-spacing: .04em; }
 .t-big.muted { color: var(--text-5); }
-/* 一行小字：只有名称，居中；离圆钮/读数远一点（圆钮的颜色自己就是状态） */
+/* 一行小字：只有名称（与宽卡名称同档 --fsz-n），居中；离圆钮/读数远一点（圆钮的颜色自己就是状态） */
 .t-line {
   margin-top: calc(var(--fsz-t) * .19); max-width: 100%; align-self: center;
-  font-size: calc(var(--fsz-t) * .135); line-height: 1.35; color: var(--text-3);
+  font-size: var(--fsz-n); line-height: 1.35; color: var(--text-3);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 /* 与 .t-line 的 margin-top 保持一致：读数卡和控制卡的名称落在同一条基线上 */
@@ -746,11 +749,12 @@ body::before { content: none; }
 .tile:not(.span-2):not(.rows-2) .tile-head { flex: 0 0 auto; align-items: flex-start; }
 .tile:not(.span-2):not(.rows-2) .tile-mid { flex: 1 1 auto; justify-content: flex-end; }
 
-/* ① 读数型：数值是主角（普通传感器按卡片比例走，状态词由 .t-val.small 退一号） */
+/* ① 读数型：数值是主角——字号走角色档（宽卡/高卡/小卡同一个 --fsz-v，见 .t-val），
+   状态词由 .t-val.small 退一号；这里只收紧读数行的行高。 */
 .tile:not(.span-2):not(.rows-2).type-sensor .t-val,
 .tile:not(.span-2):not(.rows-2).type-cover .t-val,
-.tile:not(.span-2):not(.rows-2).type-climate .t-val { font-size: calc(var(--fsz) * .229); line-height: 1; }
-.tile:not(.span-2):not(.rows-2) .t-val.small { font-size: calc(var(--fsz) * .194); }
+.tile:not(.span-2):not(.rows-2).type-climate .t-val { line-height: 1; }
+.tile:not(.span-2):not(.rows-2) .t-val.small { line-height: 1.15; }
 .tile:not(.span-2):not(.rows-2) .t-ctl { display: none; }   /* 方格里塞不下 ± 按钮，点开弹层调 */
 
 /* ② 动作型：动作行垂直居中；灯/开关不塞数值（要看亮度就用 2×1） */
@@ -763,7 +767,7 @@ body::before { content: none; }
 
 /* 1×2 竖卡：头在上，数值居中再大一号（读数型卡片放大字号，不靠拉宽） */
 .tile.rows-2:not(.span-2) .tile-mid { justify-content: center; }
-.tile.rows-2:not(.span-2) .t-val { font-size: calc(var(--fsz) * .275); }
+/* 半高卡的数值不再单独定字号：与宽卡同档 --fsz-v，名字同档见 .t-name */
 
 /* 宽卡：数值在上、控制条/曲线在下，条占满卡片宽度（照米家的灯卡读法） */
 .tile.span-2 .tile-mid { flex-direction: column; align-items: stretch; justify-content: center; min-height: 0; }
@@ -779,6 +783,7 @@ body::before { content: none; }
 .tile.span-2.rows-2 .t-bar { margin: calc(var(--fsz) * .055) 0 0; }
 .tile.span-2.rows-2 .cam-thumb { flex: 1 1 auto; height: auto; min-height: 0; }
 /* 2×2 的温湿度计：两个读数并排，数字再大一号 */
+/* Display 档：2×2 气候的温度是全面板唯一「主角读数」，这是唯一不走角色档的字号 */
 .tile.span-2.rows-2 .t-val { font-size: calc(var(--fsz) * .31); }
 
 /* 设置页 */
@@ -1118,25 +1123,27 @@ body::before { content: none; }
   flex-direction: row; align-items: center;
   padding: 0 14px; border-radius: 12px;
 }
+/* 小圆钮：用户嫌半高条的图标偏小，放大一档——圆 .42、笔画 .25（笔画≈圆的 0.6，与 1×1 圆钮同比例） */
 .t-mini {
-  flex: 0 0 auto; width: calc(var(--fsz-t) * .36); height: calc(var(--fsz-t) * .36); border-radius: 50%;
+  flex: 0 0 auto; width: calc(var(--fsz-t) * .42); height: calc(var(--fsz-t) * .42); border-radius: 50%;
   display: flex; align-items: center; justify-content: center;
   background: rgba(var(--surf),.07); color: var(--text-4);
   transition: background .14s, color .14s;
 }
-.t-mini svg { width: calc(var(--fsz-t) * .18); height: calc(var(--fsz-t) * .18); display: block; }
+.t-mini svg { width: calc(var(--fsz-t) * .25); height: calc(var(--fsz-t) * .25); display: block; }
 .tile.half.on .t-mini { background: rgb(var(--ctl-on)); color: var(--glyph-on); }
 .tile.half.na .t-mini { background: rgba(var(--surf),.04); color: var(--text-5); }
 .tile.half.mode-frame .t-mini { background: transparent; border: 1px solid rgba(var(--surf),.14); color: var(--text-4); }
 .tile.half.mode-scene .t-mini { background: rgba(var(--surf),.12); color: var(--text-2); }
+/* 半高条卡：名称与宽卡同档 --fsz-n，读数是辅助行走 --fsz-s（它不是主角，主角是左边的小圆钮） */
 .t-hname {
   flex: 1 1 auto; min-width: 0; margin-left: 11px;
-  font-size: calc(var(--fsz-t) * .152); color: var(--text-2);
+  font-size: var(--fsz-n); color: var(--text-2);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .t-hval {
   flex: 0 0 auto; margin-left: 8px;
-  font-size: calc(var(--fsz-t) * .146); color: var(--text-3);
+  font-size: var(--fsz-s); color: var(--text-3);
   font-variant-numeric: tabular-nums; white-space: nowrap;
 }
 .t-hval.muted { color: var(--text-5); }
@@ -1172,6 +1179,19 @@ body::before { content: none; }
 }
 .tile.resizing .t-grip::before { border-bottom-color: var(--accent-hex); }
 .tile.resizing .t-grip::after { border-color: var(--text-2); }
+
+/* 编辑态拖动换位置：原卡变淡留在网格里当占位，克隆卡跟手指走，目标卡亮一圈 */
+.tile.drag-src { opacity: .28; border-style: dashed; }
+.tile.drag-ghost {
+  position: fixed; z-index: 900; left: 0; top: 0; margin: 0;
+  pointer-events: none; opacity: .95;
+  transform: scale(1.03); border-color: rgba(var(--accent-rgb),.85);
+  box-shadow: 0 0 0 2px rgba(var(--accent-rgb),.55), 0 16px 32px rgba(0,0,0,.55);
+}
+.tile.drag-over {
+  border-color: rgba(var(--accent-rgb),.9);
+  box-shadow: inset 0 0 0 2px rgba(var(--accent-rgb),.75), 0 0 0 3px rgba(var(--accent-rgb),.22);
+}
 
 /* 迷你曲线：高度由卡片比例决定（max-width 只是防止和数值打架的帽子，不是字号） */
 .grid.cols-5 .t-spark { max-width: 96px; margin-left: 8px; }

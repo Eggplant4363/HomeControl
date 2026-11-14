@@ -24,6 +24,8 @@
     lpFired: false,
     pctDrag: null,
     pctFired: false,
+    drag: null,
+    dragFired: false,
     dimOn: false,
     dimTimer: null,
     status: { connected: false, text: '连接中…' },
@@ -1508,14 +1510,21 @@
     node.style.gridAutoFlow = 'row';
     node.style.gridAutoRows = unit + 'px';
     node.style.gridTemplateRows = 'repeat(auto-fill, ' + unit + 'px)';
-    /* 卡片里的图标/文字是 calc(var(--fsz) * 比例)（小卡与半高卡走 --fsz-t）：换设备、改列数、
-       改「卡片大小」都只改这几个变量，字号自己跟着缩放。基准取「卡片内容盒的短边」，再钳到
-        [174,300]：下限是按平板 2 原来的写死值标定的（名字 15px、数值 40px 正好对应基准 174），
-        所以字不会再比改之前小；平板 5 的卡有 ~360px，上限 300 挡住「大卡字大到装不下」。老 WebView 没有 clamp()/max()，钳只能在这里做。 */
+    /* 图标/旋钮/进度条是 calc(var(--fsz) * 比例)（小卡与半高卡的几何走 --fsz-t）：换设备、改列数、
+       改「卡片大小」只改几何变量，图形自己跟着缩放，「占卡片 80%」的填充感靠这条保住。
+       基准取「卡片内容盒的短边」，再钳到 [174,300]：下限是按平板 2 原来的写死值标定的，
+       所以字不会再比改之前小；平板 5 的卡有 ~360px，上限 300 挡住「大卡装不下」。老 WebView 没有 clamp()/max()，钳只能在这里做。 */
     var padN = cols === 6 ? 24 : 28;
     var fsz = Math.round(Math.min(300, Math.max(174, (h - padN) * k)));
-    /* 小卡与半高卡走 --fsz-t：下限 90 也按原来的写死值标定（小卡数值 34px、半高卡名字 13.5px） */
+    /* 小卡与半高卡的几何走 --fsz-t：下限 90 也按原来的写死值标定（小卡数值 34px、半高卡名字 13.5px） */
     var fszT = Math.round(Math.min(120, Math.max(90, (unit - 20) * k * 1.1)));
+    /* 文字按「角色」定档（业界 type scale 的规矩：同屏同角色一个字号，卡片大小不改字）：
+       --fsz-n 名字（宽卡/小卡/半高卡同一个）、--fsz-v 数值读数（全模板同一个）、
+       --fsz-s 辅助行（房间/状态/单位/半高读数）。2×2 气候数值是 CSS 里唯一保留的 Display 档。
+       下限标定：平板 2 6 列 sm（fsz 174 / fszT 90）→ 名字 15px、数值 34px、辅助 12px，正是改之前的写死值。 */
+    node.style.setProperty('--fsz-n', Math.round(fsz * .086) + 'px');
+    node.style.setProperty('--fsz-v', Math.round(fszT * .38) + 'px');
+    node.style.setProperty('--fsz-s', Math.round(fsz * .068) + 'px');
 
     node.style.setProperty('--cellw', cellW + 'px');
     node.style.setProperty('--cellh', h + 'px');
@@ -1685,6 +1694,42 @@
     actLog('edit move ' + entity + ' ' + dir);
     renderGrid(true);
     el.sheetInner.innerHTML = editSheetHtml();
+  }
+
+  /** 拖放落位：把 entity 插到 target 前面/后面（纯函数，离线单测直接测）
+   *  order 是全局顺序（跨房间共用一个数组），所以只动 entity 这一项，
+   *  其它房间那些条目位置不变 —— 切房间、切列数都不会把别人的排列打乱。 */
+  function orderForDrop(order, entity, target, after) {
+    if (!entity || !target || entity === target) return order.slice();
+    var out = order.slice();
+    var from = out.indexOf(entity);
+    if (from >= 0) out.splice(from, 1);
+    var ti = out.indexOf(target);
+    if (ti < 0) { return order.slice(); }
+    out.splice(after ? ti + 1 : ti, 0, entity);
+    return out;
+  }
+
+  /** 松手后真正落位：把当前可见顺序里的实体补齐进 order，写入并重绘 */
+  function editDrop(entity, target, after) {
+    if (!entity || !target || entity === target) return false;
+    window.__lastDrop = { entity: entity, target: target, after: !!after };   /* 测试用：看最后一笔落在哪 */
+    var e = editState();
+    var order = e.order.slice();
+    /* 还没进 order 的（新加/没排过的）先补到末尾，否则 indexOf 落空、拖了没反应 */
+    S.items.forEach(function (it) {
+      var id = it.tile.entity;
+      if (order.indexOf(id) < 0) order.push(id);
+    });
+    var next = orderForDrop(order, entity, target, after);
+    if (next.join('\u0000') === order.join('\u0000')) return false;
+    e.order = next;
+    if (e.added[entity] === undefined) e.added[entity] = 1;
+    writeEdit(e);
+    actLog('edit drop ' + entity + (after ? ' after ' : ' before ') + target);
+    renderGrid(true);
+    if (S.sheetShow === 'edit') el.sheetInner.innerHTML = editSheetHtml();
+    return true;
   }
 
   /** 卡片占几列（1/2/3），列数不够时压到当前列数 */
@@ -4339,6 +4384,8 @@ function bindDim() {
       if (S.lpFired) return;
       /* 刚拖完拉伸手柄：这一次 click 是拖动产生的，不能当选中/开关处理 */
       if (S.gripFired) return;
+      /* 刚拖动过卡片换位置：同上，松手那一下不能顺手把卡选中/开关 */
+      if (S.dragFired) return;
       /* 刚拖/点过亮度条：那是「设置百分比」，绝不能再顺手把灯关掉 */
       if (S.pctFired) return;
       var tileEl = closest(ev.target, null, 'data-entity') || closest(ev.target, 'tile');
@@ -4496,6 +4543,101 @@ function bindDim() {
     document.addEventListener('touchend', gripUp, true);
     document.addEventListener('touchcancel', gripUp, true);
     document.addEventListener('mouseup', gripUp, true);
+
+    /* ---------- 编辑态：按住卡片拖到想放的位置 ----------
+       和「拉伸」的分工：卡片右下角 88px 那块仍然归拉伸，卡片其它地方按住拖动 = 换位置。
+       拖动时原卡变淡留在网格里当占位（松手前不重排，眼睛有锚点），
+       一张克隆卡跟着手指走；手指底下那张卡亮一圈 = 松手就插到它前面/后面。 */
+    var DRAG_LIFT = 14;      /* 移动超过这么多像素才算拖动，否则还是「点选」 */
+    var DRAG_CORNER = 88;    /* 右下角这块留给拉伸（和 gripDown 的 zone 保持一致） */
+
+    function dragStart(ev) {
+      if (!S.editing || S.bulk || S.grip || S.drag) return;
+      if (ev.button != null && ev.button !== 0) return;
+      var tileEl = closest(ev.target, 'tile');
+      if (!tileEl || tileEl.className.indexOf('t-empty') >= 0) return;
+      if (closest(ev.target, null, 'data-grip')) return;
+      if (closest(ev.target, null, 'data-act')) return;      /* 卡内按钮不参与拖动 */
+      var pt = gripPoint(ev);
+      if (!pt) return;
+      var rc = tileEl.getBoundingClientRect();
+      if (pt.clientX > rc.right - DRAG_CORNER && pt.clientY > rc.bottom - DRAG_CORNER) return;
+      var entity = tileEl.getAttribute('data-entity');
+      if (!entity) return;
+      S.drag = {
+        el: tileEl, entity: entity, x0: pt.clientX, y0: pt.clientY,
+        started: false, ghost: null, over: null, after: false,
+        w: rc.width, h: rc.height
+      };
+    }
+
+    function dragMove(ev) {
+      var st = S.drag;
+      if (!st) return;
+      var pt = gripPoint(ev);
+      if (!pt) return;
+      var dx = pt.clientX - st.x0, dy = pt.clientY - st.y0;
+      if (!st.started) {
+        if (dx * dx + dy * dy < DRAG_LIFT * DRAG_LIFT) return;
+        st.started = true;
+        S.dragFired = true;
+        clearTimeout(S.lpTimer);
+        clearTimeout(S.holdTimer);
+        st.el.className += ' drag-src';
+        st.ghost = st.el.cloneNode(true);
+        st.ghost.className = 'tile drag-ghost';
+        st.ghost.style.width = st.w + 'px';
+        st.ghost.style.height = st.h + 'px';
+        document.body.appendChild(st.ghost);
+        actLog('drag start ' + st.entity);
+      }
+      if (ev.cancelable) ev.preventDefault();
+      st.ghost.style.left = (pt.clientX - st.w / 2) + 'px';
+      st.ghost.style.top = (pt.clientY - st.h / 2) + 'px';
+      /* 手指底下是哪张卡：elementFromPoint 会跳过 ghost（它是 pointer-events:none） */
+      var under = document.elementFromPoint(pt.clientX, pt.clientY);
+      var target = under ? closest(under, 'tile') : null;
+      if (target === st.el || (target && target.className.indexOf('drag-ghost') >= 0)) target = null;
+      if (target !== st.over) {
+        if (st.over) st.over.className = st.over.className.replace(/\s*drag-over/g, '');
+        st.over = target;
+        if (target) target.className += ' drag-over';
+      }
+      if (target) {
+        var trc = target.getBoundingClientRect();
+        /* 竖着流的网格：先看上下（放下半截 = 插到它后面）；
+           落在卡片竖向中线附近时看左右，正好戳在正中心就按「插到它前面」算 ——
+           免得同样的拖法因为 1px 抖动一会儿前一会儿后。 */
+        var ry = (pt.clientY - trc.top) / (trc.height || 1);
+        var rx = (pt.clientX - trc.left) / (trc.width || 1);
+        if (ry > 0.62) st.after = true;
+        else if (ry < 0.38) st.after = false;
+        else st.after = rx > 0.55;   /* 正好戳中线时算「前面」，别被 1px 抖动左右结果 */
+      }
+    }
+
+    function dragEnd(ev) {
+      var st = S.drag;
+      if (!st) return;
+      S.drag = null;
+      if (!st.started) return;               /* 没超过阈值：交给 click 去选中 */
+      if (ev && ev.cancelable) ev.preventDefault();
+      st.el.className = st.el.className.replace(/\s*drag-src/g, '');
+      if (st.ghost && st.ghost.parentNode) st.ghost.parentNode.removeChild(st.ghost);
+      if (st.over) st.over.className = st.over.className.replace(/\s*drag-over/g, '');
+      setTimeout(function () { S.dragFired = false; }, 400);
+      var target = st.over ? st.over.getAttribute('data-entity') : null;
+      if (target && target !== st.entity) editDrop(st.entity, target, st.after);
+      actLog('drag end ' + st.entity);
+    }
+
+    el.grid.addEventListener('touchstart', dragStart, true);
+    el.grid.addEventListener('mousedown', dragStart, true);
+    document.addEventListener('touchmove', dragMove, { passive: false, capture: true });
+    document.addEventListener('mousemove', dragMove, true);
+    document.addEventListener('touchend', dragEnd, true);
+    document.addEventListener('touchcancel', dragEnd, true);
+    document.addEventListener('mouseup', dragEnd, true);
 
     /* ---------- 卡片百分比进度条：点/拖直接改亮度 ----------
        这三段在磁贴拉伸之后注册，所以拖动开始时能先一步清掉长按定时器
@@ -4848,8 +4990,11 @@ function boot() {
     cellRows: cellRows, rowSpan: rowSpan, resizeCard: resizeCard, sizeSheetHtml: sizeSheetHtml, spanText: spanText,
     bulkCount: bulkCount, toggleBulk: toggleBulk, doBulk: doBulk, bulk: function () { return { on: S.bulk, sel: S.bulkSel }; },
     sortCards: sortCards, editToggle: editToggle, editSpan: editSpan, editMove: editMove,
+    orderForDrop: orderForDrop,
     editAddAll: editAddAll, editSheetHtml: editSheetHtml, addSheetHtml: addSheetHtml, addToggle: addToggle, addDeviceToggle: addDeviceToggle, deviceEntities: deviceEntities, allCards: allCards, visibleRooms: visibleRooms, hiddenRooms: hiddenRooms, hasColor: hasColor, rgbCss: rgbCss, hsvToRgb: hsvToRgb, rgbToHs: rgbToHs, colorPresets: COLOR_PRESETS,
     applyPrefs: applyPrefs, applyScreenPolicy: applyScreenPolicy, screenAuthRow: screenAuthRow,
+    /* 字号角色档：test-ui 用桩节点验 --fsz-n/-v/-s 一次算出的像素 */
+    setColumns: setColumns,
     battGuard: battGuard, battSwitchLabel: battSwitchLabel, battSwitchSheetHtml: battSwitchSheetHtml, battSwitchNoise: battSwitchNoise,
     setIcon: setIcon, iconsFor: iconsFor, iconSheetHtml: iconSheetHtml
   };

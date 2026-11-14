@@ -1,17 +1,19 @@
 // Run one JS expression inside the panel WebView over the Chrome DevTools Protocol.
 // Node 22+ (global fetch + WebSocket). Keeps the awkward quoting out of PowerShell.
-//   node tools/cdp-run.js <expr-file> [port]
+//   node tools/cdp-run.js <expr-file> [port] [urlSub]
 // The file must contain a single expression; its completion value is printed as JSON.
+// urlSub: pick the page target whose URL contains this substring (a temp profile may hold other tabs).
 const fs = require('fs');
 
 const file = process.argv[2];
 const port = Number(process.argv[3] || 9222);
+const urlSub = process.argv[4] || '';
 if (!file) { console.error('usage: node tools/cdp-run.js <expr-file> [port]'); process.exit(2); }
 const expr = fs.readFileSync(file, 'utf8');
 
 (async () => {
   const list = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json();
-  const page = list.find((t) => t.type === 'page');
+  const page = list.find((t) => t.type === 'page' && (!urlSub || (t.url || '').indexOf(urlSub) >= 0));
   if (!page) { console.error('no page target'); process.exit(3); }
 
   const ws = new WebSocket(page.webSocketDebuggerUrl);
