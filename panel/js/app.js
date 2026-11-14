@@ -1508,12 +1508,21 @@
     node.style.gridAutoFlow = 'row';
     node.style.gridAutoRows = unit + 'px';
     node.style.gridTemplateRows = 'repeat(auto-fill, ' + unit + 'px)';
-    /* 卡片里的图标/文字全是 calc(var(--ch) * 比例 * var(--k))：换设备、改列数、改「卡片大小」
-       都只改这四个变量，字号自己跟着缩放（老 WebView 没有 clamp()/max()，下限在这里钳）。 */
+    /* 卡片里的图标/文字是 calc(var(--fsz) * 比例)（小卡与半高卡走 --fsz-t）：换设备、改列数、
+       改「卡片大小」都只改这几个变量，字号自己跟着缩放。基准取「卡片内容盒的短边」，再钳到
+        [174,300]：下限是按平板 2 原来的写死值标定的（名字 15px、数值 40px 正好对应基准 174），
+        所以字不会再比改之前小；平板 5 的卡有 ~360px，上限 300 挡住「大卡字大到装不下」。老 WebView 没有 clamp()/max()，钳只能在这里做。 */
+    var padN = cols === 6 ? 24 : 28;
+    var fsz = Math.round(Math.min(300, Math.max(174, (h - padN) * k)));
+    /* 小卡与半高卡走 --fsz-t：下限 90 也按原来的写死值标定（小卡数值 34px、半高卡名字 13.5px） */
+    var fszT = Math.round(Math.min(120, Math.max(90, (unit - 20) * k * 1.1)));
+
     node.style.setProperty('--cellw', cellW + 'px');
     node.style.setProperty('--cellh', h + 'px');
     node.style.setProperty('--unit', unit + 'px');
     node.style.setProperty('--k', String(k));
+    node.style.setProperty('--fsz', fsz + 'px');
+    node.style.setProperty('--fsz-t', fszT + 'px');
     node.setAttribute('data-cols', String(cols));
     node.setAttribute('data-size', prefs().size || 'md');
   }
