@@ -1496,10 +1496,24 @@
        这样半高卡正好是 1×1 的一半（两份半高 + 一道行距 = 一个 1×1）。 */
     var h = rowHeight(cols);
     var unit = Math.round((h - ROW_GAP) / 2);
+    if (unit < 90) unit = 90;          /* 半高卡上的文字按比例推，单位太小字就没法读 */
+    var w = el.grid ? el.grid.clientWidth : 0;
+    if (!w) w = (window.innerWidth || 1024) - 48;
+    var cellW = Math.floor((w - ROW_GAP * (cols - 1)) / cols);
+    if (cellW < 140) cellW = 140;
+    if (cellW > 460) cellW = 460;
+    var size = prefs().size;
+    var k = size === 'sm' ? 0.86 : size === 'lg' ? 1.14 : 1;
     node.style.gridTemplateColumns = 'repeat(' + cols + ', minmax(0, 1fr))';
     node.style.gridAutoFlow = 'row';
     node.style.gridAutoRows = unit + 'px';
     node.style.gridTemplateRows = 'repeat(auto-fill, ' + unit + 'px)';
+    /* 卡片里的图标/文字全是 calc(var(--ch) * 比例 * var(--k))：换设备、改列数、改「卡片大小」
+       都只改这四个变量，字号自己跟着缩放（老 WebView 没有 clamp()/max()，下限在这里钳）。 */
+    node.style.setProperty('--cellw', cellW + 'px');
+    node.style.setProperty('--cellh', h + 'px');
+    node.style.setProperty('--unit', unit + 'px');
+    node.style.setProperty('--k', String(k));
     node.setAttribute('data-cols', String(cols));
     node.setAttribute('data-size', prefs().size || 'md');
   }

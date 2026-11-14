@@ -194,6 +194,22 @@ body::before { content: none; }
   overflow-y: auto; padding: 16px 0 4px; align-content: start;
 }
 
+/* 卡片内容尺寸全部走比例：JS 在 setColumns 里把网格的真实尺寸写成 --cellw / --cellh / --unit，
+   这里用 calc() 按卡片短边的比例取图标与字号 —— 换设备、改列数、改「卡片大小」都自动跟着缩放，
+   不再靠 .cols-3/.cols-5/.size-sm 之类写死像素（老 WebView 没有 clamp()/max()，下限由 JS 的钳位保证）。 */
+.tile {
+  --cw: calc(var(--cellw) - 28px);
+  --ch: calc(var(--cellh) - 28px);
+}
+.tile.span-2 { --cw: calc(var(--cellw) * 2 - 4px); }
+.tile.span-3 { --cw: calc(var(--cellw) * 3 + 20px); }
+.tile.span-4 { --cw: calc(var(--cellw) * 4 + 44px); }
+.tile.span-5 { --cw: calc(var(--cellw) * 5 + 68px); }
+.tile.span-6 { --cw: calc(var(--cellw) * 6 + 92px); }
+.tile.rows-2 { --ch: calc(var(--unit) * 2 - 16px); }
+.tile.half { --ch: calc(var(--unit) - 24px); }
+.tile.tiny { --cw: calc(var(--cellw) - 24px); --ch: calc(var(--unit) - 22px); }
+
 /* 图标外层：整行卡片里也要靠左，且不吃卡片的 flex 拉伸 */
 /* 卡片头部：左图标、中间名称+状态、右边电源钮（照米家的卡片读法） */
 .t-ico-wrap { flex: 0 0 auto; }
@@ -201,7 +217,7 @@ body::before { content: none; }
 
 .tile {
   position: relative; display: flex; flex-direction: column;
-  padding: 16px; border-radius: 16px; overflow: hidden;
+  padding: 14px; border-radius: 16px; overflow: hidden;
   background: rgba(var(--card-rgb), var(--card-a));
   border: 1px solid rgba(var(--line-rgb),.55);
   box-shadow: var(--shadow);
@@ -220,33 +236,35 @@ body::before { content: none; }
 /* 图标块：方角（squircle）而不是圆形 —— HomeKit / Google Home 都是方角块，
    圆形在小卡上像一枚标签贴纸，不像一个控件。position:relative 给块内的刻度条用。 */
 .t-icon {
-  width: 36px; height: 36px; border-radius: 10px; position: relative;
+  width: calc(var(--ch) * .18); height: calc(var(--ch) * .18);
+  border-radius: calc(var(--ch) * .05); position: relative;
   display: flex; align-items: center; justify-content: center;
   background: rgba(var(--surf),.06); color: var(--text-4);
   transition: background .14s, color .14s;
 }
-.t-icon svg { width: 18px; height: 18px; }
+.t-icon svg { width: calc(var(--ch) * .105); height: calc(var(--ch) * .105); }
 /* 开着的卡片：只有图标块变强调色（照米家），卡片底保持平面 */
 .tile.on .t-icon { background: rgb(var(--ctl-on)); color: var(--glyph-on); }
 
 /* 名字是这张卡的主语，房间/状态是它下面那行小字。 */
 .t-name {
-  font-size: 15px; font-weight: 600; line-height: 20px; color: var(--text-2);
+  font-size: calc(var(--ch) * .078 * var(--k)); font-weight: 600; line-height: 1.35; color: var(--text-2);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .t-sub {
-  font-size: 12px; line-height: 16px; color: var(--text-4); margin-top: 2px;
+  font-size: calc(var(--ch) * .055 * var(--k)); line-height: 1.35; color: var(--text-4); margin-top: 2px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .t-power {
   /* 米家那颗电源圆钮：开着=浅绿底绿字，关着=发丝线描边 */
-  flex: 0 0 auto; margin-left: 10px; width: 32px; height: 32px; padding: 0;
+  flex: 0 0 auto; margin-left: 10px; padding: 0;
+  width: calc(var(--ch) * .13 * var(--k)); height: calc(var(--ch) * .13 * var(--k));
   border: 1px solid rgba(var(--surf),.12); border-radius: 50%;
   background: rgba(var(--surf),.04); color: var(--text-4);
   display: flex; align-items: center; justify-content: center;
   transition: background .14s, color .14s, border-color .14s;
 }
-.t-power svg { width: 16px; height: 16px; }
+.t-power svg { width: calc(var(--ch) * .085 * var(--k)); height: calc(var(--ch) * .085 * var(--k)); }
 .t-power:active { transform: scale(.92); }
 /* 电源钮是动作，不是状态：开着的时候只让图标（状态）当那一个实心绿圆，
    电源钮退成浅色描边 + 绿字形，两张卡上就不会出现两个一样的绿点。 */
@@ -256,18 +274,18 @@ body::before { content: none; }
 .tile-mid { flex: 1; display: flex; flex-direction: column; justify-content: center; min-height: 0; }
 /* 数字是主角：等宽数字，300 字重，靠尺寸而不是超细笔画拉开层级。 */
 .t-val {
-  font-size: 40px; font-weight: 300; line-height: 1.02; letter-spacing: 0; color: var(--text-2);
+  font-size: calc(var(--ch) * .17 * var(--k)); font-weight: 300; line-height: 1.02; letter-spacing: 0; color: var(--text-2);
   font-variant-numeric: tabular-nums;
 }
 .t-val.lit { color: var(--text-1); }
-.t-val.muted { font-size: 22px; font-weight: 400; color: var(--text-3); }
-.t-val .u { font-size: 14px; font-weight: 400; letter-spacing: 0; color: var(--text-4); margin-left: 3px; }
-.t-val.small { font-size: 28px; }
+.t-val.muted { font-size: calc(var(--ch) * .12 * var(--k)); font-weight: 400; color: var(--text-3); }
+.t-val .u { font-size: calc(var(--ch) * .06 * var(--k)); font-weight: 400; letter-spacing: 0; color: var(--text-4); margin-left: 3px; }
+.t-val.small { font-size: calc(var(--ch) * .13 * var(--k)); }
 /* 传感器卡片：左侧数值 + 右侧迷你历史曲线 */
 .t-midrow { display: flex; align-items: center; min-height: 0; }
 /* 数值固定不动，曲线吃掉剩余宽度（不再用百分比，否则窄卡里会和单位重叠） */
 .t-midrow .t-val { flex: 0 0 auto; white-space: nowrap; }
-.t-spark { flex: 1 1 auto; min-width: 26px; max-width: 112px; margin-left: 12px; height: 44px; display: flex; align-items: center; }
+.t-spark { flex: 1 1 auto; min-width: 26px; max-width: 112px; margin-left: 12px; height: calc(var(--ch) * .12); display: flex; align-items: center; }
 .t-spark.none { display: none; }
 .t-spark-svg { width: 100%; height: 100%; display: block; overflow: visible; }
 .t-spark-line {
@@ -281,7 +299,7 @@ body::before { content: none; }
    填充和拖动钮的位置统一读 CSS 变量 --pct，JS 只改这一个值。
    touch-action:none 让在条上滑动不再触发页面滚动（Chromium 57 支持）。 */
 .t-bar {
-  position: relative; flex: none; height: 20px; margin-top: 12px; border-radius: 10px;
+  position: relative; flex: none; height: calc(var(--ch) * .062); margin-top: calc(var(--ch) * .05); border-radius: 10px;
   background: var(--track);
   box-shadow: inset 0 1px 1px rgba(0,0,0,.12);
   touch-action: none; -webkit-user-select: none; user-select: none;
@@ -303,34 +321,33 @@ body::before { content: none; }
   transition: width .14s;
 }
 .t-bar b {
-  position: absolute; top: 50%; left: var(--pct); width: 20px; height: 20px;
-  margin: -10px 0 0 -10px; border-radius: 50%;
+  position: absolute; top: 50%; left: var(--pct);
+  width: calc(var(--ch) * .062); height: calc(var(--ch) * .062);
+  margin: calc(var(--ch) * -.031) 0 0 calc(var(--ch) * -.031); border-radius: 50%;
   background: var(--knob); box-shadow: 0 1px 4px rgba(0,0,0,.3);
   transition: left .14s;
 }
 /* 拖动中不要缓动，条要跟手 */
 .t-bar.dragging i, .t-bar.dragging b { transition: none; }
 .t-bar.dragging { opacity: 1; }
-/* 小卡片（紧凑/6 列）里条矮一点、钮小一点，别把名字挤出去 */
-.grid.size-sm .t-bar, .grid.cols-6 .t-bar { height: 14px; border-radius: 7px; margin-top: 6px; }
-.grid.size-sm .t-bar i, .grid.cols-6 .t-bar i { border-radius: 7px 0 0 7px; }
-.grid.size-sm .t-bar b, .grid.cols-6 .t-bar b { width: 14px; height: 14px; margin: -7px 0 0 -7px; }
+/* 条高与钮都由 --ch 决定，所以小卡片（紧凑/6 列）不再需要单独的固定尺寸 */
 
-.t-ctl { display: flex; align-items: center; margin-top: 12px; }
+.t-ctl { display: flex; align-items: center; margin-top: calc(var(--ch) * .05); }
 .t-step {
-  width: 36px; height: 36px; padding: 0; border: 1px solid rgba(var(--surf),.08);
-  border-radius: 10px; background: rgba(var(--surf),.05); color: var(--text-2);
+  width: calc(var(--ch) * .13 * var(--k)); height: calc(var(--ch) * .13 * var(--k));
+  padding: 0; border: 1px solid rgba(var(--surf),.08);
+  border-radius: calc(var(--ch) * .05); background: rgba(var(--surf),.05); color: var(--text-2);
   display: flex; align-items: center; justify-content: center;
 }
-.t-step svg { width: 16px; height: 16px; }
+.t-step svg { width: calc(var(--ch) * .085 * var(--k)); height: calc(var(--ch) * .085 * var(--k)); }
 .t-step:active { background: rgba(var(--surf),.11); }
-.t-set { flex: 1; min-width: 0; text-align: center; font-size: 12px; color: var(--text-4); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.t-set { flex: 1; min-width: 0; text-align: center; font-size: calc(var(--ch) * .055 * var(--k)); color: var(--text-4); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* 名称和状态已经搬到卡片头部（照米家：左图标 / 中间名字+状态 / 右边电源钮），
    底部不再有 foot 行。 */
 
 /* 传感器卡片数字稍小 */
-.tile.sensor .t-val { font-size: 34px; }
+.tile.sensor .t-val { font-size: calc(var(--ch) * .145 * var(--k)); }
 
 /* ---------------- 弹层 ---------------- */
 /* 遮罩：纯黑实心 + 独立合成层。弹层打开时 #app 已经被换成不透明纯黑底，
@@ -529,10 +546,10 @@ body::before { content: none; }
 /* ---- 图标按卡片类型分模式（照 HomeKit / Google Home：方角块、图标即状态） ---- */
 /* 仪表类：方角块里留字形，块底一根细刻度表示读数深浅（湿度/电量按 %，温度按 5–40°C，
    窗帘按开合）。刻度只在可信区间下画，没有区间的读数留空。 */
-.tile.mode-meter .t-icon { width: 40px; height: 40px; border-radius: 11px; overflow: hidden; }
-.tile.mode-meter .t-icon svg { width: 20px; height: 20px; margin-bottom: 6px; }
+.tile.mode-meter .t-icon { width: calc(var(--ch) * .21); height: calc(var(--ch) * .21); border-radius: calc(var(--ch) * .06); overflow: hidden; }
+.tile.mode-meter .t-icon svg { width: calc(var(--ch) * .11); height: calc(var(--ch) * .11); margin-bottom: calc(var(--ch) * .035); }
 .tile.mode-meter .t-icon i {
-  position: absolute; left: 6px; right: 6px; bottom: 6px; height: 3px;
+  position: absolute; left: calc(var(--ch) * .035); right: calc(var(--ch) * .035); bottom: calc(var(--ch) * .035); height: 3px;
   border-radius: 2px; background: rgba(var(--surf),.16);
 }
 .tile.mode-meter .t-icon i b {
@@ -544,44 +561,44 @@ body::before { content: none; }
 
 /* 动作类：方角块直接就是电源键（HomeKit 那套——按图标开关，卡上不再挂第二个钮） */
 .tile.mode-power .t-ico-wrap { cursor: pointer; }
-.tile.mode-power .t-icon { width: 40px; height: 40px; border-radius: 11px; }
-.tile.mode-power .t-icon svg { width: 20px; height: 20px; }
+.tile.mode-power .t-icon { width: calc(var(--ch) * .18); height: calc(var(--ch) * .18); border-radius: calc(var(--ch) * .06); }
+.tile.mode-power .t-icon svg { width: calc(var(--ch) * .11); height: calc(var(--ch) * .11); }
 .tile.mode-power.on .t-icon { background: rgb(var(--ctl-on)); color: var(--glyph-on); }
 .tile.mode-power.na .t-icon { background: rgba(var(--surf),.04); color: var(--text-5); }
 .tile.mode-power .t-power { display: none; }
 /* 宽卡上另有电源钮，图标块退成轻 tint：一张卡上不会出现两个实心色块 */
 .tile.mode-power.span-2 .t-icon, .tile.mode-power.rows-2 .t-icon {
-  width: 36px; height: 36px; border-radius: 10px; background: rgba(var(--surf),.07);
+  width: calc(var(--ch) * .16); height: calc(var(--ch) * .16); border-radius: calc(var(--ch) * .05); background: rgba(var(--surf),.07);
 }
 .tile.mode-power.span-2.on .t-icon, .tile.mode-power.rows-2.on .t-icon {
   background: rgba(var(--ctl-on),.14); color: rgb(var(--ctl-on));
 }
-.tile.mode-power.span-2 .t-icon svg, .tile.mode-power.rows-2 .t-icon svg { width: 18px; height: 18px; }
+.tile.mode-power.span-2 .t-icon svg, .tile.mode-power.rows-2 .t-icon svg { width: calc(var(--ch) * .1); height: calc(var(--ch) * .1); }
 .tile.mode-power.span-2 .t-power, .tile.mode-power.rows-2 .t-power { display: flex; }
 
 /* 画面类：图标块退成线描，画面自己当主角 */
-.tile.mode-frame .t-icon { width: 36px; height: 36px; border-radius: 10px; background: transparent; color: var(--text-4); }
+.tile.mode-frame .t-icon { width: calc(var(--ch) * .16); height: calc(var(--ch) * .16); border-radius: calc(var(--ch) * .05); background: transparent; color: var(--text-4); }
 
 /* 场景类：实心灰块 + 播放字形，一眼看出是「一条指令」而不是一个设备 */
-.tile.mode-scene .t-icon { width: 40px; height: 40px; border-radius: 11px; background: rgba(var(--surf),.12); color: var(--text-2); }
-.tile.mode-scene .t-icon svg { width: 20px; height: 20px; }
+.tile.mode-scene .t-icon { width: calc(var(--ch) * .18); height: calc(var(--ch) * .18); border-radius: calc(var(--ch) * .06); background: rgba(var(--surf),.12); color: var(--text-2); }
+.tile.mode-scene .t-icon svg { width: calc(var(--ch) * .11); height: calc(var(--ch) * .11); }
 
 /* 占位类（未布局的实体）：保持小方角块线描 */
-.tile.mode-idle .t-icon { width: 32px; height: 32px; border-radius: 10px; background: transparent; color: var(--text-5); }
-.tile.mode-idle .t-icon svg { width: 16px; height: 16px; }
+.tile.mode-idle .t-icon { width: calc(var(--ch) * .15); height: calc(var(--ch) * .15); border-radius: calc(var(--ch) * .05); background: transparent; color: var(--text-5); }
+.tile.mode-idle .t-icon svg { width: calc(var(--ch) * .09); height: calc(var(--ch) * .09); }
 /* ---- 1×1 的两种读法（照用户手绘：简约明了，一屏只讲一件事） ---- */
 /* 控制类：一个圆钮坐在正中，图标就是可以按的东西；下方一行「状态 · 名称」靠左 */
-.tile.tiny { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 12px 12px 11px; }
-/* 核心区高度固定成一个圆钮的直径：控制卡（64px 圆钮）和读数卡（34px 大字）
-   占同样的竖向空间，下面的名称才会齐平；不然两张卡并排时名字高低差半行。 */
-.t-core { flex: 0 0 auto; display: flex; align-items: center; justify-content: center; height: 64px; }
+.tile.tiny { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 10px; }
+/* 核心区高度按卡片比例走：控制卡（圆钮）和读数卡（大字）占同样的竖向空间，
+   下面的名称才会齐平；不然两张卡并排时名字高低差半行。 */
+.t-core { flex: 0 0 auto; display: flex; align-items: center; justify-content: center; height: calc(var(--ch) * .38); }
 .t-round {
-  width: 64px; height: 64px; border-radius: 50%;
+  width: calc(var(--ch) * .34); height: calc(var(--ch) * .34); border-radius: 50%;
   display: flex; align-items: center; justify-content: center;
   background: rgba(var(--surf),.07); color: var(--text-4);
   transition: background .14s, color .14s;
 }
-.t-round svg { width: 28px; height: 28px; }
+.t-round svg { width: calc(var(--ch) * .17); height: calc(var(--ch) * .17); }
 .tile.tiny.on .t-round { background: rgb(var(--ctl-on)); color: var(--glyph-on); }
 .tile.tiny.na .t-round { background: rgba(var(--surf),.04); color: var(--text-5); }
 /* 摄像头：圆退成线描圈（画面不在 1×1 里出现）；场景：实心灰块感，一眼是「一条指令」 */
@@ -589,19 +606,19 @@ body::before { content: none; }
 .tile.tiny.mode-scene .t-round { background: rgba(var(--surf),.12); color: var(--text-2); }
 /* 传感类：大字读数 + 单位坐在正中，下方只有名称、居中 */
 .t-big {
-  font-size: 34px; font-weight: 300; line-height: 1; color: var(--text-1);
+  font-size: calc(var(--ch) * .2 * var(--k)); font-weight: 300; line-height: 1; color: var(--text-1);
   font-variant-numeric: tabular-nums; white-space: nowrap;
 }
-.t-big .u { font-size: 13px; font-weight: 400; color: var(--text-4); margin-left: 3px; letter-spacing: .04em; }
+.t-big .u { font-size: calc(var(--ch) * .09 * var(--k)); font-weight: 400; color: var(--text-4); margin-left: 3px; letter-spacing: .04em; }
 .t-big.muted { color: var(--text-5); }
 /* 一行小字：只有名称，居中；离圆钮/读数远一点（圆钮的颜色自己就是状态） */
 .t-line {
-  margin-top: 16px; max-width: 100%; align-self: center;
-  font-size: 12px; line-height: 16px; color: var(--text-3);
+  margin-top: calc(var(--ch) * .1); max-width: 100%; align-self: center;
+  font-size: calc(var(--ch) * .085 * var(--k)); line-height: 1.35; color: var(--text-3);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 /* 与 .t-line 的 margin-top 保持一致：读数卡和控制卡的名称落在同一条基线上 */
-.t-line-c { margin-top: 16px; color: var(--text-4); }
+.t-line-c { margin-top: calc(var(--ch) * .1); color: var(--text-4); }
 .tile.tiny .tile-head, .tile.tiny .tile-mid { display: none; }
 .tile.na .t-step, .tile.na .t-bar, .tile.na .t-ctl { display: none; }
 
@@ -714,10 +731,8 @@ body::before { content: none; }
 .ic-cell.sel { background: rgb(var(--accent)); color: var(--glyph-on); box-shadow: 0 0 0 2px var(--accent-soft); }
 .ic-cell:active { transform: scale(.94); }
 
-/* 设置：每行卡片数 / 卡片大小（行高统一由 JS 按方形算，这里只调字号） */
-.grid.size-sm .t-val { font-size: 34px; }
-.grid.size-md .t-val { font-size: 40px; }
-.grid.size-lg .t-val { font-size: 48px; }
+/* 设置：每行卡片数 / 卡片大小。「卡片大小」这一档现在只是比例倍数 `--k`（JS 在 setColumns 里写），
+   字号全部由 calc() 按卡片短边推出来，所以不再有 size-sm/md/lg 的固定像素。 */
 
 /* ---------- 卡片尺寸：1×1 / 2×1 / 1×2 / 2×2 ---------- */
 /* 1×1 只留四格里的 A+B+C（图标、名称、主数值）；控制条、曲线、画面从 2×1 起才出现 */
@@ -728,15 +743,14 @@ body::before { content: none; }
 /* 1×1 按设备类型分两套读法，一排方格里既有「仪表」也有「按钮」，不会 70 格一个样：
    ① 读数型（传感器 / 窗帘 / 空调）：名字在上、数值落底，像一只小仪表；
    ② 动作型（灯 / 开关 / 摄像头）：图标+名称+电源钮一行居中，图标就是状态。 */
-.tile:not(.span-2):not(.rows-2) { padding: 14px; }
 .tile:not(.span-2):not(.rows-2) .tile-head { flex: 0 0 auto; align-items: flex-start; }
 .tile:not(.span-2):not(.rows-2) .tile-mid { flex: 1 1 auto; justify-content: flex-end; }
 
-/* ① 读数型：数值是主角。温湿度、功率这类普通传感器 40px；人体/门磁这类状态词 34px */
+/* ① 读数型：数值是主角（普通传感器按卡片比例走，状态词由 .t-val.small 退一号） */
 .tile:not(.span-2):not(.rows-2).type-sensor .t-val,
 .tile:not(.span-2):not(.rows-2).type-cover .t-val,
-.tile:not(.span-2):not(.rows-2).type-climate .t-val { font-size: 40px; line-height: 1; }
-.tile:not(.span-2):not(.rows-2) .t-val.small { font-size: 34px; }
+.tile:not(.span-2):not(.rows-2).type-climate .t-val { font-size: calc(var(--ch) * .17 * var(--k)); line-height: 1; }
+.tile:not(.span-2):not(.rows-2) .t-val.small { font-size: calc(var(--ch) * .13 * var(--k)); }
 .tile:not(.span-2):not(.rows-2) .t-ctl { display: none; }   /* 方格里塞不下 ± 按钮，点开弹层调 */
 
 /* ② 动作型：动作行垂直居中；灯/开关不塞数值（要看亮度就用 2×1） */
@@ -749,23 +763,23 @@ body::before { content: none; }
 
 /* 1×2 竖卡：头在上，数值居中再大一号（读数型卡片放大字号，不靠拉宽） */
 .tile.rows-2:not(.span-2) .tile-mid { justify-content: center; }
-.tile.rows-2:not(.span-2) .t-val { font-size: 48px; }
+.tile.rows-2:not(.span-2) .t-val { font-size: calc(var(--ch) * .19 * var(--k)); }
 
 /* 宽卡：数值在上、控制条/曲线在下，条占满卡片宽度（照米家的灯卡读法） */
 .tile.span-2 .tile-mid { flex-direction: column; align-items: stretch; justify-content: center; min-height: 0; }
 .tile.span-2 .tile-mid > .t-val { flex: 0 0 auto; }
-.tile.span-2 .t-bar { flex: 0 0 auto; margin: 12px 0 0; }
-.tile.span-2 .t-ctl { flex: 0 0 auto; margin: 12px 0 0; justify-content: flex-start; }
+.tile.span-2 .t-bar { flex: 0 0 auto; margin: calc(var(--ch) * .05) 0 0; }
+.tile.span-2 .t-ctl { flex: 0 0 auto; margin: calc(var(--ch) * .05) 0 0; justify-content: flex-start; }
 .tile.span-2 .t-ctl .t-set { flex: 0 0 auto; padding: 0 14px; }
 .tile.span-2 .t-midrow { flex: 0 0 auto; }
 .tile.span-2 .t-midrow .t-spark { max-width: none; }
 /* 高卡：内容垂直居中；摄像头画面把剩下的高度吃掉 */
 .tile.rows-2 .tile-mid { justify-content: center; }
 .tile.span-2.rows-2 .tile-mid { flex-direction: column; align-items: stretch; }
-.tile.span-2.rows-2 .t-bar { margin: 12px 0 0; }
+.tile.span-2.rows-2 .t-bar { margin: calc(var(--ch) * .05) 0 0; }
 .tile.span-2.rows-2 .cam-thumb { flex: 1 1 auto; height: auto; min-height: 0; }
 /* 2×2 的温湿度计：两个读数并排，数字再大一号 */
-.tile.span-2.rows-2 .t-val { font-size: 52px; }
+.tile.span-2.rows-2 .t-val { font-size: calc(var(--ch) * .21 * var(--k)); }
 
 /* 设置页 */
 .set-sec { margin: 20px 0 4px; font-size: 12px; letter-spacing: .5px; color: var(--text-4); contain: layout style paint; }
@@ -788,15 +802,11 @@ body::before { content: none; }
 
 /* ---------- 每行 3~6 列 + 卡片跨列 ---------- */
 .grid.cols-6 { grid-template-columns: repeat(6, 1fr); }
-.grid.cols-6 .t-val { font-size: 30px; }
-.grid.cols-6 .t-name { font-size: 14px; }
-.grid.cols-6 .t-sub { font-size: 11px; margin-left: 6px; }
-.grid.cols-5 .t-sub { font-size: 12px; margin-left: 6px; }
-.grid.cols-5 .t-val { font-size: 36px; }
-.grid.cols-3 .t-val { font-size: 46px; }
-/* 5、6 列时头部只剩图标和动作：房间标签是元信息，先让它让位，名字才放得下。 */
+/* 列数不再改字号（单元格尺寸本来就由 --cellw/--cellh 反映出来），只调内边距。
+   6 列的卡片内边距更小，所以内容盒也要按 24 而不是 28 扣。 */
 .grid.cols-5 .tile { padding: 14px; }
 .grid.cols-6 .tile { padding: 12px; }
+.grid.cols-6 .tile { --cw: calc(var(--cellw) - 24px); --ch: calc(var(--cellh) - 24px); }
 .tile.span-2 { grid-column: span 2; }
 .tile.span-3 { grid-column: span 3; }
 .tile.span-4 { grid-column: span 4; }
@@ -1109,24 +1119,24 @@ body::before { content: none; }
   padding: 0 14px; border-radius: 12px;
 }
 .t-mini {
-  flex: 0 0 auto; width: 30px; height: 30px; border-radius: 50%;
+  flex: 0 0 auto; width: calc(var(--ch) * .16); height: calc(var(--ch) * .16); border-radius: 50%;
   display: flex; align-items: center; justify-content: center;
   background: rgba(var(--surf),.07); color: var(--text-4);
   transition: background .14s, color .14s;
 }
-.t-mini svg { width: 16px; height: 16px; display: block; }
+.t-mini svg { width: calc(var(--ch) * .17); height: calc(var(--ch) * .17); display: block; }
 .tile.half.on .t-mini { background: rgb(var(--ctl-on)); color: var(--glyph-on); }
 .tile.half.na .t-mini { background: rgba(var(--surf),.04); color: var(--text-5); }
 .tile.half.mode-frame .t-mini { background: transparent; border: 1px solid rgba(var(--surf),.14); color: var(--text-4); }
 .tile.half.mode-scene .t-mini { background: rgba(var(--surf),.12); color: var(--text-2); }
 .t-hname {
   flex: 1 1 auto; min-width: 0; margin-left: 11px;
-  font-size: 13.5px; color: var(--text-2);
+  font-size: calc(var(--ch) * .078 * var(--k)); color: var(--text-2);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .t-hval {
   flex: 0 0 auto; margin-left: 8px;
-  font-size: 13px; color: var(--text-3);
+  font-size: calc(var(--ch) * .072 * var(--k)); color: var(--text-3);
   font-variant-numeric: tabular-nums; white-space: nowrap;
 }
 .t-hval.muted { color: var(--text-5); }
@@ -1141,8 +1151,7 @@ body::before { content: none; }
 /* 紧凑列数下卡片内边距会变，半高条的左右内边距也跟着收一点 */
 .grid.cols-5 .tile.half { padding: 0 12px; }
 .grid.cols-6 .tile.half { padding: 0 10px; }
-.grid.cols-6 .tile.half .t-mini { width: 26px; height: 26px; }
-.grid.cols-6 .tile.half .t-mini svg { width: 14px; height: 14px; }
+.grid.cols-6 .tile.half { --cw: calc(var(--cellw) - 20px); --ch: calc(var(--unit) - 20px); }
 .t-size { margin-left: auto; font-size: 12px; letter-spacing: .5px; color: var(--accent-soft); }
 .t-grip {
   position: absolute; right: 2px; bottom: 2px; width: 64px; height: 64px; z-index: 30;
@@ -1164,10 +1173,8 @@ body::before { content: none; }
 .tile.resizing .t-grip::before { border-bottom-color: var(--accent-hex); }
 .tile.resizing .t-grip::after { border-color: var(--text-2); }
 
-/* 迷你曲线：卡片越小，曲线越矮越窄 */
-.grid.size-sm .t-spark { height: 34px; }
-.grid.size-lg .t-spark { height: 52px; }
+/* 迷你曲线：高度由卡片比例决定（max-width 只是防止和数值打架的帽子，不是字号） */
 .grid.cols-5 .t-spark { max-width: 96px; margin-left: 8px; }
-.grid.cols-6 .t-spark { max-width: 72px; height: 32px; margin-left: 6px; }
-.grid.cols-3 .t-spark { max-width: 140px; height: 52px; }
+.grid.cols-6 .t-spark { max-width: 72px; margin-left: 6px; }
+.grid.cols-3 .t-spark { max-width: 140px; }
 .grid.cols-6 .t-spark-svg { overflow: hidden; }
