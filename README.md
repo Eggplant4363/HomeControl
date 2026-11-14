@@ -1,4 +1,4 @@
-﻿# HomeControl · 小米平板2 中控屏
+# HomeControl · 小米平板2 中控屏
 
 一块挂在墙上的 Home Assistant 中控屏：自研轻量 Web 面板 + 极简安卓壳，跑在 **MI PAD 2**（Android 5.1 / WebView Chromium 57 / x86_64 / 2GB RAM，未 root）上，风格参考米家。
 
@@ -257,6 +257,16 @@ powershell -ExecutionPolicy Bypass -File .\tools\push.ps1 -Mock -Restart
 体检真实 HA 的名字：`node tools\name-report.js`（只读，打印每张卡的清洗前后与来源）。
 交互验收（不需要平板）：`node tools\sim.js --mock --port 8791` 后另开一个终端跑 `node tools\e2e-rename.js`
 ——CDP 真点击，验证「铅笔可见 → 预填 → 保存后卡片改名 → 面板设置恢复默认」。
+
+### 图标自定义（卡片长按 → 图标弹层）
+
+图标默认按 `iconFor(tile)` 自动识别（`device_class` / 实体类型映射到 `js/icons.js` 的键），但识别不了或想换一个时：
+
+1. **长按卡片** → 弹层标题栏**图标按钮**（按钮字形就是当前图标）→ 打开图标弹层。
+2. 弹层里是 **27 个可选字形**（灯泡/插座/摄像头/空调/窗帘/温度/水滴/人体/烟雾/风扇/太阳/云/雨/电池/闪电/仪表/门/窗/盆栽/沙发/床/书桌/淋浴/衣架/电源/月亮/房子），当前图标高亮，点一下即换。
+3. 只写本机 `localStorage['hc.icons']`，**不会同步回 HA**；「恢复默认」清掉覆盖，回自动识别。
+
+和重命名一样，选了不存在的键（清缓存后残留）会安全回落到自动识别。验收：`node tools\test-ui.js` 的图标段，或 CDP `__PANEL_TEST__.setIcon(entity, key)` → `iconFor` / 卡片 `data-icon` 变化。
 
 ### 性能与卡顿（老平板上为什么会卡）
 

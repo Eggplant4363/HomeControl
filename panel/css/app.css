@@ -703,6 +703,17 @@ body::before { content: none; }
 .sheet-rename { margin-right: 8px; width: 40px; height: 40px; border-radius: 10px; border: 0; background: rgba(var(--surf),.07); color: rgba(var(--surf),.66); display: flex; align-items: center; justify-content: center; }
 .sheet-rename svg { width: 17px; height: 17px; }
 
+/* 卡片图标选择弹层：一排排的方角块，选中的描强调色。Chromium 57 没有 flex gap，用负 margin + 外边距排 */
+.icon-grid { display: flex; flex-wrap: wrap; margin: 16px -5px 6px; }
+.ic-cell {
+  width: 46px; height: 46px; margin: 5px; padding: 0; border: 0; border-radius: 12px;
+  background: rgba(var(--surf),.07); color: var(--text-3);
+  display: flex; align-items: center; justify-content: center;
+}
+.ic-cell svg { width: 22px; height: 22px; }
+.ic-cell.sel { background: rgb(var(--accent)); color: var(--glyph-on); box-shadow: 0 0 0 2px var(--accent-soft); }
+.ic-cell:active { transform: scale(.94); }
+
 /* 设置：每行卡片数 / 卡片大小（行高统一由 JS 按方形算，这里只调字号） */
 .grid.size-sm .t-val { font-size: 34px; }
 .grid.size-md .t-val { font-size: 40px; }

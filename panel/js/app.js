@@ -330,6 +330,9 @@
   }
 
   function iconFor(tile) {
+    /* 用户自定义图标优先（hc.icons：实体 → 图标键）；选了不存在的键就回落到自动识别 */
+    var ov = S.icons && S.icons[tile.entity];
+    if (ov && ICONS[ov]) return ov;
     var dc = attrsOf(tile.entity).device_class;
     if (tile.type === 'camera') return 'cam';
     if (tile.type === 'light') return 'bulb';
@@ -2544,6 +2547,36 @@
     actLog('rename open ' + it.tile.entity);
   }
 
+  /* 可选的卡片图标集：全部是 ICONS 里给实体卡用的字形（不含音乐/控件图标） */
+  var ICON_CHOICES = ['bulb', 'plug', 'cam', 'snow', 'curtain', 'thermo', 'drop', 'motion', 'smoke',
+    'fan', 'sun', 'cloud', 'rain', 'battery', 'bolt', 'gauge', 'door', 'window',
+    'pot', 'sofa', 'bed', 'desk', 'shower', 'hanger', 'power', 'moon', 'home'];
+
+  function iconSheetHtml(tile) {
+    var cur = (S.icons && S.icons[tile.entity]) || iconFor(tile);
+    var cells = '';
+    for (var i = 0; i < ICON_CHOICES.length; i++) {
+      var k = ICON_CHOICES[i];
+      cells += '<button class="ic-cell' + (k === cur ? ' sel' : '') + '" data-act="icon-set:' + k + '" title="' + k + '">' + svg(k) + '</button>';
+    }
+    return '<div class="sheet-title">卡片图标</div>' +
+      '<div class="sheet-desc">改这台屏上这张卡显示的图标。图标颜色仍随状态变（开=实心、关=浅灰、离线=更暗）。「恢复默认」回到自动识别。</div>' +
+      '<div class="icon-grid">' + cells + '</div>' +
+      '<div class="cfg-actions"><button class="btn" data-act="icon-default">恢复默认</button>' +
+      '<button class="btn primary" data-act="icon-done">完成</button></div>';
+  }
+
+  function openIconSheet() {
+    var it = S.sheetItem;
+    if (!it || !it.tile) return;
+    S.sheetShow = 'icon';
+    el.sheetInner.innerHTML = iconSheetHtml(it.tile);
+    if (el.sheetInner) el.sheetInner.scrollTop = 0;
+    S.sheetOpenedAt = Date.now();
+    freezeGrid(true);
+    actLog('icon open ' + it.tile.entity);
+  }
+
   function saveRename() {
     var it = S.sheetItem;
     if (!it || !it.tile) return;
@@ -2810,7 +2843,8 @@
     el.sheet.style.setProperty('--acc-line', accLine(rawA));
     var html = '<div class="sheet-head"><div><div class="sheet-name">' + esc(displayName(tile)) + '</div>' +
       '<div class="sheet-room">' + esc((item.room ? item.room + ' · ' : '') + id) + '</div></div>' +
-      (tile && tile.entity ? '<button class="sheet-rename" data-act="rename-open" title="重命名">' + svg('edit') + '</button>' : '') +
+      (tile && tile.entity ? '<button class="sheet-rename" data-act="rename-open" title="重命名">' + svg('edit') + '</button>' +
+        '<button class="sheet-rename" data-act="icon-open" title="图标">' + svg(iconFor(tile)) + '</button>' : '') +
       '<button class="sheet-close" data-act="close">' + svg('close') + '</button></div>' +
       '<div class="sheet-body">' + body + '</div>';
     if (html === S.sheetHtml) return;
@@ -2821,6 +2855,8 @@
 
   function refreshSheet() {
     if (!S.sheetEntity || S.dragging) return;
+    /* 子弹层（图标/尺寸/重命名）开着时，状态推送别把它盖成卡片详情 */
+    if (S.sheetShow === 'icon' || S.sheetShow === 'size' || S.sheetShow === 'rename') return;
     renderSheet();
   }
 
@@ -3456,6 +3492,39 @@ function bindDim() {
     actLog('rename reset');
   }
 
+  /* ---------------- 卡片图标自定义（hc.icons：实体 → 图标键） ---------------- */
+  var ICONS_KEY = 'hc.icons';
+
+  function readIconStore() {
+    try {
+      var raw = localStorage[ICONS_KEY];
+      var o = raw ? JSON.parse(raw) : null;
+      return o && typeof o === 'object' ? o : {};
+    } catch (e) { return {}; }
+  }
+
+  function writeIconStore(o) {
+    try { localStorage[ICONS_KEY] = JSON.stringify(o || {}); } catch (e) { }
+  }
+
+  function iconsFor() {
+    var out = {};
+    var local = readIconStore();
+    for (var id in local) {
+      if (Object.prototype.hasOwnProperty.call(local, id) && local[id] && ICONS[local[id]]) out[id] = local[id];
+    }
+    return out;
+  }
+
+  function setIcon(id, key) {
+    var store = readIconStore();
+    var v = String(key || '').trim();
+    if (v && ICONS[v]) store[id] = v; else delete store[id];
+    writeIconStore(store);
+    S.icons = iconsFor();
+    actLog('icon ' + id + ' -> ' + (v || '(default)'));
+  }
+
   function resolveHa() {
     var ha = {
       url: (cfg.ha && cfg.ha.url) || '',
@@ -3933,6 +4002,26 @@ function bindDim() {
       if (act === 'rename-open') { openRename(); return; }
     if (act === 'rename-save') { saveRename(); return; }
     if (act === 'rename-cancel') { closeSheet(); return; }
+    if (act === 'icon-open') { openIconSheet(); return; }
+    if (act.indexOf('icon-set:') === 0) {
+      if (S.sheetItem && S.sheetItem.tile) {
+        setIcon(S.sheetItem.tile.entity, act.slice(9));
+        renderGrid(true);
+        el.sheetInner.innerHTML = iconSheetHtml(S.sheetItem.tile);
+        toast('已改图标');
+      }
+      return;
+    }
+    if (act === 'icon-default') {
+      if (S.sheetItem && S.sheetItem.tile) {
+        setIcon(S.sheetItem.tile.entity, '');
+        renderGrid(true);
+        el.sheetInner.innerHTML = iconSheetHtml(S.sheetItem.tile);
+        toast('已恢复默认图标');
+      }
+      return;
+    }
+    if (act === 'icon-done') { closeSheet(); return; }
     if (act === 'names-reset') { clearNames(); renderGrid(true); var nh = settingsHost(); if (nh) nh.innerHTML = panelSheetHtml(); toast('已恢复默认名称'); return; }
     if (act === 'close') { if (S.sheetShow === 'panel' && el.view) closeSettingsView(); else closeSheet(); return; }
       if (act.indexOf('room-toggle:') === 0) { toggleRoom(act.slice(12)); return; }
@@ -4581,6 +4670,7 @@ function boot() {
     }
     S.ha = ha;                    /* 摄像头快照/名称覆盖都要用 */
     S.names = namesFor(ha);
+    S.icons = iconsFor();
     S.real = ha.ready && cfg.forceMock !== true;
     S.unconfigured = !ha.ready;   /* 没填地址/令牌：面板只是样例，不是连不上 */
     S.layoutReady = !S.real;
@@ -4694,7 +4784,8 @@ function boot() {
     sortCards: sortCards, editToggle: editToggle, editSpan: editSpan, editMove: editMove,
     editAddAll: editAddAll, editSheetHtml: editSheetHtml, allCards: allCards, visibleRooms: visibleRooms, hiddenRooms: hiddenRooms, hasColor: hasColor, rgbCss: rgbCss, hsvToRgb: hsvToRgb, rgbToHs: rgbToHs, colorPresets: COLOR_PRESETS,
     applyPrefs: applyPrefs, applyScreenPolicy: applyScreenPolicy, screenAuthRow: screenAuthRow,
-    battGuard: battGuard, battSwitchLabel: battSwitchLabel, battSwitchSheetHtml: battSwitchSheetHtml, battSwitchNoise: battSwitchNoise
+    battGuard: battGuard, battSwitchLabel: battSwitchLabel, battSwitchSheetHtml: battSwitchSheetHtml, battSwitchNoise: battSwitchNoise,
+    setIcon: setIcon, iconsFor: iconsFor, iconSheetHtml: iconSheetHtml
   };
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);

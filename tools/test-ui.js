@@ -575,6 +575,22 @@ eq(bs.indexOf('台式电脑 童锁') < 0, true, '功能开关（童锁）被藏�
 eq(api.battSwitchLabel(), '未选择', '没选开关时显示「未选择」');
 api.setStates({});
 
+/* ---------------- 卡片图标自定义：覆盖 + 图标弹层 ---------------- */
+console.log('卡片图标：自定义覆盖 + 图标弹层');
+api.setStates({ 'light.living_main': { entity_id: 'light.living_main', state: 'on', attributes: {} } });
+var icTile = { entity: 'light.living_main', type: 'light', name: '客厅灯', dev: '' };
+eq(api.iconFor(icTile), 'bulb', '灯默认是灯泡图标');
+api.setIcon('light.living_main', 'moon');
+eq(api.iconFor(icTile), 'moon', '自定义图标优先于自动识别');
+eq(api.iconsFor()['light.living_main'], 'moon', '自定义图标已持久化到 hc.icons');
+var ish = api.iconSheetHtml(icTile);
+ok(ish.indexOf('data-act="icon-set:moon"') >= 0, '图标弹层列出 moon');
+ok(ish.indexOf('ic-cell sel" data-act="icon-set:moon"') >= 0, '当前图标标成选中');
+ok(ish.indexOf('data-act="icon-default"') >= 0, '图标弹层有「恢复默认」');
+api.setIcon('light.living_main', '');
+eq(api.iconFor(icTile), 'bulb', '清掉自定义后回到自动识别');
+api.setStates({});
+
 /* ---------------- 自升级（panel/js/update.js）：版本比较 / 资产挑选 / release 解析 ---------------- */
 console.log('自升级：版本比较、APK 挑选、release 解析');
 var UP = windowStub.HCUpdate;
