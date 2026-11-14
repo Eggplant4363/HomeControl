@@ -587,6 +587,9 @@ var ish = api.iconSheetHtml(icTile);
 ok(ish.indexOf('data-act="icon-set:moon"') >= 0, '图标弹层列出 moon');
 ok(ish.indexOf('ic-cell sel" data-act="icon-set:moon"') >= 0, '当前图标标成选中');
 ok(ish.indexOf('data-act="icon-default"') >= 0, '图标弹层有「恢复默认」');
+['ceiling', 'pendant', 'floorlamp', 'desklamp', 'sconce', 'strip', 'string', 'spot'].forEach(function (k) {
+  ok(ish.indexOf('data-act="icon-set:' + k + '"') >= 0, '灯的类型里有 ' + k);
+});
 api.setIcon('light.living_main', '');
 eq(api.iconFor(icTile), 'bulb', '清掉自定义后回到自动识别');
 api.setStates({});

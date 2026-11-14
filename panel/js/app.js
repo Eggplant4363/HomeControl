@@ -2548,7 +2548,8 @@
   }
 
   /* 可选的卡片图标集：全部是 ICONS 里给实体卡用的字形（不含音乐/控件图标） */
-  var ICON_CHOICES = ['bulb', 'plug', 'cam', 'snow', 'curtain', 'thermo', 'drop', 'motion', 'smoke',
+  var ICON_CHOICES = ['bulb', 'ceiling', 'pendant', 'floorlamp', 'desklamp', 'sconce', 'strip', 'string', 'spot',
+    'plug', 'cam', 'snow', 'curtain', 'thermo', 'drop', 'motion', 'smoke',
     'fan', 'sun', 'cloud', 'rain', 'battery', 'bolt', 'gauge', 'door', 'window',
     'pot', 'sofa', 'bed', 'desk', 'shower', 'hanger', 'power', 'moon', 'home'];
 

@@ -6,6 +6,15 @@ window.ICONS = {
   cam: '<path d="M4 8h3l1.2-2h7.6L17 8h3v10H4z"/><circle cx="12" cy="13" r="3"/>',
   /* 灯泡：一个 bulb + 两级灯座，标准照明符号 */
   bulb: '<path d="M12 3.6a5.4 5.4 0 0 0-3.4 9.6c.6.6.9 1.3.9 2.1h5c0-.8.3-1.5.9-2.1A5.4 5.4 0 0 0 12 3.6z"/><path d="M9.8 18.4h4.4"/><path d="M10.8 21.2h2.4"/>',
+  /* 灯的种类（灯的分类：吸顶灯/吊灯/落地灯/台灯/壁灯/灯带/串灯/射灯） */
+  ceiling: '<path d="M3.5 5.5h17"/><path d="M7 5.5v3a5 5 0 0 0 10 0v-3"/><path d="M12 13.5v1.8M8.5 12.3v1.4M15.5 12.3v1.4"/>',
+  pendant: '<path d="M9 4h6M12 4v3"/><path d="M8.5 11.5 12 7l3.5 4.5z"/><path d="M12 11.5v1.6M9.5 15.2v1M14.5 15.2v1"/>',
+  floorlamp: '<path d="M7 20.5h10M12 20.5V7"/><path d="M8.5 10h7l-1.4-3.4h-4.2z"/><path d="M9.5 12.6v1.5M12 13.2v1.5M14.5 12.6v1.5"/>',
+  desklamp: '<path d="M4.5 19.5h6.5M7.5 19.5V13"/><path d="M7.5 13l4.5-4"/><path d="M10.9 8.1l3.3-1.9 1.7 3z"/>',
+  sconce: '<path d="M3.5 3.5v17"/><path d="M3.5 11h3"/><path d="M6.5 8.5l2.6 2.5-2.6 2.5z"/>',
+  strip: '<rect x="3.5" y="9" width="17" height="6" rx="3"/><circle cx="8" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="16" cy="12" r="1" fill="currentColor" stroke="none"/>',
+  string: '<path d="M4 5c3.2 4.2 4.6 8 8 8s4.8-3.8 8-8"/><circle cx="7.6" cy="9" r="1.1" fill="currentColor" stroke="none"/><circle cx="12" cy="10.6" r="1.1" fill="currentColor" stroke="none"/><circle cx="16.4" cy="9" r="1.1" fill="currentColor" stroke="none"/>',
+  spot: '<path d="M4 5.5h16"/><circle cx="12" cy="8" r="2.6"/><path d="M9.6 10.4 12 16l2.4-5.6z"/><path d="M12 16v2"/>',
   /* 插座：两个插脚 + 机身 + 地线，开关类用 */
   plug: '<path d="M9.5 3.4v4.4M14.5 3.4v4.4"/><path d="M6.6 7.8h10.8v3.4a5.4 5.4 0 0 1-10.8 0V7.8z"/><path d="M12 16.6v4"/>',
   snow: '<path d="M12 2v20M3.5 6.5l17 11M20.5 6.5l-17 11"/>',
