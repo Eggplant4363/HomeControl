@@ -3233,6 +3233,7 @@
       nightStart: d.nightStart == null ? 23 : d.nightStart,
       nightEnd: d.nightEnd == null ? 7 : d.nightEnd,
       nightIdleSec: d.nightIdleSec == null ? 20 : d.nightIdleSec,
+      /* 遮罩现在永远是纯黑（config.js 的 level/nightLevel 不再影响背景，只剩背光这一档） */
       level: d.level == null ? 0.88 : d.level,
       nightLevel: d.nightLevel == null ? 0.95 : d.nightLevel,
       /* 暗屏亮度以前没透传：enterDim 只能一直用兜底 0.35，config.js 里的 dim.brightness 形同虚设 */
@@ -3266,10 +3267,9 @@
     actLog('dim enter');
     setBacklight(num(dimCfg().brightness, 0.35));
     if (S.sheetItem || S.sheetEntity) { scheduleDim(); return; }
-    var c = dimCfg();
-    var night = isNight();
     if (el.dim) {
-      el.dim.style.background = 'rgba(0,0,0,' + (night ? c.nightLevel : c.level) + ')';
+      /* 纯黑不透明：以前按 level/nightLevel 写成半透明，底下卡片的残影会透出来 */
+      el.dim.style.background = '#000';
       el.dim.className = 'dim show';
     }
     S.dimOn = true;
@@ -4795,6 +4795,8 @@ function boot() {
     climateTempCaps: climateTempCaps, dualTarget: dualTarget,
     /* 动作函数也导出：tools/check-temp.js 要在真机上验「没有设定温度的空调点加减号」这条路径 */
     adjustTemp: adjustTemp,
+    /* 遮罩：tools/check-dim.js 要在真机上验「熄屏遮罩是纯黑不透明 + 字大而粗」 */
+    enterDim: enterDim, exitDim: exitDim,
     valHtml: valHtml, subText: subText, midHtml: midHtml, tileHtml: tileHtml,
     iconFor: iconFor, iconMode: iconMode, meterLevel: meterLevel,
     pctMeta: pctMeta, pctFromX: pctFromX, barHtml: barHtml,
