@@ -2088,7 +2088,7 @@
     paintEditBtn();
     paintBulkBtn();
     el.grid.scrollTop = 0;
-    toast('编辑模式：点卡片加/删，右上角 ✓ 完成');
+    toast('编辑模式：按住卡片可拖到别处，点卡片加/删，右上角 ✓ 完成');
   }
 
   /** 编辑模式下选中一张卡（null = 取消）；选中时这张卡才显示自己的工具按钮 */
@@ -4463,7 +4463,7 @@ function bindDim() {
         tileEl = closest(ev.target, 'tile');
         if (!tileEl) return;
         var rc = tileEl.getBoundingClientRect();
-        var zone = 88;
+        var zone = cornerZone(rc);
         if (pt.clientX < rc.right - zone || pt.clientY < rc.bottom - zone) return;
         entity = tileEl.getAttribute('data-entity');
         if (!entity) return;
@@ -4549,7 +4549,18 @@ function bindDim() {
        拖动时原卡变淡留在网格里当占位（松手前不重排，眼睛有锚点），
        一张克隆卡跟着手指走；手指底下那张卡亮一圈 = 松手就插到它前面/后面。 */
     var DRAG_LIFT = 14;      /* 移动超过这么多像素才算拖动，否则还是「点选」 */
-    var DRAG_CORNER = 88;    /* 右下角这块留给拉伸（和 gripDown 的 zone 保持一致） */
+    var DRAG_CORNER = 88;    /* 右下角拉伸区最多占这么大，小卡片按比例缩 */
+
+    /* 右下角拉伸区：按卡片短边取 1/3，上限 88px、下限 22px。
+       平板上一张 ½ 高卡片才 40 多 CSS px 高，写死 88px 会把整张卡都变成拉伸区，
+       于是怎么按都是「改尺寸」，永远拖不动也选不中 —— 所以必须跟着卡片缩。 */
+    function cornerZone(rc) {
+      var m = Math.min(rc.width || 0, rc.height || 0);
+      var zone = Math.round(m * 0.34);
+      if (zone > DRAG_CORNER) zone = DRAG_CORNER;
+      if (zone < 22) zone = 22;
+      return zone;
+    }
 
     function dragStart(ev) {
       if (!S.editing || S.bulk || S.grip || S.drag) return;
@@ -4561,7 +4572,8 @@ function bindDim() {
       var pt = gripPoint(ev);
       if (!pt) return;
       var rc = tileEl.getBoundingClientRect();
-      if (pt.clientX > rc.right - DRAG_CORNER && pt.clientY > rc.bottom - DRAG_CORNER) return;
+      var zone = cornerZone(rc);
+      if (pt.clientX > rc.right - zone && pt.clientY > rc.bottom - zone) return;
       var entity = tileEl.getAttribute('data-entity');
       if (!entity) return;
       S.drag = {
