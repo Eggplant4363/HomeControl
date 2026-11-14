@@ -24,7 +24,7 @@ Home Assistant 的地址与长期访问令牌，以及一台在线的平板。
 | 双击返回键逃生口 | 1.5s 内两次 BACK → 进入系统设置（默认桌面被替换时的后路） |
 | 平板内改配置 | 长按状态胶囊 → 写 `/sdcard/HomeControl/ha.json`（`writeText ok: ... (54 chars)`）→ 重连 |
 | 保存前探活 | 200 / 401 / `SocketTimeoutException` 三种结果分别提示，失败不关弹层 |
-| 夜间调暗 + 背光 | `setBrightness 0.35` 且 `dumpsys window windows` 出现 `sbrt=0.35`；唤醒后 `setBrightness -1.0`、`sbrt` 消失 |
+| 夜间熄屏 + 背光 | `setBrightness 0.35` 且 `dumpsys window windows` 出现 `sbrt=0.35`；唤醒后 `setBrightness -1.0`、`sbrt` 消失；遮罩本身用 `node tools/check-dim.js <序列>`（断言背景 `rgb(0, 0, 0)`、不透明度 1、时钟 ≥200px/≥700 粗） |
 | 防烧屏位移 | `JSB ACT shift 2,1 / 0,1 / 1,1 / -1,-1`；像素级 diff 85% |
 | 热更新（替代 adb reverse） | push 后 `JSB ACT hot reload` → `page finished`，pid 不变 |
 | 内存基线 | 10 分钟 300+ 次推送：DOM 节点 357→359、渲染 8→334，**无 DOM 泄漏** |
@@ -182,7 +182,7 @@ app/src/            安卓壳（Java，无第三方依赖）+ TlsPolicy
 app/src_debug/      只在 debug 变体编译的假 HA（release dex 里没有这个类）
 app/certs/          ISRG 锚证书源文件（构建拷进 assets/certs，本身不放进 assets）
 panel/              面板前端（HTML/CSS/JS，Chromium 57 兼容；唯一的真相，assets 不入库）
-tools/              构建/部署/推送 + 自检 + 真机回归（env.ps1、lib/cdp.js、check-{security,rest,temp,tls,away}.js…）
+tools/              构建/部署/推送 + 自检 + 真机回归（env.ps1、lib/cdp.js、check-{security,rest,temp,tls,away,dim}.js…）
 dist/               homecontrol.apk（debug，189 KB）/ homecontrol-release.apk（173 KB），versionName 0.7.20 / versionCode 57
 docs/ARCHITECTURE.md 两层职责、Bridge 契约、TLS 与看门狗规则、构建七步
 docs/REFACTOR.md    本轮重构：已修清单+证据、验证矩阵、待办、踩坑表

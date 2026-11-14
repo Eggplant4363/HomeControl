@@ -53,11 +53,11 @@ HA 网页 → 左下角用户名 → **安全** → 页面最下方「长期访�
 | 短按右上角状态胶囊 | 立刻重连一次 |
 | 长按左上角时间 | 打开「设备与连接诊断」 |
 
-### 夜里会自己变暗
+### 夜里会自己熄屏
 
-- 白天空闲 90 秒、夜间（23:00–07:00）空闲 20 秒 → 屏幕压暗成一个大时钟，**硬件背光同时降到 35%**（不是只盖一层黑）
+- 白天空闲 90 秒、夜间（23:00–07:00）空闲 20 秒 → 整屏变**纯黑**，中间只留一个大时钟（220px、粗体、纯白），下面一行「轻触屏幕唤醒」；**硬件背光同时降到 35%**（不是只盖一层半透明黑，底下卡片的残影不会透出来）
 - 轻触屏幕唤醒；唤醒的那一下不会误触到下面的卡片
-- 想改时间/亮度：`panel/js/config.js` 里的 `dim` 段（`idleSec` / `nightIdleSec` / `brightness` / `nightStart` / `nightEnd`）
+- 想改时间/亮度：`panel/js/config.js` 里的 `dim` 段（`idleSec` / `nightIdleSec` / `brightness` / `nightStart` / `nightEnd`）；背景现在恒为纯黑，`level` / `nightLevel` 只影响历史语义
 
 ### 防烧屏
 
@@ -198,7 +198,7 @@ powershell -ExecutionPolicy Bypass -File .\tools\verify.ps1
 | `panel-automation.png` / `panel-automation-card.png` | 自动化：点卡片=触发、弹层里启用/禁用 |
 | `panel-unavailable.png` | 设备离线：整卡降透明度、点它提示「设备离线」 |
 | `panel-undo.png` | 误触后的 5 秒撤销 |
-| `panel-night-dim.png` | 夜间调暗（含背光降到 0.35） |
+| `panel-night-dim.png` | 夜间熄屏（含背光降到 0.35）——**改纯黑之前的旧图**，现在的样子是整屏纯黑 + 220px 粗体白字时钟 |
 | `panel-diag.png` | 设备与连接诊断（含网络、内存节点数） |
 | `panel-config.png` | 连接设置弹层（地址 + 令牌） |
 | `panel-connecting.png` / `panel-reconnect.png` | 连不上时的状态文案 / 短按重连 |

@@ -20,7 +20,7 @@
 | 文件 | 行数 | 职责 |
 | --- | --- | --- |
 | `panel/js/backend.js` | ~560 | HA 连接：WebSocket 主通道 + REST 兜底梯子（WS 不通时轮询 `GET /api/states`）+ 历史 `GET /api/history`；指数退避重连 |
-| `panel/js/app.js` | ~4468 | 卡片渲染、弹层、手势、亮度条、自注册、诊断页、夜间调暗 |
+| `panel/js/app.js` | ~4468 | 卡片渲染、弹层、手势、亮度条、自注册、诊断页、夜间熄屏（`#dim` 纯黑遮罩，CSS 在 `app.css` 的 `.dim` 段） |
 | `panel/js/layout.js` | ~8.3KB | 按 HA registry 的 area/device 自动生成房间与卡片 |
 | `panel/js/music.js` | ~1932 | 负一屏音乐：演示 / 道理鱼 / Subsonic 三种音源 |
 | `panel/js/config.js` | ~14KB | 阈值与调优参数（`dim`、`reloadHour`、实体上限、每类限流） |

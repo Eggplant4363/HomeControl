@@ -106,7 +106,7 @@ powershell -ExecutionPolicy Bypass -File .\tools\push.ps1 -Prod     # 生产形�
 - **逃生口**：1.5 秒内连按两次返回键 → 打开系统设置（恢复原桌面：设置 → 主屏幕 → 系统桌面）
 - **配置读取**：`/sdcard/HomeControl/url.txt` 指定页面地址（`file://` 或 `http(s)://`）；`/sdcard/HomeControl/ha.json` 提供 HA 地址与令牌
 - **平板内直接配置**：长按右上角状态胶囊 0.8 秒 → 「连接设置」弹层，填地址 + 令牌点「保存并重连」（写入 `ha.json` 后自动 reload）；点「改用模拟数据」删掉 `ha.json` 回到模拟模式。这样上墙后不用再摸电脑
-- **夜间 / 空闲调暗**：空闲 90 秒（夜间 23:00–07:00 只需 20 秒）自动压暗全屏，中间留一个大号时间；轻触任意位置唤醒，唤醒那一下不会误触下面的卡片。参数在 `panel/js/config.js` 的 `dim` 段
+- **夜间 / 空闲熄屏**：空闲 90 秒（夜间 23:00–07:00 只需 20 秒）自动把整屏压成**纯黑**（以前是半透明遮罩，底下卡片的残影会透出来），中间留一个 220px 粗体纯白的大号时间 + 一行「轻触屏幕唤醒」；轻触任意位置唤醒，唤醒那一下不会误触下面的卡片。回归：`node tools/check-dim.js <序列>`（读 `getComputedStyle` 断言纯黑、不透明度 1、时钟 ≥200px/≥700 粗）。参数在 `panel/js/config.js` 的 `dim` 段
 - **连背光一起调**：压暗时通过 `window.setAttributes()` 把本窗口的 `screenBrightness` 降到 `dim.brightness`（默认 0.35），退出时传 `-1` 恢复系统亮度。只作用本窗口、不需要 WRITE_SETTINGS 权限；夜里是真的不刺眼、也省电，不是只盖一层黑遮罩
 - **防烧屏位移**：每 5 分钟把 `#app` 整体随机平移 1~2px（`cfg.burnIn.shiftEverySec` / `maxShift`，`panel/js/app.js` 的 `startPixelShift()`），配合 `scale(1.01)` 盖住边缘。像素级偏移肉眼看不出来，但静态的时钟、卡片边框不会长期压在同一个物理像素上
 - **记住房间**：选中的房间存 localStorage['hc.room']，凌晨静默重载 / 应用重启后回到同一个房间，不会跳回「全部」；如果那个房间在真实 HA 里已经不存在，自动回落到「全部」
@@ -351,7 +351,7 @@ WebSocket 帧统计）。注意这是模拟器数字，Chromium 57 真机还没�
 | 交互 | 误触撤销 | 5 秒 | 3 / 5 / 8 秒；撤掉后 toast 的「撤销」按钮窗口变长 |
 | 屏幕 | 空闲自动调暗 | 开 | 关掉后不再自动进暗屏 |
 | 屏幕 | 唤醒亮度 | 100% | 40% / 70% / 100%，点一次屏幕恢复到这个背光 |
-| 屏幕 | 夜间调暗 | 开 | 夜间时段（`panel/js/config.js` 的 `dim.nightStart/nightEnd`）用更深遮罩 |
+| 屏幕 | 夜间调暗 | 开 | 夜间时段（`panel/js/config.js` 的 `dim.nightStart/nightEnd`）用更短的空闲等待；背景都是纯黑，只是背光与等待时间不同 |
 | 屏幕 | 防烧屏位移 | 开 | 关掉后停止像素位移（想截图对比时有用） |
 
 设置页底部还有：房间显示开关、**恢复默认名称**、**恢复默认房间**、**恢复默认设置**、**编辑卡片**、**恢复默认编辑**，
@@ -851,7 +851,7 @@ powershell -ExecutionPolicy Bypass -File .\tools\smoke.ps1
 - 默认走**模拟数据**（`panel/js/config.js` 里 `mock: true`），37 个实体的完整交互已逐项验证
 - 真实模式：协议层由 `tools/test-ha.js` 全绿覆盖；设备端 UI 链路用 fixture 方案验收通过；只差真实地址 + 令牌做最终联调
 - 局域网限制（实测）：平板 → PC 方向所有端口（80/443/8080/5037/5555/9999/8123）都是 SocketTimeoutException，Windows 防火墙三个 profile 全开且加规则需要管理员权限，所以「设备连 PC 上的假 HA」这条路不通；真实 HA 只要在同一网段且允许入站就没问题。`adb reverse` 也因旧 adbd 报 protocol fault 不可用，热更新改用 `.rev` 文件 + mtime 轮询
-- 上墙：已设为默认桌面，重启自动拉起（实测）；常亮、锁屏覆盖、看门狗、双返回键逃生口均可用；夜间/空闲自动调暗（实测，docs/screens/panel-night-dim.png）；长按时间可开诊断页（docs/screens/panel-diag.png）；每天 04:00 静默重载一次
+- 上墙：已设为默认桌面，重启自动拉起（实测）；常亮、锁屏覆盖、看门狗、双返回键逃生口均可用；夜间/空闲自动熄屏（实测，纯黑 + 220px 粗体时钟；`node tools/check-dim.js <序列>`；旧图 docs/screens/panel-night-dim.png 是改纯黑之前的半透明版本）；长按时间可开诊断页（docs/screens/panel-diag.png）；每天 04:00 静默重载一次
 - **假死自愈（实测）**：面板 JS 每 4 秒心跳一次；壳 App 的看门狗每 15 秒检查，**屏幕亮着**且超过 45 秒没心跳才 web.reload()（PowerManager.isInteractive()；熄屏 + Doze 会冻结 WebView 定时器，所以熄屏时看门狗直接跳过，不再整夜每 45s 重载），首帧前给 180 秒宽限（慢网络下 first states 实测可到 35 秒，45 秒阈值会把正在启动的页面打断）。真机验证两条：① URL 加 ?selftest=hang 让页面主线程卡死 60 秒 → logcat 出现 watchdog: no heartbeat for 45s, reloading，卡死结束后自动重载、页面恢复、无人工干预；② 熄屏静置 110 秒 → 0 条 watchdog/reload 日志（改之前每 45 秒一次）。诊断页与回归脚本可以读桥的 `info().beatAge`（距上次心跳多少毫秒）直接确认 JS 定时器还活着
 - **进程被杀后的恢复**：默认桌面角色保证按 Home 键 / 重启都会重新拉起（实测 force-stop 后按 Home 重新拉起、重启后无需解锁直接进面板）；MIUI 的 AutoStart 会拒绝后台自启广播，所以不依赖开机广播这一路
 
