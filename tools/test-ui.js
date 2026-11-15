@@ -475,6 +475,58 @@ eq(colsOpts, 4, '每行卡片可选 3/4/5/6');
   if (savedPrefs == null) windowStub.localStorage.removeItem('hc.prefs'); else windowStub.localStorage.setItem('hc.prefs', savedPrefs);
 })();
 
+/* 添加卡片弹层中途重画/翻勾不能动滚动（用户投诉：点下面的设备，列表「自己跳回顶部」没法连着挑） */
+(function () {
+  var cfg = api.cfgRef;
+  var savedRooms = cfg.rooms;
+  var savedPrefs = windowStub.localStorage.getItem('hc.prefs');
+  var savedEdit = windowStub.localStorage.getItem('hc.edit');
+  windowStub.localStorage.setItem('hc.prefs', JSON.stringify({ cols: 4, size: 'md', allCards: false }));
+  api.setReal(false);
+  cfg.rooms = [{ id: 'r1', name: '客厅', tiles: [
+    { type: 'light', entity: 'light.a', name: 'A 灯', dev: '吸顶灯', dev_id: 'dev1' }
+  ] }];
+  var listStub = { scrollTop: 80 };
+  var innerStub = {
+    scrollTop: 300, innerHTML: '',
+    querySelector: function (sel) { return sel === '.ed-list' ? listStub : null; },
+    querySelectorAll: function () { return []; }
+  };
+  api.els.sheetInner = innerStub;
+  api.refreshSheet('<div class="ed-list">x</div>');
+  eq(innerStub.scrollTop, 300, '弹层中途重画：外层滚动不丢');
+  eq(listStub.scrollTop, 80, '弹层中途重画：.ed-list 滚动不丢（不再跳回顶部）');
+  /* 勾选状态就地翻勾：不重建行、滚动不动（editState 有缓存，必须走 writeEdit 不能只写 localStorage） */
+  api.writeEdit({ added: {}, hidden: {}, order: [], span: {}, rows: {} });
+  var boxA = { innerHTML: '' };
+  var rowA = { className: 'ed-row ed-sub', getAttribute: function () { return 'add-toggle:light.a'; }, querySelector: function () { return boxA; } };
+  var dboxA = { innerHTML: '' };
+  var devA = { className: 'ed-dev', getAttribute: function () { return 'add-device:dev1'; }, querySelector: function () { return dboxA; } };
+  innerStub.querySelectorAll = function (sel) {
+    return sel === '.ed-row' ? [rowA] : sel === '.ed-dev' ? [devA] : [];
+  };
+  innerStub.scrollTop = 250;
+  api.refreshAddRows();
+  eq(rowA.className, 'ed-row ed-sub', '就地翻勾：没加入的行不带 on');
+  eq(boxA.innerHTML, '', '就地翻勾：勾空着');
+  api.setCardVisible('light.a', true);
+  api.refreshAddRows();
+  eq(rowA.className, 'ed-row ed-sub on', '就地翻勾：加入后行带上 on');
+  eq(boxA.innerHTML, '✓', '就地翻勾：行里出现 ✓');
+  eq(devA.className, 'ed-dev on', '就地翻勾：整组都加入 → 设备头带上 on');
+  eq(dboxA.innerHTML, '✓', '就地翻勾：设备头出现 ✓');
+  eq(innerStub.scrollTop, 250, '就地翻勾：滚动一动没动');
+  api.setCardVisible('light.a', false);
+  api.refreshAddRows();
+  eq(rowA.className, 'ed-row ed-sub', '就地翻勾：移除后 on 掉');
+  eq(boxA.innerHTML, '', '就地翻勾：✓ 掉');
+  eq(devA.className, 'ed-dev', '就地翻勾：设备头 on 掉');
+  delete api.els.sheetInner;
+  cfg.rooms = savedRooms;
+  if (savedPrefs == null) windowStub.localStorage.removeItem('hc.prefs'); else windowStub.localStorage.setItem('hc.prefs', savedPrefs);
+  if (savedEdit == null) windowStub.localStorage.removeItem('hc.edit'); else windowStub.localStorage.setItem('hc.edit', savedEdit);
+})();
+
 /* ---- 字号角色档：同屏同角色一个字号（type scale），文字不按卡片现场算 ---- */
 (function () {
   var tok = {};

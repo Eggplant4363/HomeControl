@@ -1740,8 +1740,8 @@
     writeEdit(e);
     actLog('edit all=' + (all ? list.length : 0));
     renderGrid(true);
-    if (S.sheetShow === 'edit') el.sheetInner.innerHTML = editSheetHtml();
-    else if (S.sheetShow === 'add') el.sheetInner.innerHTML = addSheetHtml();
+    if (S.sheetShow === 'edit') refreshSheet(editSheetHtml());
+    else if (S.sheetShow === 'add') refreshAddRows();
   }
 
   function editToggle(entity) {
@@ -1750,7 +1750,7 @@
     actLog('edit toggle ' + entity + ' -> ' + (on ? 'on' : 'off'));
     renderGrid(true);
     /* 只有编辑帮助面板打开时才重写它；否则会把选中的卡片工具条/内容顶掉 */
-    if (S.sheetShow === 'edit') el.sheetInner.innerHTML = editSheetHtml();
+    if (S.sheetShow === 'edit') refreshSheet(editSheetHtml());
   }
 
   /** 卡片在「当前顺序」里前后挪一格（跨房间也按顺序数组来，切列数不会乱） */
@@ -1772,7 +1772,7 @@
     writeEdit(e);
     actLog('edit move ' + entity + ' ' + dir);
     renderGrid(true);
-    el.sheetInner.innerHTML = editSheetHtml();
+    refreshSheet(editSheetHtml());
   }
 
   /** 拖放落位：把 entity 插到 target 前面/后面（纯函数，离线单测直接测）
@@ -1807,7 +1807,7 @@
     writeEdit(e);
     actLog('edit drop ' + entity + (after ? ' after ' : ' before ') + target);
     renderGrid(true);
-    if (S.sheetShow === 'edit') el.sheetInner.innerHTML = editSheetHtml();
+    if (S.sheetShow === 'edit') refreshSheet(editSheetHtml());
     return true;
   }
 
@@ -1821,7 +1821,7 @@
     writeEdit(e);
     actLog('edit span ' + entity + ' ' + v);
     renderGrid(true);
-    el.sheetInner.innerHTML = editSheetHtml();
+    refreshSheet(editSheetHtml());
   }
 
   /* ---------- 添加卡片（类似手机桌面：点「+」从列表里挑） ---------- */
@@ -1985,13 +1985,53 @@
     return e;
   }
 
+  /** 弹层中途重画（勾选一张卡、整组开关）时保住滚动位置：
+   *  整段 innerHTML 替换会重建滚动容器（.sheet-inner 和里面的 .ed-list），
+   *  scrollTop 归零——用户滚到列表下面点一台设备，列表「自己跳回顶部」，
+   *  没法连着往下挑。打开新弹层才回顶部（open* 里显式 scrollTop=0），
+   *  中途重画一律走这里。 */
+  function refreshSheet(html) {
+    if (!el.sheetInner) return;
+    var innerTop = el.sheetInner.scrollTop;
+    var lst = el.sheetInner.querySelector('.ed-list');
+    var listTop = lst ? lst.scrollTop : 0;
+    el.sheetInner.innerHTML = html;
+    el.sheetInner.scrollTop = innerTop;
+    var lst2 = el.sheetInner.querySelector('.ed-list');
+    if (lst2) lst2.scrollTop = listTop;
+  }
+
+  /** 添加卡片列表开着时不重画列表，只就地翻勾：整段重画会重建滚动容器
+   *  （跳到顶部）并打断触摸惯性滚动；就地改状态让列表「站着不动」。 */
+  function refreshAddRows() {
+    if (!el.sheetInner || !el.sheetInner.querySelectorAll) return;
+    var rows = el.sheetInner.querySelectorAll('.ed-row');
+    for (var i = 0; i < rows.length; i++) {
+      var a = rows[i].getAttribute ? rows[i].getAttribute('data-act') || '' : '';
+      if (a.indexOf('add-toggle:') !== 0) continue;
+      var on = cardVisible(a.slice(11));
+      rows[i].className = rows[i].className.replace(/\s*\bon\b/g, '') + (on ? ' on' : '');
+      var box = rows[i].querySelector('.ed-box');
+      if (box) box.innerHTML = on ? '✓' : '';
+    }
+    var devs = el.sheetInner.querySelectorAll('.ed-dev');
+    for (var j = 0; j < devs.length; j++) {
+      var key = (devs[j].getAttribute('data-act') || '').slice(11);
+      var ents = deviceEntities(key);
+      var allOn = ents.length > 0 && ents.every(cardVisible);
+      devs[j].className = devs[j].className.replace(/\s*\bon\b/g, '') + (allOn ? ' on' : '');
+      var dbox = devs[j].querySelector('.ed-box');
+      if (dbox) dbox.innerHTML = allOn ? '✓' : '';
+    }
+  }
+
   /** 添加/移除一张卡；不动其它卡片的顺序。sheet 只在添加面板里时刷新 */
   function addToggle(entity) {
     var on = !cardVisible(entity);
     setCardVisible(entity, on);
     actLog((on ? 'card on ' : 'card off ') + entity);
     renderGrid(true);
-    if (S.sheetShow === 'add') el.sheetInner.innerHTML = addSheetHtml();
+    if (S.sheetShow === 'add') refreshAddRows();
   }
 
   /** 某台设备（dev_id）下所有可显示实体的 id 列表；无设备的实体归「__none__」 */
@@ -2011,7 +2051,7 @@
     ents.forEach(function (e) { setCardVisible(e, !allOn); });
     actLog('add device ' + key + (allOn ? ' off' : ' on') + ' x' + ents.length);
     renderGrid(true);
-    if (S.sheetShow === 'add') el.sheetInner.innerHTML = addSheetHtml();
+    if (S.sheetShow === 'add') refreshAddRows();
   }
 
   /** 编辑模式里拖/点箭头把卡片往前或往后挪；和相邻卡片交换 */
@@ -2086,7 +2126,7 @@
     writeEdit(e);
     actLog('edit reset');
     renderGrid(true);
-    if (S.sheetShow === 'edit') el.sheetInner.innerHTML = editSheetHtml();
+    if (S.sheetShow === 'edit') refreshSheet(editSheetHtml());
   }
 
   /** 编辑模式下的工具条（在网格上方，不占卡片位置） */
@@ -2137,7 +2177,7 @@
     writeEdit(e);
     actLog('edit tab on ' + r.id + ' +' + n);
     renderGrid(true);
-    if (S.sheetShow === 'edit') el.sheetInner.innerHTML = editSheetHtml();
+    if (S.sheetShow === 'edit') refreshSheet(editSheetHtml());
     toast('已添加「' + r.name + '」的 ' + n + ' 张卡');
   }
 
@@ -2155,7 +2195,7 @@
     writeEdit(e);
     actLog('edit tab off ' + r.id + ' -' + n);
     renderGrid(true);
-    if (S.sheetShow === 'edit') el.sheetInner.innerHTML = editSheetHtml();
+    if (S.sheetShow === 'edit') refreshSheet(editSheetHtml());
     toast('已移除「' + r.name + '」的 ' + n + ' 张卡');
   }
 
@@ -4224,8 +4264,8 @@ function bindDim() {
       if (act === 'diag-panel') { if (el.view) closeSheet(); setTimeout(openSettingsView, 60); return; }
       if (act === 'edit-open') { openEditSheet(); return; }
       if (act === 'edit-add') { openAddSheet(); return; }
-      /* 添加卡片列表里点一行：这张卡加进去 / 拿掉（列表自身重画，不关弹层） */
-      if (act.indexOf('add-toggle:') === 0) { addToggle(act.slice(11)); el.sheetInner.innerHTML = addSheetHtml(); return; }
+      /* 添加卡片列表里点一行：这张卡加进去 / 拿掉（addToggle 自己重画并保住滚动，这里不再补一刀） */
+      if (act.indexOf('add-toggle:') === 0) { addToggle(act.slice(11)); return; }
       if (act.indexOf('add-device:') === 0) { addDeviceToggle(act.slice(11)); return; }
       if (act === 'add-done') { closeSheet(); setTimeout(function () { toast('已保存'); }, 60); return; }
       if (act === 'add-room') {
@@ -4233,10 +4273,11 @@ function bindDim() {
         if (rr) { (rr.tiles || []).forEach(function (t) { if (t && t.entity) addToggle(t.entity); }); }
         return;
       }
-      if (act === 'edit-all-on') { editAddAll(true); if (S.sheetShow === 'edit') el.sheetInner.innerHTML = editSheetHtml(); return; }
-      if (act === 'edit-all-off') { editAddAll(false); if (S.sheetShow === 'edit') el.sheetInner.innerHTML = editSheetHtml(); return; }
-      if (act === 'edit-reset') { editReset(); if (S.sheetShow === 'edit') el.sheetInner.innerHTML = editSheetHtml(); toast('编辑已恢复默认（一张卡都不显示）'); return; }
-      if (act.indexOf('edit-toggle:') === 0) { editToggle(act.slice(12)); if (S.sheetShow === 'edit') el.sheetInner.innerHTML = editSheetHtml(); return; }
+      /* 这四个动作各自内部会重画弹层（refreshSheet 保住滚动），这里别再补一次 innerHTML */
+      if (act === 'edit-all-on') { editAddAll(true); return; }
+      if (act === 'edit-all-off') { editAddAll(false); return; }
+      if (act === 'edit-reset') { editReset(); toast('编辑已恢复默认（一张卡都不显示）'); return; }
+      if (act.indexOf('edit-toggle:') === 0) { editToggle(act.slice(12)); return; }
       if (act === 'edit-tab-on') { editTabOn(); return; }
       if (act === 'edit-tab-off') { editTabOff(); return; }
       if (act === 'edit-done') { closeSheet(); setTimeout(function () { renderGrid(true); toast('已保存'); }, 60); return; }
@@ -4490,7 +4531,7 @@ function bindDim() {
         var actAttr = actEl.getAttribute('data-act');
         S.tileSel = S.editing ? tileEl : null;
         doAct(actAttr, item);
-        if (S.sheetShow === 'add' || actAttr === 'edit-add' || actAttr.indexOf('add-toggle:') === 0) el.sheetInner.innerHTML = addSheetHtml();
+        if (S.sheetShow === 'add') refreshAddRows();
         return;
       }
       primary(item);
@@ -5082,6 +5123,7 @@ function boot() {
     setReal: function (v) { S.real = !!v; },
     guideSheetHtml: guideSheetHtml, panelSheetHtml: panelSheetHtml, prefs: prefs, PREDEF: PREF_DEF,
     readEdit: readEdit, writeEdit: writeEdit, cardVisible: cardVisible, setCardVisible: setCardVisible, cardSpan: cardSpan,
+    refreshSheet: refreshSheet, refreshAddRows: refreshAddRows, els: el,
     cellRows: cellRows, rowSpan: rowSpan, resizeCard: resizeCard, sizeSheetHtml: sizeSheetHtml, spanText: spanText,
     bulkCount: bulkCount, toggleBulk: toggleBulk, doBulk: doBulk, bulk: function () { return { on: S.bulk, sel: S.bulkSel }; },
     /* 编辑态开关（test-ui 验「编辑态不显示尺寸标」用；真机上编辑态由弹层进出控制） */
