@@ -11,6 +11,21 @@
   'use strict';
 
   var CFG_FILE = '/sdcard/HomeControl/mqtt.json';
+
+  /* 自带轻提示：app.js/music.js 的 toast 都是模块作用域，外面调不到（真机踩坑：
+   * Uncaught TypeError: toast is not a function @mqtt.js:130），这里直接操作 #toast 元素 */
+  var toastTimer = null;
+  function toast(msg) {
+    var t = document.getElementById('toast');
+    if (!t) return;
+    t.innerHTML = '';
+    var span = document.createElement('span');
+    span.textContent = msg;
+    t.appendChild(span);
+    t.className = 'toast show';
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { t.className = 'toast'; }, 2200);
+  }
   var POLL_MS = 4000;
   var lastSent = '';
   var lastStatus = '';

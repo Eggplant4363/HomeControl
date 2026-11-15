@@ -836,6 +836,8 @@ var mqHtml = MQ.sectionHtml();
 ok(mqHtml.indexOf('data-act="mqtt-save"') >= 0, 'MQTT 节有保存按钮');
 ok(mqHtml.indexOf('id="mqHost"') >= 0, 'MQTT 节有主机输入框');
 ok(mqHtml.indexOf('MQTT 状态') >= 0, 'MQTT 节有状态行');
+var mqttSrc = fs.readFileSync(path.join(root, 'panel', 'js', 'mqtt.js'), 'utf8');
+ok(mqttSrc.indexOf('function toast') >= 0, 'mqtt.js 自带 toast（app.js/music.js 的是模块作用域，真机踩过 TypeError）');
 var idxHtml = fs.readFileSync(path.join(root, 'panel', 'index.html'), 'utf8');
 ok(idxHtml.indexOf('js/mqtt.js') >= 0, 'index.html 加载 mqtt.js');
 var appSrc = fs.readFileSync(path.join(root, 'panel', 'js', 'app.js'), 'utf8');
