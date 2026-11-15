@@ -62,6 +62,10 @@ public class MainActivity extends Activity {
     private static final String CONFIG_DIR = "/sdcard/HomeControl/";
     /** 开发/联调开关：没有这个文件就是正式包——不开 CDP 调试口、不读 url.txt、不起假 HA */
     private static final String DEBUG_FLAG = "/sdcard/HomeControl/debug.flag";
+    /** 界面自动同步：/sdcard 面板目录是热推/发布快照，设备自升级 APK 后界面还是旧文件（平板2 用户报告：装了 0.7.21 看不到电池保养）。
+     *  标记文件 panelver 放在面板目录外面（热推整目录替换也不会把它删掉），记录「这份 /sdcard 界面来自哪个 versionCode 的包」。 */
+    private static final String PANEL_VER_MARKER = "/sdcard/HomeControl/panelver";
+    private int apkCode = 0;
     /** 看门狗：收到过心跳后 45s 无心跳算卡死；从未收到过心跳时用更宽的门槛（首帧实测可 35s） */
     private static final long BEAT_STALL_MS = 45000L;
     private static final long FIRST_BEAT_MS = 180000L;
@@ -501,7 +505,69 @@ public class MainActivity extends Activity {
         }
     }
 
+    /** 加载时界面自动同步：APK 的 versionCode 比标记新 → 把 assets/panel 快照解压覆盖 /sdcard 面板目录并写标记。
+     *  平板2 用户自升级 APK 后界面自动变新（免 USB）；热推不写标记：同一 versionCode 永不解压，开发热推结果不会被发布快照回滚。 */
+    private void syncPanelFromAssets() {
+        try {
+            if (apkCode == 0) {
+                apkCode = getPackageManager().getPackageInfo(getPackageName(), 0).versionCode;
+            }
+            if (apkCode <= 0) return;
+            File marker = new File(PANEL_VER_MARKER);
+            int marked = -1;
+            if (marker.exists()) {
+                BufferedReader r = new BufferedReader(new FileReader(marker));
+                String line = r.readLine();
+                r.close();
+                try { marked = Integer.parseInt(line.trim()); } catch (Throwable t) { marked = -1; }
+            }
+            if (marked >= apkCode) return;
+            int copied = copyAssetTree(getAssets(), "panel", new File(CONFIG_DIR + "panel"));
+            if (copied > 0) {
+                OutputStream out = new java.io.FileOutputStream(marker);
+                try { out.write(String.valueOf(apkCode).getBytes("UTF-8")); } finally { try { out.close(); } catch (Throwable t) { } }
+            }
+            Log.i(TAG, "panel synced from apk assets: marker " + marked + " -> " + apkCode + " files=" + copied);
+        } catch (Throwable t) {
+            Log.w(TAG, "syncPanelFromAssets failed: " + t);
+        }
+    }
+
+    /** 递归拷贝 assets/<path> 到目标目录（覆盖已有文件），返回拷贝文件数。AssetManager 对文件 list() 返回空或 [""]，据此判目录 */
+    private int copyAssetTree(android.content.res.AssetManager am, String path, File dir) throws java.io.IOException {
+        int n = 0;
+        String[] names = am.list(path);
+        if (names == null || names.length == 0) return 0;
+        if (!dir.isDirectory() && !dir.mkdirs()) throw new java.io.IOException("cannot create " + dir.getAbsolutePath());
+        for (String name : names) {
+            String child = path + "/" + name;
+            String[] sub = am.list(child);
+            boolean isDir = sub != null && sub.length > 0 && !(sub.length == 1 && sub[0].length() == 0);
+            if (isDir) {
+                n += copyAssetTree(am, child, new File(dir, name));
+            } else {
+                File out = new File(dir, name);
+                File parent = out.getParentFile();
+                if (parent != null && !parent.exists()) parent.mkdirs();
+                InputStream in = am.open(child);
+                OutputStream os = new java.io.FileOutputStream(out);
+                try {
+                    byte[] buf = new byte[8192];
+                    int c;
+                    while ((c = in.read(buf)) > 0) os.write(buf, 0, c);
+                    os.flush();
+                } finally {
+                    try { in.close(); } catch (Throwable t) { }
+                    try { os.close(); } catch (Throwable t) { }
+                }
+                n++;
+            }
+        }
+        return n;
+    }
+
     private void loadPanel() {
+        syncPanelFromAssets();
         String url = resolveUrl();
         Log.i(TAG, "loadPanel " + url);
         long now = System.currentTimeMillis();
