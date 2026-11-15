@@ -51,10 +51,11 @@ public class MqttClient {
   private volatile Thread worker = null;
   private volatile String statusJson = "{\"state\":\"off\"}";
   private volatile long lastDiscoveryAt = 0L;
-  // 实测这台 EMQX 对 Fountain 的 SUBSCRIBE 一律 DISCONNECT reason=143（配额类）；被踢一次后
-  // 降级为「只发布不订阅」：HA 仍能出现实体并显示播放状态/标题，但下发命令收不到（需用户在
-  // EMQX 仪表盘放开该用户的订阅配额/ACL）。**static**：面板重启/改配置重建实例时不再重新订阅。
-  private static volatile boolean subscribeCmd = true;
+  // 之前这里有个 static 的 subscribeCmd 开关：一旦订阅失败就永久降级为只发布。后来查明
+  // 143 是**我们自己的 SUBSCRIBE 报文少写了 topic 长度前缀**（broker 解析成非法过滤器），
+  // 不是配额/ACL，已修（见 connectOnce 的 SUBSCRIBE 段）。现在每次连接都正常订阅，
+  // 只有 SUBACK 明确回 >=0x80 才降级并每轮重连重试，不再锁死进程。
+  private volatile boolean subscribed = false;
 
   public MqttClient(String host, int port, boolean tls, String user, String pass, String slug, Listener listener) {
     this.host = host;
@@ -128,10 +129,6 @@ public class MqttClient {
       } catch (Throwable e) {
         String msg = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
         Log.w(TAG, "mqtt connect failed: " + msg);
-        if (msg.indexOf("reason=143") >= 0 && subscribeCmd) {
-          subscribeCmd = false; // 订阅被拒（配额）：降级为只发布状态
-          Log.i(TAG, "subscribe denied (143): 降级为只发布状态");
-        }
         closeQuietly();
         setStatus("{\"state\":\"offline\",\"err\":" + jsonString(msg) + "}");
         try { Thread.sleep(backoff); } catch (InterruptedException ie) { return; }
@@ -177,22 +174,25 @@ public class MqttClient {
     if (type != 0x20 || rem < 2 || body[1] != 0) {
       throw new IOException("CONNACK reason=" + (rem >= 2 ? body[1] : -1));
     }
-    setStatus(subscribeCmd ? "{\"state\":\"connected\",\"tls\":" + (tls ? "true" : "false") + "}"
-                           : "{\"state\":\"connected-no-sub\",\"tls\":" + (tls ? "true" : "false") + "}");
-    // 这台 EMQX 拒 retain 发布（0x38 → DISCONNECT 129；plain 0x30 实测接受），所以 availability
+    setStatus("{\"state\":\"connected\",\"tls\":" + (tls ? "true" : "false") + "}");
+    // 这台 EMQX 拒 retain 发布（0x38 → 直接关线，MQTT5 的 Retain Available=0），所以 availability
     // 和 discovery 都发非 retain；HA 在线时能收到即时消息，discovery 每 ~2 分钟重发一次兜底。
     publish(availTopic(), "online", false);
     publish(discoveryTopic(), discoveryJson(), false);
     lastDiscoveryAt = System.currentTimeMillis();
 
-    if (subscribeCmd) {
+    // v5 SUBSCRIBE：报文号(2) + properties 空块(1) + **topic 长度(2)** + topic + 订阅选项(1)。
+    // 这里原来漏了 topic 长度这两个字节，broker 把 'h','o' 当成过滤器长度，判为非法过滤器后
+    // 直接 DISCONNECT reason=143，面板因此被踢线并「永久降级只发布」——这才是实体/命令一直不通的根因。
+    {
       byte[] ct = cmdTopic().getBytes("UTF-8");
-      // v5 SUBSCRIBE：报文号, properties(空块), topic, 订阅选项字节(QoS0)
-      byte[] sub = new byte[2 + 1 + ct.length + 1];
+      byte[] sub = new byte[2 + 1 + 2 + ct.length + 1];
       sub[0] = 0; sub[1] = 1; // packet id
       sub[2] = 0; // properties：空块
-      System.arraycopy(ct, 0, sub, 3, ct.length);
-      sub[3 + ct.length] = 0; // options：QoS 0
+      sub[3] = (byte) ((ct.length >> 8) & 0xFF);
+      sub[4] = (byte) (ct.length & 0xFF);
+      System.arraycopy(ct, 0, sub, 5, ct.length);
+      sub[5 + ct.length] = 0; // options：QoS 0
       writePacket(0x82, sub);
     }
 
@@ -216,11 +216,34 @@ public class MqttClient {
       byte[] p = readFull(in, len);
       int pktType = hb & 0xF0;
       if (pktType == 0xE0) {
-        // broker 主动踢线：把原因码带进日志（129=协议错误/拒 retain、143=配额超限/拒订阅、141=换服务器）
+        // broker 主动踢线：把原因码带进日志（129=协议错误、143=非法 topic 过滤器、141=换服务器）
         throw new IOException("broker DISCONNECT reason=" + (p.length > 0 ? (p[0] & 0xFF) : -1));
       }
-      if (pktType == 0x30) {
-        int qos = (hb >> 3) & 0x03;
+      if (pktType == 0x90 && p.length >= 4) {
+        // SUBACK（v5）：报文号(2) + properties 块(varint 长度 + 内容) + 每个过滤器的原因码
+        int off2 = 2;
+        int pl = 0, mul2 = 1;
+        while (off2 < p.length) {
+          int d = p[off2] & 0xFF;
+          off2++;
+          pl += (d & 0x7F) * mul2;
+          if ((d & 0x80) == 0) break;
+          mul2 *= 128;
+        }
+        off2 += pl;
+        int rc = off2 < p.length ? (p[off2] & 0xFF) : 0x80;
+        if (rc >= 0x80) {
+          subscribed = false;
+          Log.w(TAG, "subscribe denied (0x" + Integer.toHexString(rc) + "): 降级为只发布状态");
+          setStatus("{\"state\":\"connected-no-sub\",\"tls\":" + (tls ? "true" : "false") + "}");
+        } else {
+          subscribed = true;
+          Log.i(TAG, "subscribed " + cmdTopic() + " (qos=" + rc + ")");
+          setStatus("{\"state\":\"connected\",\"tls\":" + (tls ? "true" : "false") + "}");
+        }
+      } else if (pktType == 0x30) {
+        // QoS 在固定头 bit1-2（0x30 = QoS0），写成 >>3 会得到 2 而多吃 2 字节报文号，把 payload 前两个字切掉
+        int qos = (hb >> 1) & 0x03;
         int tl = ((p[0] & 0xFF) << 8) | (p[1] & 0xFF);
         String topic = new String(p, 2, tl, "UTF-8");
         int off = 2 + tl;

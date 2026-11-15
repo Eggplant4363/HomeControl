@@ -899,7 +899,9 @@ ok(mqttJava.indexOf('0x02 | 0x04') < 0, 'CONNECT 不带 Will Flag（这台 EMQX 
 ok(mqttJava.indexOf('publish(availTopic(), "online", false)') >= 0, 'availability 非 retain（这台 EMQX 拒 retain 发布，实测 DISCONNECT 129）');
 ok(mqttJava.indexOf('publish(discoveryTopic(), discoveryJson(), false)') >= 0, 'discovery 非 retain');
 ok(mqttJava.indexOf('lastDiscoveryAt') >= 0, 'discovery 定期重发（非 retain 时 HA 重启后靠重发）');
-ok(mqttJava.indexOf('subscribeCmd') >= 0, '订阅被拒(143)时降级为只发布状态');
+ok(mqttJava.indexOf('sub[3] = (byte) ((ct.length >> 8) & 0xFF)') >= 0, 'SUBSCRIBE 报文带 topic 长度前缀（漏了它 broker 回 DISCONNECT 143）');
+ok(mqttJava.indexOf('subscribe denied (0x') >= 0, 'SUBACK >=0x80 时降级为只发布状态');
+ok(mqttJava.indexOf('int qos = (hb >> 1) & 0x03') >= 0, 'PUBLISH 的 QoS 取固定头 bit1-2（写成 >>3 会吃掉 payload 前两字节）');
 ok(mqttJava.indexOf('broker DISCONNECT reason=') >= 0, 'broker 踢线原因码进日志');
 ok(fs.readFileSync(path.join(root, 'panel', 'js', 'mqtt.js'), 'utf8').indexOf('connected-no-sub') >= 0, '面板显示降级状态（已连接但订阅被拒）');
 
