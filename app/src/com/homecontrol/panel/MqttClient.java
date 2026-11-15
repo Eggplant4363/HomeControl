@@ -53,8 +53,8 @@ public class MqttClient {
   private volatile long lastDiscoveryAt = 0L;
   // 实测这台 EMQX 对 Fountain 的 SUBSCRIBE 一律 DISCONNECT reason=143（配额类）；被踢一次后
   // 降级为「只发布不订阅」：HA 仍能出现实体并显示播放状态/标题，但下发命令收不到（需用户在
-  // EMQX 仪表盘放开该用户的订阅配额/ACL）。
-  private volatile boolean subscribeCmd = true;
+  // EMQX 仪表盘放开该用户的订阅配额/ACL）。**static**：面板重启/改配置重建实例时不再重新订阅。
+  private static volatile boolean subscribeCmd = true;
 
   public MqttClient(String host, int port, boolean tls, String user, String pass, String slug, Listener listener) {
     this.host = host;
