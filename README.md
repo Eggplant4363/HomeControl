@@ -396,7 +396,7 @@ WebSocket 帧统计）。注意这是模拟器数字，Chromium 57 真机还没�
 要让升级真正可用，还需要两件事：
 
 - **发一个 release**：tag 用 `v0.7.14` 这种格式，附件上传 APK（文件名任意，`.apk` 结尾即可）。
-  `tools/release.ps1` 就是干这个的（走 GitHub API，需要 `GITHUB_TOKEN` 环境变量；仓库现在还没有任何 release）。
+  `tools/release.ps1` 就是干这个的（走 GitHub API，需要 `GITHUB_TOKEN` 环境变量——用 git 凭据管理器里那份即可：`$env:GITHUB_TOKEN` 从 `git credential fill` 取）。每次改动发新 APK 时都要跟着发一次 release：`.\tools\release.ps1 -Version 0.7.21 -Notes "…"`（v0.7.20 已发布，是第一个 release）。
 - **签名一致**：新 APK 必须能覆盖装旧 APK。默认 `tools/build.ps1` 用仓库里的 debug keystore，
   同一把钥匙签出来的才能原地覆盖；换成正式签名后要保证钥匙不变，否则系统会报「应用未安装」。
 

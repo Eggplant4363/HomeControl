@@ -67,7 +67,8 @@ $body = @{
 } | ConvertTo-Json -Compress
 
 try {
-  $rel = Invoke-RestMethod -Method Post -Uri "$api/releases" -Headers $headers -ContentType 'application/json' -Body $body @proxyParam
+  # PS5.1 对无 charset 的字符串 body 会按 ASCII 编码，中文备注全变 '?'——必须发 UTF8 字节
+  $rel = Invoke-RestMethod -Method Post -Uri "$api/releases" -Headers $headers -ContentType 'application/json' -Body ([System.Text.Encoding]::UTF8.GetBytes($body)) @proxyParam
 } catch {
   $msg = $_.Exception.Message
   if ($_.ErrorDetails -and $_.ErrorDetails.Message) { $msg = $_.ErrorDetails.Message }
