@@ -18,9 +18,11 @@ import javax.net.ssl.X509TrustManager;
  * 极小 MQTT 5 客户端（protocol level 5、QoS0、裸 socket），让「中控屏」作为 MQTT 节点接入 HA：
  * - 上线后发 availability(retain "online") + HA discovery(retain) → HA 自动出现 media_player 实体；
  * - 订阅 homecontrol/<slug>/cmd，收到 play/pause/stop 派发给面板 JS；
- * - LWT 写 availability "offline"，断线 HA 自动把实体置 unavailable。
- * 为什么是 v5：用户的 broker（10.10.1.8）只认 MQTT 5——发 3.1.1 CONNECT 会被直接关线（0 字节 eof），
- * HA 那边能连正是因为它配了 v5。包型带 v5 的 properties 块（这里一律空块 0x00）。
+ * - 停用(stop)时发 availability "offline"(retain)；崩溃断线实体靠 availability 超时/HA 旧状态（这台 broker 拒 Will，见下）。
+ * 为什么是 v5 + 0x10 头 + 不带 Will：逐字节对照 MQTTX 实测这台 EMQX——
+ * ① 只认 MQTT 5（3.1.1 CONNECT 被 0 字节关线）；② CONNECT 固定头它只认 **0x10**（spec 标准值 0x20 被拒！MQTTX 也发 0x10）；
+ * ③ 任何带 Will Flag 的 CONNECT 都被 0 字节关线（所以没有 LWT，靠 stop 时主动发 offline）。
+ * 包型带 v5 的 properties 块（这里一律空块 0x00）。
  * 只支持 broker 必需的最小包型；重连退避 2s→60s。TLS 一律 trust-all（面板只连自己配的服务器）。
  */
 public class MqttClient {
@@ -82,6 +84,7 @@ public class MqttClient {
 
   public void stop() {
     wantRun = false;
+    publish(availTopic(), "offline", true); // 没有 LWT（broker 拒 Will）：停用时主动发 offline
     closeQuietly();
     setStatus("{\"state\":\"off\"}");
   }
@@ -145,26 +148,19 @@ public class MqttClient {
     out = s.getOutputStream();
     DataInputStream in = new DataInputStream(s.getInputStream());
 
-    // CONNECT（MQTT 5）：clean start + will(availability "offline", retain) + 可选用户名/密码
-    // 旗标位按 spec：bit1 Clean Start、bit2 Will、bit5 Will Retain、bit6 Password、bit7 User Name；
-    // Will QoS 占 bit4-3（这里 QoS0 所以全 0——早期误写 0x08 会把 will QoS 设成 1）。
-    byte flags = (byte) (0x02 | 0x04 | 0x20 | (user.length() > 0 ? 0x80 : 0) | (pass.length() > 0 ? 0x40 : 0));
+    // CONNECT（MQTT 5）：clean start + 可选用户名/密码。**不带 Will**——实测这台 EMQX
+    // 对任何带 Will Flag 的 CONNECT 都直接 0 字节关线（MQTTX 不带 will 能连，逐字节复刻验证）。
+    // 固定头首字节发 0x10：这台 broker 认 0x10 不认 spec 标准值 0x20（MQTTX 也发 0x10）。
+    byte flags = (byte) (0x02 | (user.length() > 0 ? 0x80 : 0) | (pass.length() > 0 ? 0x40 : 0));
     java.io.ByteArrayOutputStream b = new java.io.ByteArrayOutputStream();
     b.write(0); b.write(4); b.write("MQTT".getBytes("UTF-8"));
     b.write(5); b.write(flags);
     b.write((KEEPALIVE >> 8) & 0xFF); b.write(KEEPALIVE & 0xFF);
     b.write(0); // CONNECT properties：空块
     writeStr(b, clientId);
-    byte[] wp = "offline".getBytes("UTF-8");
-    b.write(0); // will properties：空块
-    writeStr(b, availTopic());
-    // spec 载荷顺序：will topic 之后直接是 will message（二进制 4 字节长度）——没有第三个 properties 块
-    b.write((wp.length >>> 24) & 0xFF); b.write((wp.length >>> 16) & 0xFF);
-    b.write((wp.length >>> 8) & 0xFF); b.write(wp.length & 0xFF);
-    b.write(wp);
     if (user.length() > 0) writeStr(b, user);
     if (pass.length() > 0) writeStr(b, pass);
-    writePacket(0x20, b.toByteArray());
+    writePacket(0x10, b.toByteArray()); // 这台 EMQX 只认 0x10 头的 CONNECT（见类注释）
 
     int type = in.read();
     int rem = readRem(in);

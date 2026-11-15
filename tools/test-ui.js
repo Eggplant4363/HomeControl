@@ -894,6 +894,8 @@ ok(javaSrc.indexOf('__hcMqttCmd') >= 0, 'MainActivity 把命令派发给 JS');
 var mqttJava = fs.readFileSync(path.join(root, 'app', 'src', 'com', 'homecontrol', 'panel', 'MqttClient.java'), 'utf8');
 ok(mqttJava.indexOf('b.write(5)') >= 0, 'MqttClient 用 MQTT 5 协议级别（用户 broker 只认 v5）');
 ok(mqttJava.indexOf('MQTT 5') >= 0, 'MqttClient 注释写明 v5');
+ok(mqttJava.indexOf('writePacket(0x10, b.toByteArray())') >= 0, 'CONNECT 固定头用 0x10（这台 EMQX 不认 spec 的 0x20，实测）');
+ok(mqttJava.indexOf('0x02 | 0x04') < 0, 'CONNECT 不带 Will Flag（这台 EMQX 拒任何带 will 的 CONNECT）');
 
 console.log('');
 if (failed === 0) {

@@ -36,7 +36,8 @@ function mqttConnect(sock) {
   if (user) parts.push(Buffer.from([0, user.length]), Buffer.from(user));
   if (pass) parts.push(Buffer.from([0, pass.length]), Buffer.from(pass));
   const body = Buffer.concat(parts);
-  sock.write(Buffer.concat([Buffer.from([0x20]), encodeRem(body.length), body]));
+  // 这台 EMQX 只认 0x10 头的 CONNECT（spec 标准 0x20 被 0 字节关线，实测逐字节对照 MQTTX）
+  sock.write(Buffer.concat([Buffer.from([0x10]), encodeRem(body.length), body]));
   return new Promise((resolve, reject) => {
     let buf = Buffer.alloc(0);
     const onData = (d) => {
