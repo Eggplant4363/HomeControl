@@ -68,7 +68,7 @@ powershell -ExecutionPolicy Bypass -File tools\deploy.ps1 -SkipApk   # 只改了
 
 它会依次做：adb 在线检查（离线时直接告诉你「长按电源键 10 秒」而不是抛异常）→ 装 APK → 推 `panel\` 到 `/sdcard/HomeControl/panel/` → 改写 `url.txt` → force-stop + 启动 → 校验 `page finished` / 无脚本错误 / 前台是壳 App，最后打印 DEPLOY OK。
 
-版本号随构建更新：`versionName 0.7.24` / `versionCode 61`（`build.ps1` 的默认值就是当前版本。**约定：每次改动后都发一次新版本，迭代尽可能小**——versionCode +1、versionName 只进补丁位，如 `-VersionCode 62 -VersionName "0.7.25"`，并同步改这一行，不用再写一次性升版本脚本——装到已装更高 versionCode 的设备上会 `INSTALL_FAILED_VERSION_DOWNGRADE`），诊断页第一行就能看到「版本 0.7.24 · MI PAD 2」。
+版本号随构建更新：`versionName 0.7.25` / `versionCode 62`（`build.ps1` 的默认值就是当前版本。**约定：每次改动后都发一次新版本，迭代尽可能小**——versionCode +1、versionName 只进补丁位，如 `-VersionCode 63 -VersionName "0.7.26"`，并同步改这一行，不用再写一次性升版本脚本——装到已装更高 versionCode 的设备上会 `INSTALL_FAILED_VERSION_DOWNGRADE`），诊断页第一行就能看到「版本 0.7.25 · MI PAD 2」。
 
 面板把自己也注册进 Home Assistant（0.7.9）：走 `POST /api/states/<entity_id>`（实测 201，不存在就新建，不需要 MQTT），每分钟报一次 `sensor.homecontrol_panel`（在线状态、型号、App 版本、IP/SSID、皮肤、电量、充电、`last_seen`）、`binary_sensor.homecontrol_panel_connected`、`sensor.homecontrol_panel_battery`、`binary_sensor.homecontrol_panel_charging`、`switch.homecontrol_panel_dark_mode`。那个开关是双向的：面板写自己的皮肤，HA 里把开关拨了，面板跟着换皮肤（`selfWritten` 用来区分「HA 那边改了」和「我们自己写的」，不会自己跟自己打架）。注意 HA 的 REST 建的是实体，不是设备注册表里的设备，所以在 HA 界面上它们归在「未分配设备」下。
 ## 构建与部署
@@ -77,7 +77,7 @@ powershell -ExecutionPolicy Bypass -File tools\deploy.ps1 -SkipApk   # 只改了
 # 构建（路径由 tools\env.ps1 解析：SDK / build-tools / android.jar / JDK / adb，可用 HC_ANDROID_SDK 等环境变量覆盖）
 powershell -ExecutionPolicy Bypass -File .\tools\build.ps1                                  # debug 变体，含假 HA + 调试开关
 powershell -ExecutionPolicy Bypass -File .\tools\build.ps1 -Variant release -OutName homecontrol-release.apk   # 正式包：不含 MockHaServer
-powershell -ExecutionPolicy Bypass -File .\tools\build.ps1 -VersionCode 62 -VersionName "0.7.25"   # 发新包：版本号 +1（默认值就是当前版本 61 / 0.7.24）
+powershell -ExecutionPolicy Bypass -File .\tools\build.ps1 -VersionCode 63 -VersionName "0.7.26"   # 发新包：版本号 +1（默认值就是当前版本 62 / 0.7.25）
 
 # 安装
 adb install -r .\dist\homecontrol.apk
@@ -397,7 +397,7 @@ WebSocket 帧统计）。注意这是模拟器数字，Chromium 57 真机还没�
 要让升级真正可用，还需要两件事：
 
 - **发一个 release**：tag 用 `v0.7.14` 这种格式，附件上传 APK（文件名任意，`.apk` 结尾即可）。
-  `tools/release.ps1` 就是干这个的（走 GitHub API，需要 `GITHUB_TOKEN` 环境变量——用 git 凭据管理器里那份即可：`$env:GITHUB_TOKEN` 从 `git credential fill` 取）。每次改动发新 APK 时都要跟着发一次 release：`.\tools\release.ps1 -Version 0.7.24 -Notes "…"`（release 已到 v0.7.24；脚本文件必须带 UTF-8 BOM，否则 PowerShell 5.1 按 GBK 读中文注释会解析炸）。
+  `tools/release.ps1` 就是干这个的（走 GitHub API，需要 `GITHUB_TOKEN` 环境变量——用 git 凭据管理器里那份即可：`$env:GITHUB_TOKEN` 从 `git credential fill` 取）。每次改动发新 APK 时都要跟着发一次 release：`.\tools\release.ps1 -Version 0.7.25 -Notes "…"`（release 已到 v0.7.25；脚本文件必须带 UTF-8 BOM，否则 PowerShell 5.1 按 GBK 读中文注释会解析炸）。
 - **签名一致**：新 APK 必须能覆盖装旧 APK。默认 `tools/build.ps1` 用仓库里的 debug keystore，
   同一把钥匙签出来的才能原地覆盖；换成正式签名后要保证钥匙不变，否则系统会报「应用未安装」。
 
@@ -883,3 +883,4 @@ node tools\shot-foot.js http://127.0.0.1:8788/ build\foot.png 6
 
 脚本会打印每张卡的 `名称 | 状态`，方便确认有没有挤压、截断、名称被状态顶掉。
 注意：列数参数必须传**数字**，传 JSON 会被 PowerShell 吃掉双引号（localStorage 里存成 `{cols:6}` 而失效）。
+
