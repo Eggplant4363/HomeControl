@@ -146,8 +146,9 @@ public class MqttClient {
     DataInputStream in = new DataInputStream(s.getInputStream());
 
     // CONNECT（MQTT 5）：clean start + will(availability "offline", retain) + 可选用户名/密码
-    // v5 布局：可变头有 properties 块；载荷顺序 = will properties, will topic, will msg properties, will payload(BIN), user, pass
-    byte flags = (byte) (0x02 | 0x04 | 0x08 | (user.length() > 0 ? 0x80 : 0) | (pass.length() > 0 ? 0x40 : 0));
+    // 旗标位按 spec：bit1 Clean Start、bit2 Will、bit5 Will Retain、bit6 Password、bit7 User Name；
+    // Will QoS 占 bit4-3（这里 QoS0 所以全 0——早期误写 0x08 会把 will QoS 设成 1）。
+    byte flags = (byte) (0x02 | 0x04 | 0x20 | (user.length() > 0 ? 0x80 : 0) | (pass.length() > 0 ? 0x40 : 0));
     java.io.ByteArrayOutputStream b = new java.io.ByteArrayOutputStream();
     b.write(0); b.write(4); b.write("MQTT".getBytes("UTF-8"));
     b.write(5); b.write(flags);
@@ -157,7 +158,7 @@ public class MqttClient {
     byte[] wp = "offline".getBytes("UTF-8");
     b.write(0); // will properties：空块
     writeStr(b, availTopic());
-    b.write(0); // will message properties：空块
+    // spec 载荷顺序：will topic 之后直接是 will message（二进制 4 字节长度）——没有第三个 properties 块
     b.write((wp.length >>> 24) & 0xFF); b.write((wp.length >>> 16) & 0xFF);
     b.write((wp.length >>> 8) & 0xFF); b.write(wp.length & 0xFF);
     b.write(wp);
