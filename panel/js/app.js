@@ -1546,6 +1546,89 @@
     var items = S.items || [];
     setColumns(el.grid, cols);
     el.grid.className = items.length ? ('grid cols-' + cols + ' size-' + size + (items.length > 8 ? ' dense' : '') + (S.editing ? ' editing' : '')) : 'grid';
+    placeTiles(cols);
+  }
+
+  /* 卡片摆位：一个「带」= 一个 1×1 的高度（两行半格），带内从左到右找位置。
+     半高卡（½）优先塞进同一列的下半格 —— 这样「客厅灯 + 插线板」能叠在一个 1×1 的框里；
+     CSS 的自动排版永远横着铺（r1c1 之后是 r1c2，不是 r2c1），塞不出这种效果，所以位置在这里显式算。
+     纯函数式的顺序推进：只读 DOM 类名（span-N / half / rows-2），不碰状态，重复调用结果一样。 */
+  function placeTiles(colsArg) {
+    if (!el.grid) return;
+    var cols = num(colsArg != null ? colsArg : prefs().cols, 4);
+    if (cols < 3 || cols > 6) cols = 4;
+    var kids = el.grid.children;
+    var bands = [];
+    function band(b) {
+      if (!bands[b]) {
+        var row = [];
+        for (var c = 0; c < cols; c++) row.push([false, false]);
+        bands[b] = row;
+      }
+      return bands[b];
+    }
+    function free(b, c, r, cs, need) {
+      if (c + cs > cols || r + need > 2) return false;
+      var row = band(b);
+      for (var x = c; x < c + cs; x++) {
+        for (var y = r; y < r + need; y++) if (row[x][y]) return false;
+      }
+      return true;
+    }
+    function take(b, c, r, cs, need) {
+      var row = band(b);
+      for (var x = c; x < c + cs; x++) {
+        for (var y = r; y < r + need; y++) row[x][y] = true;
+      }
+      /* 双高卡跨两个带：把下一个带也占上 */
+      if (need === 4) take(b + 1, c, 0, cs, 2);
+    }
+    var cur = 0;
+    for (var i = 0; i < kids.length; i++) {
+      var node = kids[i];
+      var cls = ' ' + node.className + ' ';
+      var cs = 1;
+      var mt = cls.match(/ span-([1-6]) /);
+      if (mt) cs = num(mt[1], 1);
+      if (cs > cols) cs = cols;
+      var need = 2;                       /* 半行单位：1×1 = 2 */
+      if (cls.indexOf(' half ') >= 0) need = 1;
+      else if (cls.indexOf(' rows-2 ') >= 0) need = 4;
+      var b = cur, c = -1, r = 0;
+      for (;;) {
+        if (need === 4) {
+          /* 双高卡要两整带：找一个空带（当前带非空就往后挪） */
+          for (c = 0; c < cols && c + cs <= cols; c++) {
+            if (free(b, c, 0, cs, 2) && free(b + 1, c, 0, cs, 2)) break;
+          }
+          if (c + cs > cols) c = -1;
+          r = 0;
+        } else if (need === 1) {
+          /* 先找「这一列上半格已占、下半格还空」的，叠进去 */
+          for (c = 0; c < cols && c + cs <= cols; c++) {
+            if (free(b, c, 1, cs, 1) && !free(b, c, 0, cs, 1)) { r = 1; break; }
+          }
+          if (c + cs > cols) {
+            for (c = 0; c < cols && c + cs <= cols; c++) {
+              if (free(b, c, 0, cs, 1)) { r = 0; break; }
+            }
+            if (c + cs > cols) c = -1;
+          }
+        } else {
+          for (c = 0; c < cols && c + cs <= cols; c++) {
+            if (free(b, c, 0, cs, 2)) break;
+          }
+          if (c + cs > cols) c = -1;
+          r = 0;
+        }
+        if (c >= 0) break;
+        b++;                              /* 这一带放不下，往下开新带 */
+      }
+      cur = b;
+      take(b, c, r, cs, need);
+      node.style.gridColumn = (c + 1) + ' / span ' + cs;
+      node.style.gridRow = (b * 2 + r + 1) + ' / span ' + need;
+    }
   }
 
   function renderGrid(force) {
@@ -1610,6 +1693,7 @@
       S.tileEls.push(el.grid.children[j]);
     }
     for (var m = 0; m < items.length; m++) updateTile(S.tileEls[m], items[m]);
+    placeTiles(cols);
     if (S.bulk) paintPicked();
     if (hasCamTile()) setTimeout(camPaint, 30);
     setTimeout(sparkPaint, 60);
@@ -4600,6 +4684,13 @@ function bindDim() {
         st.ghost.className = 'tile drag-ghost';
         st.ghost.style.width = st.w + 'px';
         st.ghost.style.height = st.h + 'px';
+        /* 克隆卡挂在 body 上，继承不到 #grid 上的 --fsz/--unit/--cellw 这些变量，
+           图标/文字的 calc() 会掉回默认值（看起来「卡片被放大」），所以把变量一起搬过去 */
+        var gvars = ['--fsz', '--fsz-t', '--fsz-n', '--fsz-v', '--fsz-s', '--cellw', '--cellh', '--unit', '--k'];
+        for (var gi = 0; gi < gvars.length; gi++) {
+          var gv = el.grid.style.getPropertyValue(gvars[gi]);
+          if (gv) st.ghost.style.setProperty(gvars[gi], gv);
+        }
         document.body.appendChild(st.ghost);
         actLog('drag start ' + st.entity);
       }

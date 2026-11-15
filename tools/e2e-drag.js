@@ -217,6 +217,47 @@ const httpGet = url => new Promise((resolve, reject) => {
   check(await evalJs(`(function(){var n=document.querySelector('${T3}');return !!n && /\\bhalf\\b/.test(n.className);})()`), '换位置后半高还在');
   await shot('drag-3-half.png');
 
+  /* ============ ⑥ 两张半高卡叠在同一个 1×1 框里 ============ */
+  console.log('=== 6. 两张半高能叠成一个 1×1 ===');
+  await setMode(P4, {
+    added: { 'light.living_main': 1, 'switch.master_plug': 1, 'sensor.living_temp': 1, 'light.living_strip': 1 },
+    hidden: {}, order: CARDS.slice(), span: {}, rows: {}
+  });
+  await evalJs(`__PANEL_TEST__.resizeCard('light.living_main', 1, 0.5); __PANEL_TEST__.resizeCard('light.living_strip', 1, 0.5); 1`);
+  await sleep(700);
+  const geo = JSON.parse(await evalJs(`(function(){
+    function r(e){var n=document.querySelector('.tile[data-entity="'+e+'"]');if(!n)return null;var b=n.getBoundingClientRect();
+      return {x:Math.round(b.left),y:Math.round(b.top),w:Math.round(b.width),h:Math.round(b.height),row:n.style.gridRow,col:n.style.gridColumn};}
+    return JSON.stringify({a:r('light.living_main'),b:r('light.living_strip'),full:r('switch.master_plug')});
+  })()`));
+  check(!!geo.a && !!geo.b && !!geo.full, '三张卡都在');
+  check(geo.a.col.split('/')[0] === geo.b.col.split('/')[0], '两张半高卡落在同一列', geo.a.col + ' vs ' + geo.b.col);
+  check(geo.b.y > geo.a.y && Math.abs((geo.a.x) - (geo.b.x)) < 2, '第二张正好叠在第一张下面（同 x）', geo.a.x + '/' + geo.b.x);
+  check(Math.abs((geo.b.y + geo.b.h) - (geo.a.y + geo.full.h)) <= 8, '两张半高 + 行距 = 一个 1×1 的高度',
+    'pair=' + (geo.b.y + geo.b.h - geo.a.y) + ' full=' + geo.full.h);
+  await shot('drag-4-stack.png');
+  await editOn();
+  check(await evalJs(`!!document.querySelector('.grid.editing')`), '叠好的两张卡在编辑态也正常');
+
+  /* 排版不留空洞：任何卡落在「半行」的奇数行（即某个 1×1 的下半格）时，正上方那格必须有卡 */
+  const holes = await evalJs(`(function(){
+    var out=[], ns=document.querySelectorAll('.grid > .tile');
+    for (var i=0;i<ns.length;i++){
+      var n=ns[i], row=parseInt(n.style.gridRow,10)||1, col=n.style.gridColumn||'';
+      if (row % 2 === 0) {                       /* gridRow 是 1 起的：偶数 = 某个 1×1 的下半格 */
+        var up=false;
+        for (var j=0;j<ns.length;j++){
+          var m=ns[j];
+          if (m===n) continue;
+          if ((parseInt(m.style.gridRow,10)||1) === row-1 && m.style.gridColumn === col) { up=true; break; }
+        }
+        if (!up) out.push(n.getAttribute('data-entity')+'@r'+row);
+      }
+    }
+    return out.join(',');
+  })()`);
+  check(holes === '', '没有卡片悬在下半格而上方留空', holes);
+
   console.log('');
   if (failed === 0) { console.log('E2E-DRAG PASS'); edge.kill(); process.exit(0); }
   console.log('E2E-DRAG FAIL（' + failed + ' 项）');

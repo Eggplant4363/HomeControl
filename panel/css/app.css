@@ -1180,12 +1180,13 @@ body::before { content: none; }
 .tile.resizing .t-grip::before { border-bottom-color: var(--accent-hex); }
 .tile.resizing .t-grip::after { border-color: var(--text-2); }
 
-/* 编辑态拖动换位置：原卡变淡留在网格里当占位，克隆卡跟手指走，目标卡亮一圈 */
+/* 编辑态拖动换位置：原卡变淡留在网格里当占位，克隆卡跟手指走，目标卡亮一圈。
+   克隆卡不放大（原来 scale(1.03) 会让人以为卡片/图标变大了），靠描边和投影区分。 */
 .tile.drag-src { opacity: .28; border-style: dashed; }
 .tile.drag-ghost {
   position: fixed; z-index: 900; left: 0; top: 0; margin: 0;
-  pointer-events: none; opacity: .95;
-  transform: scale(1.03); border-color: rgba(var(--accent-rgb),.85);
+  pointer-events: none;
+  border-color: rgba(var(--accent-rgb),.85);
   box-shadow: 0 0 0 2px rgba(var(--accent-rgb),.55), 0 16px 32px rgba(0,0,0,.55);
 }
 .tile.drag-over {
