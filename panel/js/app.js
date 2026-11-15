@@ -4051,6 +4051,9 @@ function bindDim() {
     /* 升级（panel/js/update.js）：整块由它自己渲染，这里只负责留位置 */
     if (window.HCUpdate) html += window.HCUpdate.sectionHtml();
 
+    /* MQTT 节点（panel/js/mqtt.js）：同样由它自己渲染一节 */
+    if (window.HCMqtt) html += window.HCMqtt.sectionHtml();
+
     html += '<div class="set-sec">卡片</div>' +
       '<div class="cfg-actions"><button class="btn primary" data-act="edit-open">编辑卡片</button>' +
       '<button class="btn" data-act="edit-reset">清空所有卡片</button></div>' +
@@ -4226,6 +4229,9 @@ function bindDim() {
       if (act === 'guide-demo') { dismissGuide(); closeSheet(); toast('先看模拟数据；随时长按右上角填地址'); return; }
       if (act === 'cfg-save') { saveConfig(); return; }
       if (act === 'cfg-mock') { clearConfig(); return; }
+      /* MQTT 节：保存/停用由 HCMqtt 自己写文件并重启客户端，这里只重画弹层刷状态行 */
+      if (act === 'mqtt-save') { if (window.HCMqtt) { HCMqtt.save(); var mh = settingsHost(); if (mh) mh.innerHTML = panelSheetHtml(); } return; }
+      if (act === 'mqtt-off') { if (window.HCMqtt) { HCMqtt.disable(); var mo = settingsHost(); if (mo) mo.innerHTML = panelSheetHtml(); toast('已停用 MQTT'); } return; }
       if (act === 'rename-open') { openRename(); return; }
     if (act === 'rename-save') { saveRename(); return; }
     if (act === 'rename-cancel') { closeSheet(); return; }
@@ -5121,6 +5127,8 @@ function boot() {
     sceneChips: sceneChips, historyPoints: historyPoints, sparkHtml: sparkHtml,
     camSrc: camSrc, cameraSheet: cameraSheet, camStateText: function (st) { return CAM_STATE[st] || '待机'; },
     setReal: function (v) { S.real = !!v; },
+    /* mqtt.js 要用同一个设备 slug（HA 实体名/主题），从这里取，别两处各算一遍 */
+    selfSlug: selfSlug,
     guideSheetHtml: guideSheetHtml, panelSheetHtml: panelSheetHtml, prefs: prefs, PREDEF: PREF_DEF,
     readEdit: readEdit, writeEdit: writeEdit, cardVisible: cardVisible, setCardVisible: setCardVisible, cardSpan: cardSpan,
     refreshSheet: refreshSheet, refreshAddRows: refreshAddRows, els: el,

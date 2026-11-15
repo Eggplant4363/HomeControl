@@ -2004,6 +2004,7 @@
     openQueue: openQueueView, toggleShuffle: toggleShuffle, cycleRepeat: cycleRepeat, cycleMode: cycleMode,
     mode: function () { return { shuffle: S.shuffle, repeat: S.repeat, label: modeLabel() }; },
     next: next, prev: prev, togglePlay: toggle,
+    isPlaying: function () { return !!(S.audio && S.audio.src && !S.audio.paused); },
     openAll: function () { open(true); openLibView(); },
     libInfo: function () { return { view: S.view, src: S.src, loaded: S.lib.items.length, total: S.lib.total, randLeft: S.randQ.length, hist: S.hist.length } }
   };

@@ -127,6 +127,7 @@ load('panel/js/config.js');
 load('panel/js/icons.js');
 load('panel/js/layout.js');
 load('panel/js/update.js');
+load('panel/js/mqtt.js');
 load('panel/js/app.js');
 
 var api = windowStub.__PANEL_TEST__;
@@ -805,6 +806,48 @@ eq(UP.mb(1600000), '1.5 MB', 'mb 显示 MB');
 ok(UP.state().phase === 'idle', '初始状态是 idle');
 UP.reset();
 ok(UP.state().phase === 'idle' && UP.state().pct === 0, 'reset 回到 idle/0%');
+
+/* ---------------- MQTT 节点（panel/js/mqtt.js）：主题/命令映射/弹层节 ---------------- */
+console.log('MQTT：主题约定、命令映射、弹层节、Java 接线');
+var MQ = windowStub.HCMqtt;
+ok(!!MQ, 'HCMqtt 已挂到 window');
+var tp = MQ.__test.topics('nabu');
+eq(tp.cmd, 'homecontrol/nabu/cmd', '命令主题');
+eq(tp.avail, 'homecontrol/nabu/availability', '上线/离线主题');
+eq(tp.state, 'homecontrol/nabu/state', '状态主题');
+eq(tp.discovery, 'homeassistant/media_player/homecontrol_panel_nabu_music', 'HA discovery 主题');
+eq(MQ.__test.mapCmd('play'), 'play', 'mapCmd play');
+eq(MQ.__test.mapCmd('PAUSE'), 'pause', 'mapCmd 大小写不敏感');
+eq(MQ.__test.mapCmd('toggle'), 'toggle', 'mapCmd toggle');
+eq(MQ.__test.mapCmd('next'), 'next', 'mapCmd next');
+eq(MQ.__test.mapCmd('prev'), 'prev', 'mapCmd prev');
+eq(MQ.__test.mapCmd('stop'), 'stop', 'mapCmd stop');
+eq(MQ.__test.mapCmd('bogus'), null, '未知命令忽略（返回 null）');
+eq(MQ.__test.mapCmd(''), null, '空 payload 忽略');
+var cj = JSON.parse(MQ.__test.cfgJson({ enabled: true, host: '10.10.1.8', port: 1883, tls: false, user: 'F', pass: 'p', name: 'nabu' }));
+eq(cj.enabled, true, 'cfgJson enabled');
+eq(cj.host, '10.10.1.8', 'cfgJson host');
+eq(cj.port, 1883, 'cfgJson port');
+ok(typeof windowStub.__hcMqttCmd === 'function', '__hcMqttCmd 挂上（Java 派发入口）');
+var threw = false;
+try { windowStub.__hcMqttCmd('homecontrol/nabu/cmd', 'play'); } catch (e) { threw = true; }
+eq(threw, false, '没有 MusicUI 时收到命令也不崩（安全退回）');
+var mqHtml = MQ.sectionHtml();
+ok(mqHtml.indexOf('data-act="mqtt-save"') >= 0, 'MQTT 节有保存按钮');
+ok(mqHtml.indexOf('id="mqHost"') >= 0, 'MQTT 节有主机输入框');
+ok(mqHtml.indexOf('MQTT 状态') >= 0, 'MQTT 节有状态行');
+var idxHtml = fs.readFileSync(path.join(root, 'panel', 'index.html'), 'utf8');
+ok(idxHtml.indexOf('js/mqtt.js') >= 0, 'index.html 加载 mqtt.js');
+var appSrc = fs.readFileSync(path.join(root, 'panel', 'js', 'app.js'), 'utf8');
+ok(appSrc.indexOf('window.HCMqtt') >= 0, 'app.js 弹层渲染 MQTT 节');
+ok(appSrc.indexOf("'mqtt-save'") >= 0, 'app.js 处理 mqtt-save 动作');
+ok(appSrc.indexOf('selfSlug: selfSlug') >= 0, 'app.js 导出 selfSlug 给 mqtt.js');
+var musicSrc = fs.readFileSync(path.join(root, 'panel', 'js', 'music.js'), 'utf8');
+ok(musicSrc.indexOf('isPlaying:') >= 0, 'music.js 导出 isPlaying');
+var javaSrc = fs.readFileSync(path.join(root, 'app', 'src', 'com', 'homecontrol', 'panel', 'MainActivity.java'), 'utf8');
+ok(javaSrc.indexOf('startMqttIfNeeded') >= 0, 'MainActivity 页面就绪后自动起 MQTT');
+ok(javaSrc.indexOf('mqttPublish') >= 0 && javaSrc.indexOf('mqttRestart') >= 0 && javaSrc.indexOf('mqttState') >= 0, 'MainActivity 暴露 publish/restart/state 桥方法');
+ok(javaSrc.indexOf('__hcMqttCmd') >= 0, 'MainActivity 把命令派发给 JS');
 
 console.log('');
 if (failed === 0) {

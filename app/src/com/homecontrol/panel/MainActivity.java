@@ -89,6 +89,8 @@ public class MainActivity extends Activity {
     private volatile boolean screenHome = true;
     private android.os.PowerManager.WakeLock wakeLock;
     private volatile boolean blackout = false;
+    /** MQTT 节点（HA 控制本机音乐）：配置在 /sdcard/HomeControl/mqtt.json，页面就绪后自动起 */
+    private volatile MqttClient mqtt = null;
 
     /**
      * 全黑兜底：有的 MIUI 不认我们写的屏幕超时（它有自己的省电策略），这时把页面压成纯黑
@@ -116,6 +118,86 @@ public class MainActivity extends Activity {
             getWindow().setAttributes(lp);
         } catch (Throwable t) {
             Log.w(TAG, "setScreenBrightness failed: " + t);
+        }
+    }
+
+    /** 读 /sdcard 配置文件原文（不存在返回 null）；mqtt.json 等小文件用 */
+    private String readConfigText(String path) {
+        try {
+            java.io.File f = new java.io.File(path);
+            if (!f.exists()) return null;
+            java.io.FileInputStream in = new java.io.FileInputStream(f);
+            try {
+                byte[] buf = new byte[(int) f.length()];
+                int got = 0;
+                while (got < buf.length) {
+                    int r = in.read(buf, got, buf.length - got);
+                    if (r < 0) break;
+                    got += r;
+                }
+                return new String(buf, 0, got, "UTF-8");
+            } finally {
+                in.close();
+            }
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
+    /** 页面就绪后按 mqtt.json 自动起 MQTT；弹层「保存并连接」走 restartMqtt */
+    private void startMqttIfNeeded() {
+        String raw = readConfigText(CONFIG_DIR + "mqtt.json");
+        if (raw == null || raw.length() == 0) return;
+        restartMqtt(raw);
+    }
+
+    private void restartMqtt(String cfgJson) {
+        try {
+            if (mqtt != null) {
+                mqtt.stop();
+                mqtt = null;
+            }
+            org.json.JSONObject o = new org.json.JSONObject(cfgJson);
+            if (!o.optBoolean("enabled", false)) return;
+            String host = o.optString("host", "");
+            if (host.length() == 0) return;
+            String slug = o.optString("name", "");
+            if (slug.length() == 0) slug = "panel";
+            MqttClient c = new MqttClient(host, o.optInt("port", 1883), o.optBoolean("tls", false),
+                    o.optString("user", ""), o.optString("pass", ""), slug,
+                    new MqttClient.Listener() {
+                        @Override public void onCommand(String topic, String payload) {
+                            final String js = "void (window.__hcMqttCmd && window.__hcMqttCmd("
+                                    + org.json.JSONObject.quote(topic) + ", " + org.json.JSONObject.quote(payload) + "))";
+                            ui.post(new Runnable() {
+                                @Override public void run() {
+                                    try {
+                                        if (web != null) web.evaluateJavascript(js, null);
+                                    } catch (Throwable t) {
+                                        Log.w(TAG, "mqtt cmd js failed: " + t);
+                                    }
+                                }
+                            });
+                        }
+                        @Override public void onStatus(String statusJson) {
+                            final String js = "void (window.__hcMqttStatus && window.__hcMqttStatus("
+                                    + org.json.JSONObject.quote(statusJson) + "))";
+                            ui.post(new Runnable() {
+                                @Override public void run() {
+                                    try {
+                                        if (web != null) web.evaluateJavascript(js, null);
+                                    } catch (Throwable t) {
+                                        Log.w(TAG, "mqtt status js failed: " + t);
+                                    }
+                                }
+                            });
+                        }
+                    });
+            mqtt = c;
+            c.start();
+            Log.i(TAG, "mqtt starting -> " + host + ":" + o.optInt("port", 1883));
+        } catch (Throwable t) {
+            Log.w(TAG, "mqtt restart failed: " + t);
         }
     }
 
@@ -256,6 +338,7 @@ public class MainActivity extends Activity {
             public void onPageFinished(WebView view, String url) {
                 Log.i(TAG, "page finished: " + url);
                 hideBanner();
+                startMqttIfNeeded();
             }
 
             @SuppressWarnings("deprecation")
@@ -875,6 +958,9 @@ public class MainActivity extends Activity {
         ui.removeCallbacksAndMessages(null);        /* 看门狗/重试/横幅的 pending 回调全部作废 */
         try { netPool.shutdownNow(); } catch (Throwable t) { }
         try {
+            if (mqtt != null) mqtt.stop();
+        } catch (Throwable t) { }
+        try {
             if (mockHa != null) mockHa.getClass().getMethod("stop").invoke(mockHa);
         } catch (Throwable t) { }
         try {
@@ -944,6 +1030,27 @@ public class MainActivity extends Activity {
             } catch (Exception e) {
                 Log.w(TAG, "setVolume failed " + e);
             }
+        }
+
+        /** MQTT 发布（JS 的状态上报走这里）；retain 传 "1"/"true"；返回是否发出去了 */
+        @JavascriptInterface
+        public boolean mqttPublish(String topic, String payload, String retain) {
+            MqttClient m = mqtt;
+            return m != null && m.publish(topic, payload, "1".equals(retain) || "true".equals(retain));
+        }
+
+        /** 弹层保存 mqtt.json 后重启客户端；返回当前状态 JSON */
+        @JavascriptInterface
+        public String mqttRestart(String cfgJson) {
+            restartMqtt(cfgJson);
+            MqttClient m = mqtt;
+            return m == null ? "{\"state\":\"off\"}" : m.status();
+        }
+
+        @JavascriptInterface
+        public String mqttState() {
+            MqttClient m = mqtt;
+            return m == null ? "{\"state\":\"off\"}" : m.status();
         }
 
         @JavascriptInterface
