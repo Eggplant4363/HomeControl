@@ -50,6 +50,11 @@ public class MqttClient {
   private volatile OutputStream out = null;
   private volatile Thread worker = null;
   private volatile String statusJson = "{\"state\":\"off\"}";
+  private volatile long lastDiscoveryAt = 0L;
+  // 实测这台 EMQX 对 Fountain 的 SUBSCRIBE 一律 DISCONNECT reason=143（配额类）；被踢一次后
+  // 降级为「只发布不订阅」：HA 仍能出现实体并显示播放状态/标题，但下发命令收不到（需用户在
+  // EMQX 仪表盘放开该用户的订阅配额/ACL）。
+  private volatile boolean subscribeCmd = true;
 
   public MqttClient(String host, int port, boolean tls, String user, String pass, String slug, Listener listener) {
     this.host = host;
@@ -123,6 +128,10 @@ public class MqttClient {
       } catch (Throwable e) {
         String msg = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
         Log.w(TAG, "mqtt connect failed: " + msg);
+        if (msg.indexOf("reason=143") >= 0 && subscribeCmd) {
+          subscribeCmd = false; // 订阅被拒（配额）：降级为只发布状态
+          Log.i(TAG, "subscribe denied (143): 降级为只发布状态");
+        }
         closeQuietly();
         setStatus("{\"state\":\"offline\",\"err\":" + jsonString(msg) + "}");
         try { Thread.sleep(backoff); } catch (InterruptedException ie) { return; }
@@ -168,18 +177,24 @@ public class MqttClient {
     if (type != 0x20 || rem < 2 || body[1] != 0) {
       throw new IOException("CONNACK reason=" + (rem >= 2 ? body[1] : -1));
     }
-    setStatus("{\"state\":\"connected\",\"tls\":" + (tls ? "true" : "false") + "}");
-    publish(availTopic(), "online", true);
-    publish(discoveryTopic(), discoveryJson(), true);
+    setStatus(subscribeCmd ? "{\"state\":\"connected\",\"tls\":" + (tls ? "true" : "false") + "}"
+                           : "{\"state\":\"connected-no-sub\",\"tls\":" + (tls ? "true" : "false") + "}");
+    // 这台 EMQX 拒 retain 发布（0x38 → DISCONNECT 129；plain 0x30 实测接受），所以 availability
+    // 和 discovery 都发非 retain；HA 在线时能收到即时消息，discovery 每 ~2 分钟重发一次兜底。
+    publish(availTopic(), "online", false);
+    publish(discoveryTopic(), discoveryJson(), false);
+    lastDiscoveryAt = System.currentTimeMillis();
 
-    byte[] ct = cmdTopic().getBytes("UTF-8");
-    // v5 SUBSCRIBE：报文号, properties(空块), topic, 订阅选项字节(QoS0)
-    byte[] sub = new byte[2 + 1 + ct.length + 1];
-    sub[0] = 0; sub[1] = 1; // packet id
-    sub[2] = 0; // properties：空块
-    System.arraycopy(ct, 0, sub, 3, ct.length);
-    sub[3 + ct.length] = 0; // options：QoS 0
-    writePacket(0x82, sub);
+    if (subscribeCmd) {
+      byte[] ct = cmdTopic().getBytes("UTF-8");
+      // v5 SUBSCRIBE：报文号, properties(空块), topic, 订阅选项字节(QoS0)
+      byte[] sub = new byte[2 + 1 + ct.length + 1];
+      sub[0] = 0; sub[1] = 1; // packet id
+      sub[2] = 0; // properties：空块
+      System.arraycopy(ct, 0, sub, 3, ct.length);
+      sub[3 + ct.length] = 0; // options：QoS 0
+      writePacket(0x82, sub);
+    }
 
     while (wantRun) {
       int hb;
@@ -187,12 +202,23 @@ public class MqttClient {
         hb = in.read();
       } catch (SocketTimeoutException ste) {
         writePacket(0xC0, new byte[0]); // PINGREQ
+        // discovery 非 retain，HA 重启后会丢实体：每 ~3 分钟（2 个 keepalive 周期）重发一次
+        long now = System.currentTimeMillis();
+        if (now - lastDiscoveryAt > 2L * KEEPALIVE * 1000) {
+          publish(discoveryTopic(), discoveryJson(), false);
+          publish(availTopic(), "online", false);
+          lastDiscoveryAt = now;
+        }
         continue;
       }
       if (hb < 0) throw new IOException("socket closed by broker");
       int len = readRem(in);
       byte[] p = readFull(in, len);
       int pktType = hb & 0xF0;
+      if (pktType == 0xE0) {
+        // broker 主动踢线：把原因码带进日志（129=协议错误/拒 retain、143=配额超限/拒订阅、141=换服务器）
+        throw new IOException("broker DISCONNECT reason=" + (p.length > 0 ? (p[0] & 0xFF) : -1));
+      }
       if (pktType == 0x30) {
         int qos = (hb >> 3) & 0x03;
         int tl = ((p[0] & 0xFF) << 8) | (p[1] & 0xFF);
@@ -232,7 +258,7 @@ public class MqttClient {
     sb.append(",\"payload_available\":\"online\",\"payload_unavailable\":\"offline\"");
     sb.append(",\"state_topic\":\"").append(stateTopic()).append("\"");
     sb.append(",\"value_template\":\"{{ value_json.status }}\"");
-    sb.append(",\"attribute_template\":{\"value_template\":\"{{ value_json.title }}\"}");
+    sb.append(",\"attribute_template\":\"{{ value_json.title }}\"");
     sb.append(",\"command_topic\":\"").append(cmdTopic()).append("\"");
     sb.append(",\"payload_play\":\"play\",\"payload_pause\":\"pause\",\"payload_stop\":\"stop\"");
     sb.append(",\"payload_playing\":\"playing\",\"payload_paused\":\"paused\",\"payload_idle\":\"idle\"");

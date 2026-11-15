@@ -96,15 +96,18 @@
 
   function statusLine() {
     var c = readCfg();
-    var st = lastStatus;
     var b = bridge();
-    if (!st && b && b.mqttState) { try { st = b.mqttState(); } catch (e) { } }
+    // 每次现取桥里的实时状态（lastStatus 只是回调缓存，可能陈旧——保存并连接后要靠桥）
+    var st = null;
+    if (b && b.mqttState) { try { st = b.mqttState(); } catch (e) { } }
+    if (!st) st = lastStatus;
     var txt = '未启用';
     var cls = '';
     if (c.enabled) {
       var s = null;
       try { s = st ? JSON.parse(st) : null; } catch (e) { s = null; }
       if (s && s.state === 'connected') { txt = '已连接 ' + c.host + ':' + c.port; cls = ' ok'; }
+      else if (s && s.state === 'connected-no-sub') { txt = '已连接（订阅被 broker 拒：HA 能看状态，下发命令收不到）'; cls = ' warn'; }
       else if (s && s.state === 'offline') { txt = '连不上：' + (s.err || '重试中'); cls = ' bad'; }
       else { txt = '正在连接 ' + c.host + ':' + c.port + '…'; }
     }
@@ -165,6 +168,7 @@
       if (json === lastStatus) return;
       lastStatus = json;
       if (s.state === 'connected') toast('MQTT 已连接：HA 里会出现「中控屏音乐」');
+      else if (s.state === 'connected-no-sub') toast('MQTT 已连接（订阅被拒：broker 配额/ACL，HA 只能看状态）');
       else if (s.state === 'offline') toast('MQTT 连不上：' + (s.err || '重试中'));
     } catch (e) { }
   };

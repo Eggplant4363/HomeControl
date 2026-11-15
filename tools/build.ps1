@@ -1,7 +1,7 @@
 ﻿# Manual APK build: aapt2 -> javac -> d8 -> zip -> zipalign -> apksigner.
 # No Gradle, no dependencies beyond the Android SDK build-tools and a JDK 17.
 # 版本号和变体走参数（以前每次升版本都要复制一个 patch-version-NN.js，那种仪式已经终结）。
-#   tools\build.ps1                    → debug 包（带假 HA、当前版本 65 / 0.7.28）
+#   tools\build.ps1                    → debug 包（带假 HA、当前版本 66 / 0.7.29）
 #   tools\build.ps1 -VersionCode 60    → 升版本（约定：每次改动后都发一次新版本，迭代尽可能小：
 #                                    versionCode +1、versionName 只进补丁位；装到已装更高 versionCode
 #                                    的设备上会 INSTALL_FAILED_VERSION_DOWNGRADE，并同步改 README 的版本行）
@@ -9,8 +9,8 @@
 [CmdletBinding()]
 param(
     [string]$OutName = "homecontrol.apk",
-    [int]$VersionCode = 65,
-    [string]$VersionName = "0.7.28",
+    [int]$VersionCode = 66,
+    [string]$VersionName = "0.7.29",
     [string]$Variant = "debug"          # debug | release
 )
 
