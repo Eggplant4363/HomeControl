@@ -1615,15 +1615,19 @@ public class MainActivity extends Activity {
         }
 
         private String httpText(String url, String method, String headersJson, String body) {
+            return httpText(url, method, headersJson, body, null);
+        }
+
+        private String httpText(String url, String method, String headersJson, String body, java.net.Proxy proxy) {
             HttpURLConnection c = null;
             try {
                 URL u = new URL(url);
                 if ("https".equals(u.getProtocol())) {
-                    HttpsURLConnection h = (HttpsURLConnection) u.openConnection();
+                    HttpsURLConnection h = (HttpsURLConnection) (proxy != null ? u.openConnection(proxy) : u.openConnection());
                     applyTls(h, u.getHost());
                     c = h;
                 } else {
-                    c = (HttpURLConnection) u.openConnection();
+                    c = proxy != null ? (HttpURLConnection) u.openConnection(proxy) : (HttpURLConnection) u.openConnection();
                 }
                 c.setConnectTimeout(6000);
                 c.setReadTimeout(15000);
@@ -1711,9 +1715,15 @@ public class MainActivity extends Activity {
         /** 取 GitHub Release 的 JSON（结果异步回 window.__hcUpdNetCb(cbId, {status|error, body})） */
         @JavascriptInterface
         public void updNet(final String cbId, final String url, final String headersJson) {
+            updNet(cbId, url, headersJson, "");
+        }
+
+        /** 多一个 proxyJson（{"host","port"} = 局域网 HTTP 代理；空 = 直连）。旧面板调 3 参版仍可用。 */
+        @JavascriptInterface
+        public void updNet(final String cbId, final String url, final String headersJson, final String proxyJson) {
             netPool.execute(new Runnable() {
                 public void run() {
-                    final String out = httpText(url, "GET", headersJson, "");
+                    final String out = httpText(url, "GET", headersJson, "", proxyFromJson(proxyJson));
                     Log.i(TAG, "updNet " + url + " -> " + (out.length() > 200 ? out.substring(0, 200) : out));
                     postJs(cbJs("__hcUpdNetCb", cbId, out));
                 }
@@ -1723,16 +1733,34 @@ public class MainActivity extends Activity {
         /** 下载 APK：过程回 __hcUpdProg(cbId, pct)，结束回 __hcUpdDone(cbId, {path,bytes} | {error}) */
         @JavascriptInterface
         public void updDownload(final String cbId, final String url, final String fileName) {
+            updDownload(cbId, url, fileName, "");
+        }
+
+        /** 多一个 proxyJson（国内代理场景：平板只连局域网，通过 PC 上的 HTTP 代理出海） */
+        @JavascriptInterface
+        public void updDownload(final String cbId, final String url, final String fileName, final String proxyJson) {
             netPool.execute(new Runnable() {
                 public void run() {
-                    final String out = updFetch(cbId, url, fileName);
+                    final String out = updFetch(cbId, url, fileName, proxyFromJson(proxyJson));
                     postJs(cbJs("__hcUpdDone", cbId, out));
                 }
             });
         }
 
+        /** {"host":"10.10.1.2","port":7890} → HTTP 代理；坏输入 → null（直连）。Bridge 是内部类，不能放 static。 */
+        private java.net.Proxy proxyFromJson(String json) {
+            try {
+                if (json == null || json.length() == 0) return null;
+                org.json.JSONObject o = new org.json.JSONObject(json);
+                String host = o.optString("host", "");
+                int port = o.optInt("port", 0);
+                if (host.length() == 0 || port <= 0 || port > 65535) return null;
+                return new java.net.Proxy(java.net.Proxy.Type.HTTP, new java.net.InetSocketAddress(host, port));
+            } catch (Throwable t) { return null; }
+        }
+
         /** 把 APK 落到 cache/upd/。先写 .part 再改名，中途断了不会留下半个可安装包 */
-        private String updFetch(String cbId, String url, String fileName) {
+        private String updFetch(String cbId, String url, String fileName, java.net.Proxy proxy) {
             HttpURLConnection c = null;
             java.io.FileOutputStream fos = null;
             File tmp = null;
@@ -1746,11 +1774,11 @@ public class MainActivity extends Activity {
 
                 URL u = new URL(url);
                 if ("https".equals(u.getProtocol())) {
-                    HttpsURLConnection h = (HttpsURLConnection) u.openConnection();
+                    HttpsURLConnection h = (HttpsURLConnection) (proxy != null ? u.openConnection(proxy) : u.openConnection());
                     applyTls(h, u.getHost());
                     c = h;
                 } else {
-                    c = (HttpURLConnection) u.openConnection();
+                    c = proxy != null ? (HttpURLConnection) u.openConnection(proxy) : (HttpURLConnection) u.openConnection();
                 }
                 c.setInstanceFollowRedirects(true);      /* GitHub 会 302 到 objects.githubusercontent.com */
                 c.setConnectTimeout(8000);

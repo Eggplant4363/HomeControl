@@ -807,6 +807,47 @@ ok(UP.state().phase === 'idle', '初始状态是 idle');
 UP.reset();
 ok(UP.state().phase === 'idle' && UP.state().pct === 0, 'reset 回到 idle/0%');
 
+/* ---------------- 下载通道（update.json）：直连/国内镜像/局域网代理 ---------------- */
+console.log('下载通道：镜像前缀改写、代理参数、通道文案');
+eq(JSON.stringify(UP.parseChannel('')), JSON.stringify({ channel: 'direct', mirror: '', proxyHost: '', proxyPort: 0 }), '没配置 → 直连');
+eq(JSON.stringify(UP.parseChannel('not json')), JSON.stringify({ channel: 'direct', mirror: '', proxyHost: '', proxyPort: 0 }), '坏 JSON → 直连');
+var chM = UP.parseChannel('{"channel":"mirror","mirror":"https://gh-proxy.com/"}');
+eq(chM.channel, 'mirror', 'mirror 通道保留');
+eq(JSON.stringify(UP.parseChannel('{"channel":"mirror","mirror":"no-scheme.com/"}')), JSON.stringify({ channel: 'direct', mirror: '', proxyHost: '', proxyPort: 0 }), '镜像前缀不合法 → 回直连');
+eq(JSON.stringify(UP.parseChannel('{"channel":"proxy","proxyHost":"","proxyPort":7890}')), JSON.stringify({ channel: 'direct', mirror: '', proxyHost: '', proxyPort: 0 }), '代理没主机 → 回直连');
+eq(UP.normalizePrefix('https://gh-proxy.com'), 'https://gh-proxy.com/', 'normalizePrefix 自动补尾斜杠');
+eq(UP.normalizePrefix('https://gh-proxy.com/'), 'https://gh-proxy.com/', '已有尾斜杠不动');
+eq(UP.normalizePrefix('gh-proxy.com/'), '', '没 scheme 的前缀不合法');
+eq(UP.applyChannel(chM, 'https://github.com/Eggplant4363/HomeControl/releases/download/v0.7.24/homecontrol.apk'),
+  'https://gh-proxy.com/https://github.com/Eggplant4363/HomeControl/releases/download/v0.7.24/homecontrol.apk', '镜像：GitHub 下载 URL 加前缀');
+eq(UP.applyChannel({ channel: 'direct', mirror: '', proxyHost: '', proxyPort: 0 }, 'https://api.github.com/x'), 'https://api.github.com/x', '直连原样');
+var chP = UP.parseChannel('{"channel":"proxy","proxyHost":"10.10.1.2","proxyPort":7890}');
+eq(UP.applyChannel(chP, 'https://api.github.com/x'), 'https://api.github.com/x', '代理不改 URL（代理在 Java 侧做）');
+eq(UP.proxyJson(chP), '{"host":"10.10.1.2","port":7890}', 'proxyJson 给 Java 桥');
+eq(UP.proxyJson({ channel: 'direct', mirror: '', proxyHost: '', proxyPort: 0 }), '', '直连不传代理');
+eq(UP.channelLabel({ channel: 'direct', mirror: '', proxyHost: '', proxyPort: 0 }), '直连 GitHub', '直连文案');
+eq(UP.channelLabel(chM), 'gh-proxy.com', '内置镜像用名字');
+eq(UP.channelLabel({ channel: 'mirror', mirror: 'https://mine.io/', proxyHost: '', proxyPort: 0 }), '镜像 https://mine.io/', '自定义镜像显示前缀');
+eq(UP.channelLabel(chP), '代理 10.10.1.2:7890', '代理文案');
+var updHtml = UP.sectionHtml();
+ok(updHtml.indexOf('下载通道') >= 0, '升级节有下载通道选择');
+ok(updHtml.indexOf('data-act="upd-ch:direct"') >= 0, '直连按钮');
+ok(updHtml.indexOf('data-act="upd-ch:mirror:https://gh-proxy.com/"') >= 0, 'gh-proxy.com 按钮');
+ok(updHtml.indexOf('ghproxy.net') < 0, 'ghproxy.net 不内置（API 403 实测，会误导）');
+ok(updHtml.indexOf('id="updMirror"') >= 0 && updHtml.indexOf('upd-ch-custom') >= 0, '自定义镜像输入+按钮');
+ok(updHtml.indexOf('id="updProxyHost"') >= 0 && updHtml.indexOf('upd-ch-proxy') >= 0, '代理输入+按钮');
+var appSrcUpd = fs.readFileSync(path.join(root, 'panel', 'js', 'app.js'), 'utf8');
+ok(appSrcUpd.indexOf("'upd-ch-custom'") >= 0, 'app.js 处理 upd-ch-custom');
+ok(appSrcUpd.indexOf("'upd-ch-proxy'") >= 0, 'app.js 处理 upd-ch-proxy');
+ok(appSrcUpd.indexOf('upd-ch:') >= 0, 'app.js 处理内置通道按钮');
+var mcSrcUpd = fs.readFileSync(path.join(root, 'app', 'src', 'com', 'homecontrol', 'panel', 'MainActivity.java'), 'utf8');
+ok(mcSrcUpd.indexOf('java.net.Proxy') >= 0, 'MainActivity 支持 java.net.Proxy');
+ok(mcSrcUpd.indexOf('proxyFromJson') >= 0, 'MainActivity 解析 proxyJson');
+ok(mcSrcUpd.indexOf('public void updDownload(final String cbId, final String url, final String fileName, final String proxyJson)') >= 0, 'updDownload 4 参版');
+ok(mcSrcUpd.indexOf('public void updNet(final String cbId, final String url, final String headersJson, final String proxyJson)') >= 0, 'updNet 4 参版');
+ok(mcSrcUpd.indexOf('public void updNet(final String cbId, final String url, final String headersJson)') >= 0, '旧 3 参 updNet 重载保留（旧面板不炸）');
+ok(mcSrcUpd.indexOf('u.openConnection(proxy)') >= 0, 'httpText/updFetch 走代理打开连接');
+
 /* ---------------- MQTT 节点（panel/js/mqtt.js）：主题/命令映射/弹层节 ---------------- */
 console.log('MQTT：主题约定、命令映射、弹层节、Java 接线');
 var MQ = windowStub.HCMqtt;

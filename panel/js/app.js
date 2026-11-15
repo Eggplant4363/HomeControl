@@ -4355,6 +4355,12 @@ function bindDim() {
         else if (act === 'upd-install') up.install();
         else if (act === 'upd-perm') up.openPerm();
         else if (act === 'upd-none') up.reset();
+        else if (act === 'upd-ch-custom') up.setChannel('mirror', { mirror: (document.getElementById('updMirror') || {}).value });
+        else if (act === 'upd-ch-proxy') up.setChannel('proxy', { proxyHost: (document.getElementById('updProxyHost') || {}).value, proxyPort: (document.getElementById('updProxyPort') || {}).value });
+        else if (act.indexOf('upd-ch:') === 0) {
+          var ca = act.slice(7); var ci = ca.indexOf(':');
+          if (ci < 0) up.setChannel('direct'); else up.setChannel('mirror', { mirror: ca.slice(ci + 1) });
+        }
         return;
       }
       if (act === 'scene-run') {

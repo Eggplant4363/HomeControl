@@ -16,6 +16,103 @@
   var DEFAULT_API = 'https://api.github.com/repos/Eggplant4363/HomeControl/releases/latest';
   var MAX_APK = 80 * 1024 * 1024;      /* 比这还大就别下了（防呆：别把 JSON 当 APK 写满磁盘） */
 
+  /* 下载通道：直连 / 国内镜像（前缀转发 GitHub API+下载）/ 国内 HTTP 代理。
+   * 配置落 /sdcard/HomeControl/update.json；镜像格式 https://<镜像>/https://github.com/… 。 */
+  var CFG_FILE = '/sdcard/HomeControl/update.json';
+  /* 内置镜像都实测过（API+APK 下载都 200）。ghproxy.net 下载通但 API 403、ghproxy.link 转义坏 URL，不内置。 */
+  var BUILTIN = [
+    { prefix: 'https://gh-proxy.com/', label: 'gh-proxy.com' }
+  ];
+
+  /* 自带轻提示：app.js 的 toast 是模块作用域（mqtt.js 踩过坑），这里直接操作 #toast 元素 */
+  var toastTimer = null;
+  function toast(msg) {
+    var t = document.getElementById('toast');
+    if (!t) return;
+    t.innerHTML = '';
+    var span = document.createElement('span');
+    span.textContent = msg;
+    t.appendChild(span);
+    t.className = 'toast show';
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { t.className = 'toast'; }, 2200);
+  }
+
+  /** update.json 文本 → 归一化的通道配置（坏 JSON/没配 → 直连；代理缺主机也回直连） */
+  function parseChannel(text) {
+    var o = null;
+    if (text) { try { o = JSON.parse(text); } catch (e) { o = null; } }
+    var ch = (o && o.channel) || 'direct';
+    var mir = normalizePrefix((o && o.mirror) || '');
+    var ph = String((o && o.proxyHost) || '').trim();
+    var pp = parseInt((o && o.proxyPort) || 0, 10) || 0;
+    if (ch === 'mirror' && !mir) ch = 'direct';
+    if (ch === 'proxy' && !ph) ch = 'direct';
+    if (ch !== 'mirror') mir = '';
+    if (ch !== 'proxy') { ph = ''; pp = 0; }   /* 回退直连时别留下残留的镜像/代理字段 */
+    return { channel: ch, mirror: mir, proxyHost: ph, proxyPort: pp };
+  }
+
+  /** 镜像前缀：必须是 http(s):// 开头、以 / 结尾；不合法返回 '' */
+  function normalizePrefix(s) {
+    s = String(s || '').trim();
+    if (!/^https?:\/\/[^\/]+\/?$/.test(s)) return '';
+    if (s.charAt(s.length - 1) !== '/') s += '/';
+    return s;
+  }
+
+  function readChannel() {
+    var b = bridge();
+    var raw = b ? b.readText(CFG_FILE) : '';
+    return parseChannel(raw);
+  }
+
+  /** 按通道改写请求 URL：直连/代理原样（代理在 Java 侧做），镜像加前缀 */
+  function applyChannel(cfg, url) {
+    if (cfg.channel === 'mirror' && cfg.mirror) return cfg.mirror + url;
+    return url;
+  }
+
+  /** 给 Java 桥的代理参数：'' = 不用代理 */
+  function proxyJson(cfg) {
+    if (cfg.channel === 'proxy' && cfg.proxyHost && cfg.proxyPort > 0) {
+      return JSON.stringify({ host: cfg.proxyHost, port: cfg.proxyPort });
+    }
+    return '';
+  }
+
+  function builtinLabel(mir) {
+    for (var i = 0; i < BUILTIN.length; i++) if (BUILTIN[i].prefix === mir) return BUILTIN[i].label;
+    return '';
+  }
+
+  function channelLabel(cfg) {
+    if (cfg.channel === 'mirror') return builtinLabel(cfg.mirror) || ('镜像 ' + cfg.mirror);
+    if (cfg.channel === 'proxy') return '代理 ' + cfg.proxyHost + ':' + cfg.proxyPort;
+    return '直连 GitHub';
+  }
+
+  /** 写通道配置并重绘升级节；kind: direct | mirror | proxy */
+  function setChannel(kind, opts) {
+    opts = opts || {};
+    var cfg = { channel: 'direct', mirror: '', proxyHost: '', proxyPort: 0 };
+    if (kind === 'mirror') {
+      cfg.mirror = normalizePrefix(opts.mirror);
+      if (!cfg.mirror) { toast('镜像地址不合法（要 http(s)://开头）'); return; }
+      cfg.channel = 'mirror';
+    } else if (kind === 'proxy') {
+      cfg.proxyHost = String(opts.proxyHost || '').trim();
+      cfg.proxyPort = parseInt(opts.proxyPort || 0, 10) || 0;
+      if (!cfg.proxyHost || cfg.proxyPort <= 0 || cfg.proxyPort > 65535) { toast('代理要填主机和端口（如 10.10.1.2:7890）'); return; }
+      cfg.channel = 'proxy';
+    }
+    var b = bridge();
+    if (!b || !b.writeText) { toast('没有原生桥，写不了 update.json'); return; }
+    b.writeText(CFG_FILE, JSON.stringify(cfg));
+    toast('下载通道：' + channelLabel(cfg));
+    repaint();
+  }
+
   var U = {
     phase: 'idle',      /* idle | checking | latest | found | downloading | ready | installing | error */
     ver: '',            /* 远端版本号（不带 v） */
@@ -127,8 +224,9 @@
     setPhase('checking', '正在检查…');
     var id = 'chk' + (++seq);
     pending[id] = 'check';
+    var cfg = readChannel();
     try {
-      bridge().updNet(id, apiUrl(), '{"Accept":"application/vnd.github+json"}');
+      bridge().updNet(id, applyChannel(cfg, apiUrl()), '{"Accept":"application/vnd.github+json"}', proxyJson(cfg));
     } catch (e) {
       delete pending[id];
       setPhase('error', '调用升级通道失败：' + e);
@@ -265,6 +363,29 @@
       html += '<div class="upd-note' + (U.phase === 'latest' ? ' good' : '') + '">' + esc(U.msg) + '</div>';
     }
 
+    /* 下载通道选择：GitHub 直连慢/连不上时换国内镜像（前缀转发 API+下载）或本机局域网 HTTP 代理 */
+    var cfg = readChannel();
+    var isDirect = cfg.channel === 'direct';
+    var opt = function (id, label, act, active) {
+      return '<button class="btn' + (active ? ' primary' : '') + '" data-act="' + esc(act) + '">' + esc(label) + '</button>';
+    };
+    html += '<div class="set-sec">下载通道</div>' +
+      '<div class="sheet-desc">直连慢或连不上 GitHub 时换国内镜像（转发 API 和下载）或局域网 HTTP 代理；当前：' + esc(channelLabel(cfg)) + '</div>' +
+      '<div class="cfg-actions">' +
+      opt('direct', '直连 GitHub', 'upd-ch:direct', isDirect) +
+      opt('gh1', 'gh-proxy.com', 'upd-ch:mirror:https://gh-proxy.com/', cfg.channel === 'mirror' && cfg.mirror === 'https://gh-proxy.com/') +
+      '</div>' +
+      '<div class="cfg-row"><div class="cfg-k">自定义镜像</div><input class="cfg-in" id="updMirror" value="' +
+      esc(cfg.channel === 'mirror' && !builtinLabel(cfg.mirror) ? cfg.mirror : '') + '" placeholder="https://my-mirror.com/"></div>' +
+      '<div class="cfg-actions"><button class="btn" data-act="upd-ch-custom">用这个镜像</button></div>' +
+      '<div class="cfg-row"><div class="cfg-k">代理主机</div><input class="cfg-in" id="updProxyHost" value="' +
+      esc(cfg.channel === 'proxy' ? cfg.proxyHost : '') + '" placeholder="10.10.1.2"></div>' +
+      '<div class="cfg-row"><div class="cfg-k">代理端口</div><input class="cfg-in" id="updProxyPort" value="' +
+      esc(cfg.channel === 'proxy' ? String(cfg.proxyPort) : '') + '" placeholder="7890"></div>' +
+      '<div class="cfg-actions">' +
+      '<button class="btn' + (cfg.channel === 'proxy' ? ' primary' : '') + '" data-act="upd-ch-proxy">用国内代理</button>' +
+      '</div>';
+
     html += '<div class="cfg-actions">';
     if (U.phase === 'found') {
       html += '<button class="btn primary" data-act="upd-download">下载并安装 v' + esc(U.ver) + '</button>';
@@ -308,6 +429,14 @@
     verCmp: verCmp,
     pickApk: pickApk,
     parseRelease: parseRelease,
-    mb: mb
+    mb: mb,
+    /* 下载通道（update.json） */
+    setChannel: setChannel,
+    readChannel: readChannel,
+    parseChannel: parseChannel,
+    applyChannel: applyChannel,
+    proxyJson: proxyJson,
+    channelLabel: channelLabel,
+    normalizePrefix: normalizePrefix
   };
 })();
