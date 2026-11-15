@@ -891,6 +891,9 @@ var javaSrc = fs.readFileSync(path.join(root, 'app', 'src', 'com', 'homecontrol'
 ok(javaSrc.indexOf('startMqttIfNeeded') >= 0, 'MainActivity 页面就绪后自动起 MQTT');
 ok(javaSrc.indexOf('mqttPublish') >= 0 && javaSrc.indexOf('mqttRestart') >= 0 && javaSrc.indexOf('mqttState') >= 0, 'MainActivity 暴露 publish/restart/state 桥方法');
 ok(javaSrc.indexOf('__hcMqttCmd') >= 0, 'MainActivity 把命令派发给 JS');
+var mqttJava = fs.readFileSync(path.join(root, 'app', 'src', 'com', 'homecontrol', 'panel', 'MqttClient.java'), 'utf8');
+ok(mqttJava.indexOf('b.write(5)') >= 0, 'MqttClient 用 MQTT 5 协议级别（用户 broker 只认 v5）');
+ok(mqttJava.indexOf('MQTT 5') >= 0, 'MqttClient 注释写明 v5');
 
 console.log('');
 if (failed === 0) {

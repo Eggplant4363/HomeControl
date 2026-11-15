@@ -15,10 +15,12 @@ import javax.net.ssl.TrustManager;
 import javax.net.ssl.X509TrustManager;
 
 /**
- * 极小 MQTT 3.1.1 客户端（QoS0、裸 socket），让「中控屏」作为 MQTT 节点接入 HA：
+ * 极小 MQTT 5 客户端（protocol level 5、QoS0、裸 socket），让「中控屏」作为 MQTT 节点接入 HA：
  * - 上线后发 availability(retain "online") + HA discovery(retain) → HA 自动出现 media_player 实体；
  * - 订阅 homecontrol/<slug>/cmd，收到 play/pause/stop 派发给面板 JS；
  * - LWT 写 availability "offline"，断线 HA 自动把实体置 unavailable。
+ * 为什么是 v5：用户的 broker（10.10.1.8）只认 MQTT 5——发 3.1.1 CONNECT 会被直接关线（0 字节 eof），
+ * HA 那边能连正是因为它配了 v5。包型带 v5 的 properties 块（这里一律空块 0x00）。
  * 只支持 broker 必需的最小包型；重连退避 2s→60s。TLS 一律 trust-all（面板只连自己配的服务器）。
  */
 public class MqttClient {
@@ -89,11 +91,13 @@ public class MqttClient {
     try {
       byte[] t = topic.getBytes("UTF-8");
       byte[] p = (payload == null ? "" : payload).getBytes("UTF-8");
-      byte[] body = new byte[2 + t.length + p.length];
+      // v5 PUBLISH：topic, properties(空块), payload（QoS0 无报文号）
+      byte[] body = new byte[2 + t.length + 1 + p.length];
       body[0] = (byte) ((t.length >> 8) & 0xFF);
       body[1] = (byte) (t.length & 0xFF);
       System.arraycopy(t, 0, body, 2, t.length);
-      System.arraycopy(p, 0, body, 2 + t.length, p.length);
+      body[2 + t.length] = 0; // properties：空块
+      System.arraycopy(p, 0, body, 3 + t.length, p.length);
       writePacket(retain ? 0x38 : 0x30, body);
       return true;
     } catch (Throwable e) {
@@ -141,15 +145,22 @@ public class MqttClient {
     out = s.getOutputStream();
     DataInputStream in = new DataInputStream(s.getInputStream());
 
-    // CONNECT：clean + will(availability "offline", retain) + 可选用户名/密码
+    // CONNECT（MQTT 5）：clean start + will(availability "offline", retain) + 可选用户名/密码
+    // v5 布局：可变头有 properties 块；载荷顺序 = will properties, will topic, will msg properties, will payload(BIN), user, pass
     byte flags = (byte) (0x02 | 0x04 | 0x08 | (user.length() > 0 ? 0x80 : 0) | (pass.length() > 0 ? 0x40 : 0));
     java.io.ByteArrayOutputStream b = new java.io.ByteArrayOutputStream();
     b.write(0); b.write(4); b.write("MQTT".getBytes("UTF-8"));
-    b.write(4); b.write(flags);
+    b.write(5); b.write(flags);
     b.write((KEEPALIVE >> 8) & 0xFF); b.write(KEEPALIVE & 0xFF);
+    b.write(0); // CONNECT properties：空块
     writeStr(b, clientId);
+    byte[] wp = "offline".getBytes("UTF-8");
+    b.write(0); // will properties：空块
     writeStr(b, availTopic());
-    writeStr(b, "offline");
+    b.write(0); // will message properties：空块
+    b.write((wp.length >>> 24) & 0xFF); b.write((wp.length >>> 16) & 0xFF);
+    b.write((wp.length >>> 8) & 0xFF); b.write(wp.length & 0xFF);
+    b.write(wp);
     if (user.length() > 0) writeStr(b, user);
     if (pass.length() > 0) writeStr(b, pass);
     writePacket(0x20, b.toByteArray());
@@ -158,17 +169,19 @@ public class MqttClient {
     int rem = readRem(in);
     byte[] body = readFull(in, rem);
     if (type != 0x20 || rem < 2 || body[1] != 0) {
-      throw new IOException("CONNACK rc=" + (rem >= 2 ? body[1] : -1));
+      throw new IOException("CONNACK reason=" + (rem >= 2 ? body[1] : -1));
     }
     setStatus("{\"state\":\"connected\",\"tls\":" + (tls ? "true" : "false") + "}");
     publish(availTopic(), "online", true);
     publish(discoveryTopic(), discoveryJson(), true);
 
     byte[] ct = cmdTopic().getBytes("UTF-8");
-    byte[] sub = new byte[2 + ct.length + 1];
+    // v5 SUBSCRIBE：报文号, properties(空块), topic, 订阅选项字节(QoS0)
+    byte[] sub = new byte[2 + 1 + ct.length + 1];
     sub[0] = 0; sub[1] = 1; // packet id
-    System.arraycopy(ct, 0, sub, 2, ct.length);
-    sub[2 + ct.length] = 0; // QoS 0
+    sub[2] = 0; // properties：空块
+    System.arraycopy(ct, 0, sub, 3, ct.length);
+    sub[3 + ct.length] = 0; // options：QoS 0
     writePacket(0x82, sub);
 
     while (wantRun) {
@@ -188,10 +201,23 @@ public class MqttClient {
         int tl = ((p[0] & 0xFF) << 8) | (p[1] & 0xFF);
         String topic = new String(p, 2, tl, "UTF-8");
         int off = 2 + tl;
+        // v5：topic 后是 properties 块（varint 长度 + 内容），先跳掉
+        int propLen = 0, mul = 1;
+        while (off < p.length) {
+          int d = p[off] & 0xFF;
+          off++;
+          propLen += (d & 0x7F) * mul;
+          if ((d & 0x80) == 0) break;
+          mul *= 128;
+        }
+        off += propLen;
         if (qos >= 1 && off + 2 <= p.length) {
           int pid = ((p[off] & 0xFF) << 8) | (p[off + 1] & 0xFF);
           off += 2;
-          if (qos == 1) writePacket(0x90, new byte[] { (byte) ((pid >> 8) & 0xFF), (byte) (pid & 0xFF) });
+          if (qos == 1) {
+            // v5 PUBACK：报文号 + 原因码(0x00成功) + 空 properties
+            writePacket(0x90, new byte[] { (byte) ((pid >> 8) & 0xFF), (byte) (pid & 0xFF), 0x00, 0x00 });
+          }
         }
         String payload = off <= p.length ? new String(p, off, p.length - off, "UTF-8") : "";
         Log.i(TAG, "cmd " + topic + " <- " + payload);

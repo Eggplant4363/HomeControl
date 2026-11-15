@@ -28,9 +28,10 @@ function encodeRem(n) {
 }
 
 function mqttConnect(sock) {
+  // MQTT 5（broker 10.10.1.8 只认 v5；3.1.1 会被直接关线）：可变头带空 properties 块
   const cid = 'hc-probe-' + Date.now();
   const parts = [];
-  parts.push(Buffer.from([0, 4]), Buffer.from('MQTT'), Buffer.from([4]), Buffer.from([user ? 0x82 : 0x02]), Buffer.from([0, 60]));
+  parts.push(Buffer.from([0, 4]), Buffer.from('MQTT'), Buffer.from([5]), Buffer.from([user ? 0xC2 : 0x02]), Buffer.from([0, 60]), Buffer.from([0]));
   parts.push(Buffer.from([0, cid.length]), Buffer.from(cid));
   if (user) parts.push(Buffer.from([0, user.length]), Buffer.from(user));
   if (pass) parts.push(Buffer.from([0, pass.length]), Buffer.from(pass));
