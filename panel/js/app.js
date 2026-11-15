@@ -741,7 +741,8 @@
     /* 批量选择时不做拉伸：整张卡都要能点（否则 88px 的拉伸角区把小球卡吃掉大半） */
     var grabbable = S.editing && !notAdded && !S.bulk;
     var mode = iconMode(tile);
-    /* 1×1 用哪套模板只跟尺寸有关，跟编辑态无关：进编辑只多一圈虚线框和角上的尺寸标，
+    /* 1×1 用哪套模板只跟尺寸有关，跟编辑态无关：进编辑只多一圈虚线框（不再显示「1× · 半高」
+       角标——拉伸角本来就把卡片实时改大小，尺寸弹层也有当前尺寸，角标只是噪音），
        图标/圆钮必须和平时一模一样，否则看起来像两套 UI */
     var tiny = span === 1 && rows === 1;
     /* 半高卡（1×½）：一行只放得下「图标 + 名称」（读数卡再加一个值），像一条列表项 */
@@ -749,11 +750,10 @@
     var cls = 'tile type-' + tile.type + ' mode-' + mode + naCls + (tiny ? ' tiny' : '') + (half ? ' half' : '') +
       (notAdded ? ' not-added' : '') + (span > 1 ? ' span-' + span : '') + (rows > 1 ? ' rows-2' : '');
     var grip = grabbable ? '<div class="t-grip" data-grip="' + esc(tile.entity) + '"></div>' : '';
-    var sizeTxt = spanLabel(tile.entity) + (half ? ' · 半高' : rows > 1 ? ' · 高 ' + rows : '');
-    var tools = S.editing
+    /* 编辑态工具条只剩「+ 添加」（没加入的卡）；已加入的卡不再挂任何东西 */
+    var tools = S.editing && notAdded
       ? '<div class="t-tools">' +
-          (notAdded ? '<button class="t-tool t-add" data-act="card-add">+ 添加</button>' : '') +
-          '<span class="t-size">' + sizeTxt + '</span>' +
+          '<button class="t-tool t-add" data-act="card-add">+ 添加</button>' +
         '</div>'
       : '';
     /* 半高卡：图标 + 名称，读数卡再带一个值（够不着圆钮/大字的排版） */
@@ -805,11 +805,6 @@
       '<div class="tile-mid">' + midHtml(tile) + '</div>' +
       grip +
       '</div>';
-  }
-
-  /** 卡片头部那个宽度按钮显示的字：1× / 2× / 整行 */
-  function spanLabel(entity) {
-    return spanText(cardSpan(entity, 99), num(prefs().cols, 4));
   }
 
   /* 每张卡的子节点引用缓存：状态推送每秒多次，updateTile 每次要查 8 个 data-role，
@@ -4588,8 +4583,7 @@ function bindDim() {
       st.c = c; st.r = r;
       st.el.style.gridColumn = 'span ' + c;
       st.el.style.gridRow = 'span ' + Math.round(r * 2);
-      var tag = st.el.querySelector('.t-size');
-      if (tag) tag.innerHTML = spanText(c, st.cols) + (r < 1 ? ' · 半高' : r > 1 ? ' · 高 ' + r : '');
+      /* 拖动时不在卡上回显尺寸标：卡片本身正在实时改大小，这就是反馈 */
       if (ev.cancelable) ev.preventDefault();
     }
     function gripUp(ev) {
@@ -4604,8 +4598,6 @@ function bindDim() {
       if (st.c !== st.c0 || st.r !== st.r0) {
         resizeCard(st.entity, st.c, st.r);
       } else {
-        var tag = st.el.querySelector('.t-size');
-        if (tag) tag.innerHTML = spanText(st.c0, st.cols) + (st.r0 < 1 ? ' · 半高' : st.r0 > 1 ? ' · 高 ' + st.r0 : '');
         /* 只是在那个角上点了一下、没拖动：当成点卡片本身。
            否则小卡（6 列时整张才 113px）右下 88px 角区几乎盖住整张卡，永远选不中。
            这一次的 click 会被上面 gripFired 的 400ms 立即早退挡掉，不会双触发。 */
@@ -5092,6 +5084,8 @@ function boot() {
     readEdit: readEdit, writeEdit: writeEdit, cardVisible: cardVisible, setCardVisible: setCardVisible, cardSpan: cardSpan,
     cellRows: cellRows, rowSpan: rowSpan, resizeCard: resizeCard, sizeSheetHtml: sizeSheetHtml, spanText: spanText,
     bulkCount: bulkCount, toggleBulk: toggleBulk, doBulk: doBulk, bulk: function () { return { on: S.bulk, sel: S.bulkSel }; },
+    /* 编辑态开关（test-ui 验「编辑态不显示尺寸标」用；真机上编辑态由弹层进出控制） */
+    setEditMode: function (on) { S.editing = !!on; },
     sortCards: sortCards, editToggle: editToggle, editSpan: editSpan, editMove: editMove,
     orderForDrop: orderForDrop,
     editAddAll: editAddAll, editSheetHtml: editSheetHtml, addSheetHtml: addSheetHtml, addToggle: addToggle, addDeviceToggle: addDeviceToggle, deviceEntities: deviceEntities, allCards: allCards, visibleRooms: visibleRooms, hiddenRooms: hiddenRooms, hasColor: hasColor, rgbCss: rgbCss, hsvToRgb: hsvToRgb, rgbToHs: rgbToHs, colorPresets: COLOR_PRESETS,

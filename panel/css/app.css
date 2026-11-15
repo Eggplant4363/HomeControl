@@ -871,13 +871,12 @@ body::before { content: none; }
 .grid.editing .tile .tile-mid { opacity: .28; }
 .grid.editing .tile .t-name { opacity: .8; }
 .grid.editing .tile-head { flex-wrap: nowrap; min-width: 0; }
-/* 1×1 进编辑态也用原来那套模板（圆钮 / 大字读数），只在角上补一枚尺寸标：
-   工具行绝对定位到卡片右上，不占圆钮的位置 */
+/* 1×1 进编辑态也用原来那套模板（圆钮 / 大字读数），不再挂尺寸标；
+   只有没加入的卡在角上放「+ 添加」，工具行绝对定位到卡片右上，不占圆钮的位置 */
 .tile.tiny .t-tools { position: absolute; left: 6px; top: 6px; right: 6px; margin: 0;
   display: flex; align-items: center; pointer-events: none; }
-.tile.tiny .t-tools .t-tool, .tile.tiny .t-tools .t-size { pointer-events: auto; }
+.tile.tiny .t-tools .t-tool { pointer-events: auto; }
 .tile.tiny .t-tools .t-tool { height: 22px; min-width: 22px; padding: 0 6px; font-size: 11px; border-radius: 6px; }
-.tile.tiny .t-size { margin-left: auto; font-size: 11px; }
 .tile.tiny .t-grip { width: 46px; height: 46px; }
 
 /* Java 侧的全黑兜底：有的 MIUI 不认我们写的屏幕超时（它有自己的省电策略），
@@ -1147,19 +1146,15 @@ body::before { content: none; }
   font-variant-numeric: tabular-nums; white-space: nowrap;
 }
 .t-hval.muted { color: var(--text-5); }
-/* 编辑态：半高卡里让位给「尺寸」标签和拉伸角 */
-.grid.editing .tile.half .t-hval { display: none; }
-.grid.editing .tile.half { padding-right: 118px; }
+/* 编辑态半高卡：右边只留给拉伸角（42px 宽），读数不再被尺寸标挤掉 */
+.grid.editing .tile.half { padding-right: 54px; }
 .tile.half .t-tools { position: absolute; right: 48px; top: 50%; margin: -11px 0 0; display: flex; }
-.tile.half .t-tools .t-tool, .tile.half .t-tools .t-size { pointer-events: auto; }
-.tile.half .t-tools .t-tool { height: 22px; min-width: 22px; padding: 0 6px; font-size: 11px; border-radius: 6px; }
-.tile.half .t-size { margin-left: 0; font-size: 11px; }
+.tile.half .t-tools .t-tool { pointer-events: auto; height: 22px; min-width: 22px; padding: 0 6px; font-size: 11px; border-radius: 6px; }
 .tile.half .t-grip { width: 42px; height: 100%; top: 0; bottom: 0; border-bottom-right-radius: 12px; }
 /* 紧凑列数下卡片内边距会变，半高条的左右内边距也跟着收一点 */
 .grid.cols-5 .tile.half { padding: 0 12px; }
 .grid.cols-6 .tile.half { padding: 0 10px; }
 .grid.cols-6 .tile.half { --cw: calc(var(--cellw) - 20px); --ch: calc(var(--unit) - 20px); }
-.t-size { margin-left: auto; font-size: 12px; letter-spacing: .5px; color: var(--accent-soft); }
 .t-grip {
   position: absolute; right: 2px; bottom: 2px; width: 64px; height: 64px; z-index: 30;
   pointer-events: auto; background: rgba(var(--accent-rgb),0.002);

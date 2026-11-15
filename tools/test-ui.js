@@ -622,6 +622,21 @@ eq(halfHtml.indexOf('t-hname') >= 0, true, '半高卡有名称');
 eq(halfHtml.indexOf('t-hval') >= 0, true, '半高卡读数位始终在（后面能补数值）');
 eq(halfHtml.indexOf('t-hval muted') >= 0, true, '没有状态时读数是压暗的破折号');
 
+/* 编辑态不再显示尺寸标（用户：「编辑模式下不用显示它的大小是一叉还是半高」）：
+   卡上不再出现 t-size；已加入的卡连工具条都不挂，没加入的卡仍保留「+ 添加」 */
+api.setEditMode(true);
+var editAdded = api.tileHtml({ tile: halfTile, item: {} });   // 上面已 added 的半高卡
+eq(editAdded.indexOf('t-size') >= 0, false, '编辑态：已加入的卡没有尺寸标');
+eq(editAdded.indexOf('t-tools') >= 0, false, '编辑态：已加入的卡不挂工具条');
+eq(editAdded.indexOf('t-grip') >= 0, true, '编辑态：已加入的卡仍有拉伸角');
+api.writeEdit({ added: {}, hidden: {}, order: [], span: { 'light.living_main': 1 }, rows: { 'light.living_main': 0.5 } });
+var editNot = api.tileHtml({ tile: halfTile, item: {} });     // 没加入的半高卡
+eq(editNot.indexOf('t-size') >= 0, false, '编辑态：没加入的卡也没有尺寸标');
+eq(editNot.indexOf('t-add') >= 0, true, '编辑态：没加入的卡仍有「+ 添加」按钮');
+api.setEditMode(false);
+eq(api.tileHtml({ tile: halfTile, item: {} }).indexOf('t-tools') >= 0, false, '非编辑态：没加入的卡不挂工具条');
+eq(fs.readFileSync(path.join(root, 'panel', 'css', 'app.css'), 'utf8').indexOf('.t-size') >= 0, false, 'CSS：.t-size 规则全删（注意别拿 t-size 当子串——font-size 里也有）');
+
 /* 读数型（温湿度计）半高卡右边多一个小数值 */
 api.setStates({ 'sensor.temp_in': { entity_id: 'sensor.temp_in', state: '21.6', attributes: { unit_of_measurement: '°C', device_class: 'temperature' } } });
 api.writeEdit({ added: { 'sensor.temp_in': 1 }, hidden: {}, order: [], span: { 'sensor.temp_in': 1 }, rows: { 'sensor.temp_in': 0.5 } });
