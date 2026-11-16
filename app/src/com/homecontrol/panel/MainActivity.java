@@ -1070,6 +1070,13 @@ public class MainActivity extends Activity {
             } catch (Throwable t) { return "?"; }
         }
 
+        /** versionCode：面板拿它判断「下载到的包是不是真的比我现在新」 */
+        long appVersionCode() {
+            try {
+                return getPackageManager().getPackageInfo(getPackageName(), 0).versionCode;
+            } catch (Throwable t) { return 0L; }
+        }
+
         @JavascriptInterface
         public String info() {
             String ua = "";
@@ -1083,6 +1090,7 @@ public class MainActivity extends Activity {
                     + ",\"model\":\"" + Build.MODEL + "\""
                     + ",\"device\":\"" + Build.DEVICE + "\""
                     + ",\"ver\":\"" + appVersion() + "\""
+        + ",\"verCode\":" + appVersionCode()
                     + ",\"beatAge\":" + (lastBeat == 0L ? -1 : (System.currentTimeMillis() - lastBeat))
                     + ",\"ua\":\"" + ua + "\"}";
         }
@@ -1634,6 +1642,9 @@ public class MainActivity extends Activity {
                 c.setRequestMethod(method == null || method.length() == 0 ? "GET" : method);
                 c.setRequestProperty("Accept", "application/json, */*");
                 c.setRequestProperty("User-Agent", "HomeControl-Panel");
+                /* 中间代理/CDN 复用旧 JSON 会让面板误以为「已是最新」，强制不复用 */
+                c.setRequestProperty("Cache-Control", "no-cache");
+                c.setRequestProperty("Pragma", "no-cache");
                 if (headersJson != null && headersJson.length() > 2) {
                     try {
                         org.json.JSONObject h = new org.json.JSONObject(headersJson);
@@ -1785,6 +1796,9 @@ public class MainActivity extends Activity {
                 c.setReadTimeout(30000);
                 c.setRequestProperty("User-Agent", "HomeControl-Panel");
                 c.setRequestProperty("Accept", "application/octet-stream");
+                /* 别让代理/镜像把上一次的旧 APK 直接复用给我们 */
+                c.setRequestProperty("Cache-Control", "no-cache");
+                c.setRequestProperty("Pragma", "no-cache");
                 int code = c.getResponseCode();
                 if (code < 200 || code >= 300) return errJson("HTTP " + code);
                 String ctype = c.getContentType();
@@ -1840,7 +1854,44 @@ public class MainActivity extends Activity {
             }
         }
 
-        /** 拉起系统安装器（APK 通过 UpdateProvider 的 content:// 交付） */
+        /** 下载好的 APK 的 sha256（小写 hex，空串=读不到）。和 release JSON 的 digest 对比就知道包有没有被缓存/镜像换掉 */
+    @JavascriptInterface
+    public String updSha256(final String path) {
+      java.io.FileInputStream in = null;
+      try {
+        java.io.File f = new java.io.File(path == null ? "" : path);
+        if (!f.isFile()) return "";
+        java.security.MessageDigest md = java.security.MessageDigest.getInstance("SHA-256");
+        in = new java.io.FileInputStream(f);
+        byte[] buf = new byte[16384];
+        int n;
+        while ((n = in.read(buf)) > 0) md.update(buf, 0, n);
+        byte[] d = md.digest();
+        StringBuilder sb = new StringBuilder(d.length * 2);
+        for (byte b : d) sb.append(Character.forDigit((b >> 4) & 0xF, 16)).append(Character.forDigit(b & 0xF, 16));
+        return sb.toString();
+      } catch (Throwable t) {
+        Log.w(TAG, "updSha256 failed: " + t);
+        return "";
+      } finally {
+        if (in != null) try { in.close(); } catch (Throwable t) { }
+      }
+    }
+
+    /** 读一个还没安装的 APK 的 versionName/versionCode（{"ver":"0.7.37","code":74}） */
+    @JavascriptInterface
+    public String updApkInfo(final String path) {
+      try {
+        android.content.pm.PackageInfo pi = getPackageManager()
+            .getPackageArchiveInfo(path == null ? "" : path, 0);
+        if (pi == null) return "{\"error\":\"读不出这个 APK 的版本信息\"}";
+        return "{\"ver\":\"" + pi.versionName + "\",\"code\":" + pi.versionCode + "}";
+      } catch (Throwable t) {
+        return "{\"error\":\"" + String.valueOf(t).replace("\"", "'") + "\"}";
+      }
+    }
+
+    /** 拉起系统安装器（APK 通过 UpdateProvider 的 content:// 交付） */
         @JavascriptInterface
         public void updInstall(final String cbId, final String path) {
             ui.post(new Runnable() {

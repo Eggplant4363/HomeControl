@@ -117,10 +117,12 @@
     phase: 'idle',      /* idle | checking | latest | found | downloading | ready | installing | error */
     ver: '',            /* 远端版本号（不带 v） */
     size: 0,            /* 远端 APK 字节数，0 = 未知 */
+    digest: '',         /* 远端 APK 的 sha256（GitHub 提供，可能为空） */
     url: '',            /* 远端 APK 下载地址 */
     file: '',           /* 远端 APK 文件名 */
     path: '',           /* 下载到本机后的路径 */
-    needPerm: false,    /* Android 8+ 缺「安装未知应用」授权时为 true */
+    needPerm: false,
+    retryMirror: false,    /* 直连下载超时→提示换镜像重试 */
     pct: 0,
     msg: ''
   };
@@ -182,7 +184,8 @@
       if (!best || (a.size || 0) > (best.size || 0)) best = a;
     }
     if (!best) return null;
-    return { name: best.name, url: best.browser_download_url || '', size: best.size || 0 };
+    return { name: best.name, url: best.browser_download_url || '', size: best.size || 0,
+             digest: best.digest || '' };   /* GitHub 给的 sha256:…，用来验下载到的包 */
   }
 
   /** GitHub release JSON 文本 → {ver, url, size, name} / {error} */
@@ -196,7 +199,7 @@
     var apk = pickApk(o.assets);
     if (!apk || !apk.url) return { ver: ver, error: '这个 release 没挂 APK' };
     if (apk.size > MAX_APK) return { ver: ver, error: 'APK 太大（' + mb(apk.size) + '）' };
-    return { ver: ver, url: apk.url, size: apk.size, name: apk.name };
+    return { ver: ver, url: apk.url, size: apk.size, name: apk.name, digest: apk.digest || '' };
   }
 
   function mb(n) {
@@ -220,7 +223,7 @@
   function check() {
     if (U.phase === 'checking' || U.phase === 'downloading') return;
     if (!hasBridge()) { setPhase('error', '浏览器预览里没有升级通道，装到平板上再试'); return; }
-    U.ver = ''; U.url = ''; U.size = 0; U.path = ''; U.pct = 0;
+    U.ver = ''; U.url = ''; U.size = 0; U.path = ''; U.pct = 0; U.digest = ''; U.retryMirror = false;
     setPhase('checking', '正在检查…');
     var id = 'chk' + (++seq);
     pending[id] = 'check';
@@ -244,9 +247,9 @@
     if (o.status && (o.status < 200 || o.status >= 300)) { setPhase('error', 'GitHub 返回 HTTP ' + o.status); return; }
     var r = parseRelease(o.body);
     if (r.error) { setPhase('error', r.error); return; }
-    U.ver = r.ver; U.url = r.url; U.size = r.size; U.file = r.name;
+    U.ver = r.ver; U.url = r.url; U.size = r.size; U.file = r.name; U.digest = r.digest || '';
     var cur = normVer(curVer());
-    if (cur && verCmp(r.ver, cur) <= 0) { setPhase('latest', '已是最新（v' + cur + '）'); return; }
+    if (cur && verCmp(r.ver, cur) <= 0) { setPhase('latest', '已是最新（本地 v' + cur + '，GitHub 上 v' + r.ver + '）'); return; }
     setPhase('found', '发现新版本 v' + r.ver + '（' + mb(r.size) + '）');
   }
 
@@ -258,8 +261,11 @@
     setPhase('downloading', '正在下载… 0%');
     var id = 'dl' + (++seq);
     pending[id] = 'download';
+    var dcfg = readChannel();
     try {
-      bridge().updDownload(id, U.url, U.file || 'update.apk');
+      /* 下载 URL 也要按通道改写：镜像加前缀，代理交给 Java 侧。原来这里传的是原样 U.url，
+         选了镜像/代理下载仍然直连 github.com，国内网络必然超时。 */
+      bridge().updDownload(id, applyChannel(dcfg, U.url), U.file || 'update.apk', proxyJson(dcfg));
     } catch (e) {
       delete pending[id];
       setPhase('error', '下载没能开始：' + e);
@@ -281,11 +287,19 @@
     var o;
     try { o = JSON.parse(out || '{}'); } catch (e) { setPhase('error', '通道返回的不是 JSON'); return; }
     if (kind === 'download') {
-      if (o.error) { setPhase('error', '下载失败：' + o.error); return; }
+      if (o.error) {
+        var cfgNow = readChannel();
+        var timedOut = /timeout|timed out|SocketTimeout/i.test(String(o.error));
+        U.retryMirror = !!(timedOut && cfgNow.channel === 'direct');
+        setPhase('error', '下载失败：' + o.error + (U.retryMirror
+          ? '。直连 GitHub 下不动这台设备上的安装包（国内常见），点下面的按钮换 gh-proxy.com 重试'
+          : ''));
+        return;
+      }
       U.path = o.path || '';
       U.pct = 100;
       if (!U.path) { setPhase('error', '下载完了但没拿到文件路径'); return; }
-      setPhase('ready', '下载完成（' + mb(o.bytes || U.size) + '），点下面的按钮安装');
+      verify(U.path, o.bytes || 0);
       return;
     }
     if (kind === 'install') {
@@ -300,6 +314,34 @@
       if (o.error) { setPhase('error', '装不起来：' + o.error); return; }
       setPhase('installing', '安装器已打开，按屏幕提示完成安装');
     }
+  }
+
+  /** 装之前先确认：字节数、sha256、versionCode 三关都过。
+   *  任一条不成立就会出现「装完还是旧版本」——与其让用户猜，不如直接说清哪一步不对。 */
+  function verify(path, bytes) {
+    var b = bridge();
+    var cur = 0;
+    try { cur = parseInt((JSON.parse((b && b.info && b.info()) || '{}').verCode) || 0, 10) || 0; } catch (e) { }
+    var info = null;
+    try { info = (b && b.updApkInfo) ? JSON.parse(b.updApkInfo(path) || '{}') : null; } catch (e) { info = null; }
+    if (info && info.error) { setPhase('error', '读不出下载到的 APK（' + info.error + '）'); return; }
+    if (U.size && bytes && Math.abs(bytes - U.size) > 1024) {
+      setPhase('error', '下载到 ' + mb(bytes) + '，GitHub 上是 ' + mb(U.size) + '（包不完整或被换过），请重新下载');
+      return;
+    }
+    var got = '';
+    try { got = (b && b.updSha256) ? String(b.updSha256(path) || '') : ''; } catch (e) { got = ''; }
+    var want = String(U.digest || '').toLowerCase().replace(/^sha256:/, '');
+    if (want && got && want !== got.toLowerCase()) {
+      setPhase('error', '下载到的包和 GitHub 上的不一致（sha256 ' + got.slice(0, 8) + '… ≠ ' + want.slice(0, 8) + '…），多半是缓存/镜像给错了，重新下载一次');
+      return;
+    }
+    if (info && info.code && cur && info.code <= cur) {
+      setPhase('error', '下载到的不是新版本：包是 v' + (info.ver || '?') + '（code ' + info.code + '），当前已经是 code ' + cur);
+      return;
+    }
+    var tag = (info && info.ver) ? info.ver : U.ver;
+    setPhase('ready', '下载完成 v' + tag + '（' + mb(bytes || U.size) + (want && got ? '，sha256 一致' : '') + '），点下面的按钮安装');
   }
 
   function install() {
@@ -324,7 +366,7 @@
 
   function reset() {
     U.phase = 'idle'; U.ver = ''; U.url = ''; U.size = 0; U.file = '';
-    U.path = ''; U.pct = 0; U.msg = ''; U.needPerm = false;
+    U.path = ''; U.pct = 0; U.msg = ''; U.needPerm = false; U.retryMirror = false;
     repaint();
   }
 
@@ -397,6 +439,9 @@
       html += '<button class="btn primary" data-act="upd-install">继续安装</button>' +
         '<button class="btn" data-act="upd-perm">去授权</button>' +
         '<button class="btn" data-act="upd-check">重新检查</button>';
+    } else if (U.phase === 'error' && U.retryMirror) {
+      html += '<button class="btn primary" data-act="upd-retry-mirror">换 gh-proxy.com 重试</button>' +
+        '<button class="btn" data-act="upd-check">检查更新</button>';
     } else if (U.phase === 'error' && /允许这台设备安装应用/.test(U.msg)) {
       html += '<button class="btn primary" data-act="upd-perm">去授权</button>' +
         '<button class="btn" data-act="upd-check">重新检查</button>';

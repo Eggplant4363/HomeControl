@@ -915,9 +915,21 @@ ok(mqttJava.indexOf('broker DISCONNECT reason=') >= 0, 'broker 踢线原因码�
 ok(fs.readFileSync(path.join(root, 'panel', 'js', 'mqtt.js'), 'utf8').indexOf('connected-no-sub') >= 0, '面板显示降级状态（已连接但订阅被拒）');
 const mqttJs = fs.readFileSync(path.join(root, 'panel', 'js', 'mqtt.js'), 'utf8');
 const musicJs = fs.readFileSync(path.join(root, 'panel', 'js', 'music.js'), 'utf8');
+const updJs = fs.readFileSync(path.join(root, 'panel', 'js', 'update.js'), 'utf8');
+const appJs = fs.readFileSync(path.join(root, 'panel', 'js', 'app.js'), 'utf8');
+const mainCode = fs.readFileSync(path.join(root, 'app', 'src', 'com', 'homecontrol', 'panel', 'MainActivity.java'), 'utf8');
 ok(mqttJs.indexOf('mu.playDefault') >= 0, 'HA 播放按钮走 playDefault（冷启动没选歌时 togglePlay 只弹提示，不出声）');
 ok(musicJs.indexOf('playDefault: playDefault') >= 0, 'MusicUI 导出 playDefault');
 ok(musicJs.indexOf('stopPlay: stopPlay') >= 0, 'MusicUI 导出 stopPlay');
+ok(updJs.indexOf('updSha256') >= 0 && updJs.indexOf('updApkInfo') >= 0, '升级：下载完先验 sha256 + APK versionCode 再装');
+ok(updJs.indexOf('U.digest = r.digest') >= 0, '升级：从 release JSON 取 digest');
+ok(updJs.indexOf('下载到的不是新版本') >= 0, '升级：包比当前旧时明确报错而不是照装');
+ok(mainCode.indexOf('getPackageArchiveInfo') >= 0 && mainCode.indexOf('String updSha256') >= 0, 'Java 侧提供 updApkInfo/updSha256');
+ok(mainCode.indexOf('verCode') >= 0 && mainCode.indexOf('appVersionCode()') >= 0, 'Java info() 暴露 verCode');
+ok(mainCode.indexOf('Cache-Control", "no-cache') >= 0, '升级请求带 no-cache，避免代理复用旧 JSON/旧包');
+ok(updJs.indexOf('applyChannel(dcfg, U.url)') >= 0 && updJs.indexOf('proxyJson(dcfg)') >= 0, '下载要走通道：镜像加前缀/代理交给 Java（原来只有 check 走通道，下载永远直连）');
+ok(updJs.indexOf('upd-retry-mirror') >= 0 && appJs.indexOf('upd-retry-mirror') >= 0, '直连下载超时给「换 gh-proxy.com 重试」出口');
+ok(updJs.indexOf('SocketTimeout') >= 0, '超时错误单独识别，给出可操作提示');
 ok(mqttJs.indexOf("m === 'stop'") >= 0 && mqttJs.indexOf('mu.stopPlay') >= 0, 'HA 停止按钮走 stopPlay（回未在播放，不是暂停）');
 ok(musicJs.indexOf('playTrack(S.lib.items[0], S.lib.items, 0)') >= 0, 'playDefault 冷启动会拉全库并播第一首');
 

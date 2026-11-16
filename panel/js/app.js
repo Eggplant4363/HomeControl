@@ -4355,6 +4355,7 @@ function bindDim() {
         else if (act === 'upd-install') up.install();
         else if (act === 'upd-perm') up.openPerm();
         else if (act === 'upd-none') up.reset();
+        else if (act === 'upd-retry-mirror') { up.setChannel('mirror', { mirror: 'https://gh-proxy.com/' }); up.download(); }
         else if (act === 'upd-ch-custom') up.setChannel('mirror', { mirror: (document.getElementById('updMirror') || {}).value });
         else if (act === 'upd-ch-proxy') up.setChannel('proxy', { proxyHost: (document.getElementById('updProxyHost') || {}).value, proxyPort: (document.getElementById('updProxyPort') || {}).value });
         else if (act.indexOf('upd-ch:') === 0) {
