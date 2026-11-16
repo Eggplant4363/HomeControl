@@ -89,8 +89,13 @@
     var mu = window.MusicUI;
     if (!mu) return;
     var playing = !!(mu.isPlaying && mu.isPlaying());
-    if (m === 'play') { if (!playing) mu.togglePlay(); }
-    else if (m === 'pause' || m === 'stop') { if (playing) mu.togglePlay(); }
+    if (m === 'play') {
+      /* 冷启动没选歌时 togglePlay 只会弹一句「先去右侧歌单里点一首」，
+         HA 的播放按钮就变成哑的 —— 走 playDefault：自动开音乐页 + 播第一首 */
+      if (!playing) { if (mu.playDefault) mu.playDefault(); else mu.togglePlay(); }
+    }
+    else if (m === 'pause') { if (playing) mu.togglePlay(); }
+    else if (m === 'stop') { if (mu.stopPlay) mu.stopPlay(); else if (playing) mu.togglePlay(); }
     else if (m === 'toggle') { mu.togglePlay(); }
     else if (m === 'next') { mu.next(); }
     else if (m === 'prev') { mu.prev(); }

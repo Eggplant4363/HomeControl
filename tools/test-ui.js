@@ -913,6 +913,13 @@ ok(mqttJava.indexOf('subscribe denied (0x') >= 0, 'SUBACK >=0x80 时降级为只
 ok(mqttJava.indexOf('int qos = (hb >> 1) & 0x03') >= 0, 'PUBLISH 的 QoS 取固定头 bit1-2（写成 >>3 会吃掉 payload 前两字节）');
 ok(mqttJava.indexOf('broker DISCONNECT reason=') >= 0, 'broker 踢线原因码进日志');
 ok(fs.readFileSync(path.join(root, 'panel', 'js', 'mqtt.js'), 'utf8').indexOf('connected-no-sub') >= 0, '面板显示降级状态（已连接但订阅被拒）');
+const mqttJs = fs.readFileSync(path.join(root, 'panel', 'js', 'mqtt.js'), 'utf8');
+const musicJs = fs.readFileSync(path.join(root, 'panel', 'js', 'music.js'), 'utf8');
+ok(mqttJs.indexOf('mu.playDefault') >= 0, 'HA 播放按钮走 playDefault（冷启动没选歌时 togglePlay 只弹提示，不出声）');
+ok(musicJs.indexOf('playDefault: playDefault') >= 0, 'MusicUI 导出 playDefault');
+ok(musicJs.indexOf('stopPlay: stopPlay') >= 0, 'MusicUI 导出 stopPlay');
+ok(mqttJs.indexOf("m === 'stop'") >= 0 && mqttJs.indexOf('mu.stopPlay') >= 0, 'HA 停止按钮走 stopPlay（回未在播放，不是暂停）');
+ok(musicJs.indexOf('playTrack(S.lib.items[0], S.lib.items, 0)') >= 0, 'playDefault 冷启动会拉全库并播第一首');
 
 console.log('');
 if (failed === 0) {

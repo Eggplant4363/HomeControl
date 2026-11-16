@@ -1009,6 +1009,51 @@
     }
   }
 
+  /** HA「播放」按钮用：只播不暂停（toggle() 在播放中会变成暂停，语义不对）。
+   *  冷启动时曲库是空的，先开音乐页拉第一页全库，拿到第一首再播。 */
+  function playDefault() {
+    var a = ensureAudio();
+    if (S.track) {
+      if (a.paused) {
+        var p = a.play();
+        if (p && p.then) p.then(null, function () { setStatus('error', '浏览器拦了自动播放，再点一次'); });
+      }
+      return true;
+    }
+    if (S.queue.length) { playTrack(S.queue[0], S.queue, 0); return true; }
+    if (S.lib.items.length) { playTrack(S.lib.items[0], S.lib.items, 0); return true; }
+    open(true);
+    openLibView();
+    var tries = 0;
+    (function wait() {
+      if (S.lib.items.length) { playTrack(S.lib.items[0], S.lib.items, 0); return; }
+      if (++tries > 40) { setStatus('error', '曲库没加载出来'); return; }
+      /* 冷启动时后端还没登录好，第一次 loadLibPage 会静默返回（S.backend 为空），
+         所以每隔 300ms 再喊一次，直到库里有歌 */
+      if (!S.libBusy) openLibView();
+      setTimeout(wait, 300);
+    })();
+    return true;
+  }
+
+  /** HA「停止」按钮用：真的要停到「未在播放」，而不是像暂停那样留在曲目上。
+   *  toggle() 对 stop 也只会暂停，所以单开一个。 */
+  function stopPlay() {
+    var a = ensureAudio();
+    try {
+      a.pause();
+      a.removeAttribute('src');
+      a.load();
+    } catch (e) { /* 音频还没建好，忽略 */ }
+    S.track = null;
+    S.lyrics = null;
+    S.lyricIdx = -1;
+    S.qt = 0;
+    paintNow(); paintTransport(); paintLyrics(); paintList();
+    setStatus('ok', '已停止');
+    return true;
+  }
+
   /** 按 S.order 走下一首：循环关 = 走到头停下；列表循环 = 回到第一首 */
   function next() {
     if (libMode() && S.shuffle) {
@@ -2003,7 +2048,7 @@
     queueList: function () { return S.order.map(function (i) { return S.queue[i]; }); },
     openQueue: openQueueView, toggleShuffle: toggleShuffle, cycleRepeat: cycleRepeat, cycleMode: cycleMode,
     mode: function () { return { shuffle: S.shuffle, repeat: S.repeat, label: modeLabel() }; },
-    next: next, prev: prev, togglePlay: toggle,
+    next: next, prev: prev, togglePlay: toggle, playDefault: playDefault, stopPlay: stopPlay,
     isPlaying: function () { return !!(S.audio && S.audio.src && !S.audio.paused); },
     openAll: function () { open(true); openLibView(); },
     libInfo: function () { return { view: S.view, src: S.src, loaded: S.lib.items.length, total: S.lib.total, randLeft: S.randQ.length, hist: S.hist.length } }

@@ -1,16 +1,16 @@
 # Manual APK build: aapt2 -> javac -> d8 -> zip -> zipalign -> apksigner.
 # No Gradle, no dependencies beyond the Android SDK build-tools and a JDK 17.
-# °æ±¾ºÅºÍ±äÌå×ß²ÎÊý£¨ÒÔÇ°Ã¿´ÎÉý°æ±¾¶¼Òª¸´ÖÆÒ»¸ö patch-version-NN.js£¬ÄÇÖÖÒÇÊ½ÒÑ¾­ÖÕ½á£©¡£
-#   tools\build.ps1                    ¡ú debug °ü£¨´ø¼Ù HA¡¢µ±Ç°°æ±¾ 67 / 0.7.30£©
-#   tools\build.ps1 -VersionCode 60    ¡ú Éý°æ±¾£¨Ô¼¶¨£ºÃ¿´Î¸Ä¶¯ºó¶¼·¢Ò»´ÎÐÂ°æ±¾£¬µü´ú¾¡¿ÉÄÜÐ¡£º
-#                                    versionCode +1¡¢versionName Ö»½ø²¹¶¡Î»£»×°µ½ÒÑ×°¸ü¸ß versionCode
-#                                    µÄÉè±¸ÉÏ»á INSTALL_FAILED_VERSION_DOWNGRADE£¬²¢Í¬²½¸Ä README µÄ°æ±¾ÐÐ£©
-#   tools\build.ps1 -Variant release   ¡ú ÕýÊ½°ü£º²»º¬ MockHaServer
+# ï¿½æ±¾ï¿½ÅºÍ±ï¿½ï¿½ï¿½ï¿½ß²ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ç°Ã¿ï¿½ï¿½ï¿½ï¿½ï¿½æ±¾ï¿½ï¿½Òªï¿½ï¿½ï¿½ï¿½Ò»ï¿½ï¿½ patch-version-NN.jsï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ê½ï¿½Ñ¾ï¿½ï¿½Õ½á£©ï¿½ï¿½
+#   tools\build.ps1                    ï¿½ï¿½ debug ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ HAï¿½ï¿½ï¿½ï¿½Ç°ï¿½æ±¾ 67 / 0.7.30ï¿½ï¿½
+#   tools\build.ps1 -VersionCode 60    ï¿½ï¿½ ï¿½ï¿½ï¿½æ±¾ï¿½ï¿½Ô¼ï¿½ï¿½ï¿½ï¿½Ã¿ï¿½Î¸Ä¶ï¿½ï¿½ó¶¼·ï¿½Ò»ï¿½ï¿½ï¿½Â°æ±¾ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ð¡ï¿½ï¿½
+#                                    versionCode +1ï¿½ï¿½versionName Ö»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Î»ï¿½ï¿½×°ï¿½ï¿½ï¿½ï¿½×°ï¿½ï¿½ï¿½ï¿½ versionCode
+#                                    ï¿½ï¿½ï¿½è±¸ï¿½Ï»ï¿½ INSTALL_FAILED_VERSION_DOWNGRADEï¿½ï¿½ï¿½ï¿½Í¬ï¿½ï¿½ï¿½ï¿½ README ï¿½Ä°æ±¾ï¿½Ð£ï¿½
+#   tools\build.ps1 -Variant release   ï¿½ï¿½ ï¿½ï¿½Ê½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ MockHaServer
 [CmdletBinding()]
 param(
     [string]$OutName = "homecontrol.apk",
-    [int]$VersionCode = 71,
-    [string]$VersionName = "0.7.34",
+    [int]$VersionCode = 74,
+    [string]$VersionName = "0.7.37",
     [string]$Variant = "debug"          # debug | release
 )
 
@@ -20,7 +20,7 @@ $root = Split-Path -Parent $PSScriptRoot
 $sdk = $AndroidSdk
 $bt = $BuildTools
 $androidJar = $AndroidJar
-# ÉÏÒ»´ÎµÄ²úÎïÏÈÉ¾µô£ºapksigner »á¾ÍµØÖØÐ´£¬²ÐÁôµÄ¾É APK ¿ÉÄÜ´øÉÏ²»Ò»ÖÂµÄ v2 ÕªÒª
+# ï¿½ï¿½Ò»ï¿½ÎµÄ²ï¿½ï¿½ï¿½ï¿½ï¿½É¾ï¿½ï¿½ï¿½ï¿½apksigner ï¿½ï¿½Íµï¿½ï¿½ï¿½Ð´ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ä¾ï¿½ APK ï¿½ï¿½ï¿½Ü´ï¿½ï¿½Ï²ï¿½Ò»ï¿½Âµï¿½ v2 ÕªÒª
 $staleApk = Join-Path $root ("dist\" + $OutName)
 if (Test-Path $staleApk) { Remove-Item $staleApk -Force -ErrorAction SilentlyContinue }
 $javaHome = $JavaHome
@@ -34,14 +34,14 @@ foreach ($p in @($bt, $androidJar, $javac)) {
     if (-not (Test-Path $p)) { throw "missing build dependency: $p" }
 }
 
-# ±äÌå¸÷×ÔÒ»Ì×ÖÐ¼ä²úÎïÄ¿Â¼£ºdebug Óë release µÄ javac Ô´¼¯²»Í¬£¨debug ¶à app/src_debug£©£¬
-# ¹²ÓÃ build\classes »áÈÃ release °ÑÉÏÒ»ÂÖ debug µÄ MockHaServer.class Ò»Æð dex ½øÈ¥
-# £¨É³Ïä°Ñ build\classes ×ö³É reparse point£¬ÖðÏîÉ¾Ò²É¾²»µôÀïÃæµÄ¾É class£©¡£
+# ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ò»ï¿½ï¿½ï¿½Ð¼ï¿½ï¿½ï¿½ï¿½Ä¿Â¼ï¿½ï¿½debug ï¿½ï¿½ release ï¿½ï¿½ javac Ô´ï¿½ï¿½ï¿½ï¿½Í¬ï¿½ï¿½debug ï¿½ï¿½ app/src_debugï¿½ï¿½ï¿½ï¿½
+# ï¿½ï¿½ï¿½ï¿½ build\classes ï¿½ï¿½ï¿½ï¿½ release ï¿½ï¿½ï¿½ï¿½Ò»ï¿½ï¿½ debug ï¿½ï¿½ MockHaServer.class Ò»ï¿½ï¿½ dex ï¿½ï¿½È¥
+# ï¿½ï¿½É³ï¿½ï¿½ï¿½ build\classes ï¿½ï¿½ï¿½ï¿½ reparse pointï¿½ï¿½ï¿½ï¿½ï¿½ï¿½É¾Ò²É¾ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ä¾ï¿½ classï¿½ï¿½ï¿½ï¿½
 $b = Join-Path $root $(if ($Variant -eq "release") { "build-release" } else { "build" })
 $dist = Join-Path $root "dist"
-# ÖðÏîÉ¾£¬Ìø¹ý reparse point£ºDSH ÎÄ¼þÉ³Ïä»á°ÑÐ´½ø build/ µÄÁÙÊ±ÎÄ¼þ×ö³É·ûºÅÁ´½Ó
-# £¨Attributes ´ø ReparsePoint¡¢Target Îª¿Õ£©£¬Remove-Item -Recurse Åöµ½ËüÃÇµÄ¿ÕÄ¿±ê
-# »á±¨¡¸Cannot bind argument to parameter 'Path' because it is null¡¹Ö±½ÓÖÐ¶Ï¹¹½¨¡£
+# ï¿½ï¿½ï¿½ï¿½É¾ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ reparse pointï¿½ï¿½DSH ï¿½Ä¼ï¿½É³ï¿½ï¿½ï¿½ï¿½Ð´ï¿½ï¿½ build/ ï¿½ï¿½ï¿½ï¿½Ê±ï¿½Ä¼ï¿½ï¿½ï¿½ï¿½É·ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
+# ï¿½ï¿½Attributes ï¿½ï¿½ ReparsePointï¿½ï¿½Target Îªï¿½Õ£ï¿½ï¿½ï¿½Remove-Item -Recurse ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ÇµÄ¿ï¿½Ä¿ï¿½ï¿½
+# ï¿½á±¨ï¿½ï¿½Cannot bind argument to parameter 'Path' because it is nullï¿½ï¿½Ö±ï¿½ï¿½ï¿½Ð¶Ï¹ï¿½ï¿½ï¿½ï¿½ï¿½
 if (Test-Path $b) {
     foreach ($e in Get-ChildItem $b -Force) {
         if (($e.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) { continue }
@@ -50,7 +50,7 @@ if (Test-Path $b) {
 }
 New-Item -ItemType Directory -Force "$b\res", "$b\classes", "$b\dex", "$b\gen", $dist | Out-Null
 
-# 1. bundle the web panel + TLS ÐÅÈÎÃª into assets/£¨assets ÊÇ¹¹½¨²úÎï£¬²»½ø git£©
+# 1. bundle the web panel + TLS ï¿½ï¿½ï¿½ï¿½Ãª into assets/ï¿½ï¿½assets ï¿½Ç¹ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï£¬ï¿½ï¿½ï¿½ï¿½ gitï¿½ï¿½
 $assets = Join-Path $root "app\assets"
 if (Test-Path $assets) { Remove-Item $assets -Recurse -Force }
 New-Item -ItemType Directory -Force (Join-Path $assets "panel") | Out-Null
@@ -82,7 +82,7 @@ if ($LASTEXITCODE -ne 0) { throw "aapt2 link failed" }
 Write-Host "[3/7] aapt2 link ok"
 
 # 3b. aapt2 (Windows) writes asset entry names with '\'; Android needs '/'
-#     otherwise file:///android_asset/... ÎÞ·¨´ò¿ª£¨ERR_FILE_NOT_FOUND£©
+#     otherwise file:///android_asset/... ï¿½Þ·ï¿½ï¿½ò¿ª£ï¿½ERR_FILE_NOT_FOUNDï¿½ï¿½
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 Add-Type -AssemblyName System.IO.Compression
 $tmpApk = Join-Path $b "base-fixed.apk"
@@ -108,7 +108,7 @@ $srcStream.Dispose()
 if ($fixed -gt 0) { Move-Item -Force $tmpApk $baseApk } else { Remove-Item -Force $tmpApk }
 Write-Host "[3b/7] asset entry names normalized ($fixed)"
 
-# 4. java£¨release ±äÌå²»º¬ app/src_debug£ºÕýÊ½°üÀï²»¸Ã´øÒ»¸ö¼Ù HA ·þÎñÆ÷£©
+# 4. javaï¿½ï¿½release ï¿½ï¿½ï¿½å²»ï¿½ï¿½ app/src_debugï¿½ï¿½ï¿½ï¿½Ê½ï¿½ï¿½ï¿½ï²»ï¿½Ã´ï¿½Ò»ï¿½ï¿½ï¿½ï¿½ HA ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 $srcDirs = @(Join-Path $root "app\src")
 if ($Variant -eq "debug") { $srcDirs += (Join-Path $root "app\src_debug") }
 $srcs = @(Get-ChildItem $srcDirs -Recurse -Filter *.java | ForEach-Object { $_.FullName })
@@ -129,8 +129,8 @@ Add-Type -AssemblyName System.IO.Compression.FileSystem
 Add-Type -AssemblyName System.IO.Compression
 $unsigned = Join-Path $b "unsigned.apk"
 $aligned = Join-Path $b "aligned.apk"
-# É³Ïä°ÑÉÏÒ»´Î¹¹½¨ÁôÏÂµÄÎÄ¼þ×ö³É reparse point£ºCopy-Item -Force ¸²¸ÇËüÃÇ»áÊ§°Ü£¬
-# ZipFile::Open(Update) ±¨¡¸being used by another process¡¹¡£ÏÈÉ¾ÔÙ¿½¡£
+# É³ï¿½ï¿½ï¿½ï¿½ï¿½Ò»ï¿½Î¹ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Âµï¿½ï¿½Ä¼ï¿½ï¿½ï¿½ï¿½ï¿½ reparse pointï¿½ï¿½Copy-Item -Force ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ç»ï¿½Ê§ï¿½Ü£ï¿½
+# ZipFile::Open(Update) ï¿½ï¿½ï¿½ï¿½being used by another processï¿½ï¿½ï¿½ï¿½ï¿½ï¿½É¾ï¿½Ù¿ï¿½ï¿½ï¿½
 foreach ($stale in @($unsigned, $aligned)) {
     if (Test-Path $stale) { Remove-Item $stale -Force -ErrorAction SilentlyContinue }
 }
