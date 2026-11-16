@@ -1,11 +1,12 @@
-/* ---------- MQTT 节点：把本机音乐挂成 HA 的 media_player ----------
+/* ---------- MQTT 节点：把本机音乐挂成 HA 的 sensor + button ----------
  * 配置在 /sdcard/HomeControl/mqtt.json（弹层里填，保存走 AndroidBridge.mqttRestart）。
  * Java 侧（MqttClient.java）负责连接/上线/HA discovery/收命令；这里负责：
  *   - 设置弹层那一节（主机/端口/账号/密码 + 状态行 + 保存/停用）
  *   - 收命令执行（Java 派发 __hcMqttCmd）：play/pause/toggle/next/prev/stop
- *   - 状态上报（变化才发 {status,title} JSON；HA 按 value_json.status 显示播放/暂停）
+ *   - 状态上报（变化才发 {status,title} JSON；HA sensor 按 value_json.status 显示，歌名进 JSON 属性）
  * 主题约定（<slug> 来自 app.js 的 selfSlug，一台设备一个）：
- *   homecontrol/<slug>/availability|cmd|state，discovery 挂 homeassistant/media_player/...
+ *   homecontrol/<slug>/availability|cmd|state
+ *   discovery 挂 homeassistant/sensor|button/…（**不用 media_player**：HA 核心没有 mqtt.media_player 平台）
  */
 (function () {
   'use strict';
@@ -47,7 +48,16 @@
       avail: 'homecontrol/' + sl + '/availability',
       cmd: 'homecontrol/' + sl + '/cmd',
       state: 'homecontrol/' + sl + '/state',
-      discovery: 'homeassistant/media_player/homecontrol_panel_' + sl + '_music'
+      // HA 核心没有 mqtt.media_player 平台（实测 12 个 mqtt 平台里唯独它静默不建实体），
+      // 所以音乐用 sensor（状态+歌名）+ 三个 button（播放/暂停/停止）表达。
+      // 主题必须以 /config 结尾（discovery 订阅器只看 homeassistant/<component>/<object_id>/config）；
+      // 0.7.32 及更早漏了这个后缀，导致 discovery 发到一条没人订阅的普通主题上。
+      disc: 'homeassistant/sensor/homecontrol_panel_' + sl + '_music/config',
+      discButtons: [
+        'homeassistant/button/homecontrol_panel_' + sl + '_music_play/config',
+        'homeassistant/button/homecontrol_panel_' + sl + '_music_pause/config',
+        'homeassistant/button/homecontrol_panel_' + sl + '_music_stop/config'
+      ]
     };
   }
 
@@ -121,7 +131,8 @@
   function sectionHtml() {
     var c = readCfg();
     var h = '<div class="set-sec">MQTT 节点</div>' +
-      '<div class="sheet-desc">接上 MQTT 后，HA 会出现一个「中控屏音乐」实体：在 HA 里点播放/暂停就能控制这台平板的道理鱼。' +
+      '<div class="sheet-desc">接上 MQTT 后，HA 里会出现「中控屏音乐」传感器（状态 playing/paused/idle，歌名看属性）' +
+      '和 播放/暂停/停止 三个按钮，点按钮就控制这台平板的道理鱼。' +
       '需先在 HA 里添加 MQTT integration 指向下面的 broker。</div>' +
       '<div class="cfg-row"><div class="cfg-k">主机</div><input class="cfg-in" id="mqHost" value="' + esc(c.host) + '" placeholder="10.10.1.8"></div>' +
       '<div class="cfg-row"><div class="cfg-k">端口</div><input class="cfg-in" id="mqPort" value="' + esc(String(c.port)) + '" placeholder="1883"></div>' +
@@ -166,9 +177,12 @@
     try {
       var s = JSON.parse(json);
       if (json === lastStatus) return;
+      // 刚连上（含 broker 踢线后重连）：清掉 lastSent，让下一轮轮询把当前状态重发一次。
+      // discovery/availability 都是非 retain，HA 重启或实体刚建时 state 是未知的，必须主动补一条。
+      if (s.state === 'connected' || s.state === 'connected-no-sub') lastSent = '';
       lastStatus = json;
-      if (s.state === 'connected') toast('MQTT 已连接：HA 里会出现「中控屏音乐」');
-      else if (s.state === 'connected-no-sub') toast('MQTT 已连接（订阅被拒：broker 配额/ACL，HA 只能看状态）');
+      if (s.state === 'connected') toast('MQTT 已连接：HA 里会出现「中控屏音乐」+ 播放/暂停/停止按钮');
+      else if (s.state === 'connected-no-sub') toast('MQTT 已连接（订阅被 broker 拒：过滤器非法/ACL，HA 只能看状态）');
       else if (s.state === 'offline') toast('MQTT 连不上：' + (s.err || '重试中'));
     } catch (e) { }
   };

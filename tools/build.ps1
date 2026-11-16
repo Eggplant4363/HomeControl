@@ -9,8 +9,8 @@
 [CmdletBinding()]
 param(
     [string]$OutName = "homecontrol.apk",
-    [int]$VersionCode = 69,
-    [string]$VersionName = "0.7.32",
+    [int]$VersionCode = 71,
+    [string]$VersionName = "0.7.34",
     [string]$Variant = "debug"          # debug | release
 )
 

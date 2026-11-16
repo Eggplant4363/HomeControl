@@ -16,7 +16,8 @@ import javax.net.ssl.X509TrustManager;
 
 /**
  * 极小 MQTT 5 客户端（protocol level 5、QoS0、裸 socket），让「中控屏」作为 MQTT 节点接入 HA：
- * - 上线后发 availability(retain "online") + HA discovery(retain) → HA 自动出现 media_player 实体；
+ * - 上线后发 availability("online") + HA discovery（各主题均非 retain，这台 broker 拒 retain）→ HA 自动出现
+ *   「中控屏音乐」sensor（状态+歌名）与 播放/暂停/停止 三个 button；
  * - 订阅 homecontrol/<slug>/cmd，收到 play/pause/stop 派发给面板 JS；
  * - 停用(stop)时发 availability "offline"(retain)；崩溃断线实体靠 availability 超时/HA 旧状态（这台 broker 拒 Will，见下）。
  * 为什么是 v5 + 0x10 头 + 不带 Will：逐字节对照 MQTTX 实测这台 EMQX——
@@ -71,7 +72,24 @@ public class MqttClient {
   public String availTopic() { return "homecontrol/" + slug + "/availability"; }
   public String cmdTopic() { return "homecontrol/" + slug + "/cmd"; }
   public String stateTopic() { return "homecontrol/" + slug + "/state"; }
-  public String discoveryTopic() { return "homeassistant/media_player/homecontrol_panel_" + slug + "_music"; }
+  /**
+   * HA discovery 主题：**不用 media_player**。实测这台 HA（2026.11.1）核心没有 mqtt.media_player 平台
+   * （`/api/config` 的 components 里 mqtt 只装载 switch/binary_sensor/number/light/vacuum/climate/
+   * button/text/sensor/select/fan/cover 共 12 个平台；同连接发其余平台的 discovery 都 2 秒内建出实体，
+   * 唯独 media_player 静默无实体、system_log 连报错都没有）。所以「中控屏音乐」用
+   * sensor（状态 + JSON 属性里的歌名）+ 三个 button（播放/暂停/停止，command_topic 复用 cmd）表达。
+   * 主题必须是 homeassistant/<component>/<object_id>/**config**——少了末尾的 /config 就是一条普通
+   * 无关主题，HA 的 discovery 订阅器根本不看（面板 0.7.32 及更早一直漏了这个后缀，这也是「实体从来
+   * 没出现过」的直接原因之一）。
+   */
+  public String[] discoveryTopics() {
+    return new String[] {
+      "homeassistant/sensor/homecontrol_panel_" + slug + "_music/config",
+      "homeassistant/button/homecontrol_panel_" + slug + "_music_play/config",
+      "homeassistant/button/homecontrol_panel_" + slug + "_music_pause/config",
+      "homeassistant/button/homecontrol_panel_" + slug + "_music_stop/config"
+    };
+  }
 
   public String status() { return statusJson; }
   public boolean connected() { return socket != null && socket.isConnected() && !socket.isClosed(); }
@@ -177,8 +195,10 @@ public class MqttClient {
     setStatus("{\"state\":\"connected\",\"tls\":" + (tls ? "true" : "false") + "}");
     // 这台 EMQX 拒 retain 发布（0x38 → 直接关线，MQTT5 的 Retain Available=0），所以 availability
     // 和 discovery 都发非 retain；HA 在线时能收到即时消息，discovery 每 ~2 分钟重发一次兜底。
+    // 顺序必须是 discovery 先、availability 后：实体是在 discovery 被 HA 处理的瞬间才创建的，先发的
+    // availability 会被丢掉，实体一直停在 unavailable（实测）。
+    publishDiscovery();
     publish(availTopic(), "online", false);
-    publish(discoveryTopic(), discoveryJson(), false);
     lastDiscoveryAt = System.currentTimeMillis();
 
     // v5 SUBSCRIBE：报文号(2) + properties 空块(1) + **topic 长度(2)** + topic + 订阅选项(1)。
@@ -205,7 +225,7 @@ public class MqttClient {
         // discovery 非 retain，HA 重启后会丢实体：每 ~3 分钟（2 个 keepalive 周期）重发一次
         long now = System.currentTimeMillis();
         if (now - lastDiscoveryAt > 2L * KEEPALIVE * 1000) {
-          publish(discoveryTopic(), discoveryJson(), false);
+          publishDiscovery();
           publish(availTopic(), "online", false);
           lastDiscoveryAt = now;
         }
@@ -275,19 +295,64 @@ public class MqttClient {
     throw new IOException("client stopped");
   }
 
-  private String discoveryJson() {
-    StringBuilder sb = new StringBuilder();
-    sb.append("{\"availability_topic\":\"").append(availTopic()).append("\"");
-    sb.append(",\"payload_available\":\"online\",\"payload_unavailable\":\"offline\"");
-    sb.append(",\"state_topic\":\"").append(stateTopic()).append("\"");
+  /** 四个实体共用一个 device，HA 里收成「中控屏 <slug>」一台设备 */
+  private String deviceJson() {
+    return "{\"identifiers\":[\"homecontrol_panel_" + slug + "\"]"
+      + ",\"name\":\"中控屏 " + slug + "\""
+      + ",\"manufacturer\":\"HomeControl\",\"model\":\"平板中控屏\"}";
+  }
+
+  private String availJson() {
+    return ",\"availability_topic\":" + jsonString(availTopic())
+      + ",\"payload_available\":\"online\",\"payload_unavailable\":\"offline\"";
+  }
+
+  /**
+   * 音乐状态：state = value_json.status（playing/paused/idle），歌名进 JSON 属性（HA 详情里能看）。
+   * `default_entity_id` 是 HA 2025.10+ MQTT discovery 的键（实测 2026.11 有效）：不写它时 HA 用
+   * 「设备名 + 实体名」的中文拼音 slug 生成 entity_id（中文名会变成
+   * sensor.zhong_kong_ping_21051182c_zhong_kong_ping_yin_le 这种一长串），写了才拿到稳定 id。
+   */
+  private String sensorJson() {
+    StringBuilder sb = new StringBuilder("{\"name\":\"中控屏音乐\"");
+    sb.append(",\"default_entity_id\":\"sensor.homecontrol_panel_").append(slug).append("_music\"");
+    sb.append(",\"unique_id\":\"homecontrol_panel_").append(slug).append("_music\"");
+    sb.append(",\"state_topic\":").append(jsonString(stateTopic()));
     sb.append(",\"value_template\":\"{{ value_json.status }}\"");
-    sb.append(",\"attribute_template\":\"{{ value_json.title }}\"");
-    sb.append(",\"command_topic\":\"").append(cmdTopic()).append("\"");
-    sb.append(",\"payload_play\":\"play\",\"payload_pause\":\"pause\",\"payload_stop\":\"stop\"");
-    sb.append(",\"payload_playing\":\"playing\",\"payload_paused\":\"paused\",\"payload_idle\":\"idle\"");
-    sb.append(",\"name\":\"中控屏音乐 ").append(slug).append("\"");
-    sb.append(",\"unique_id\":\"homecontrol_panel_").append(slug).append("_music\"}");
+    sb.append(",\"json_attributes_topic\":").append(jsonString(stateTopic()));
+    sb.append(",\"icon\":\"mdi:music\"");
+    sb.append(availJson());
+    sb.append(",\"device\":").append(deviceJson()).append("}");
     return sb.toString();
+  }
+
+  private String buttonJson(String label, String payload, String icon) {
+    StringBuilder sb = new StringBuilder("{\"name\":").append(jsonString(label));
+    sb.append(",\"default_entity_id\":\"button.homecontrol_panel_").append(slug).append("_music_").append(payload).append("\"");
+    sb.append(",\"unique_id\":\"homecontrol_panel_").append(slug).append("_music_").append(payload).append("\"");
+    sb.append(",\"command_topic\":").append(jsonString(cmdTopic()));
+    sb.append(",\"payload_press\":\"").append(payload).append("\"");
+    sb.append(",\"icon\":").append(jsonString(icon));
+    sb.append(availJson());
+    sb.append(",\"device\":").append(deviceJson()).append("}");
+    return sb.toString();
+  }
+
+  private String[] discoveryJson() {
+    return new String[] {
+      sensorJson(),
+      buttonJson("播放", "play", "mdi:play"),
+      buttonJson("暂停", "pause", "mdi:pause"),
+      buttonJson("停止", "stop", "mdi:stop")
+    };
+  }
+
+  /** 上线时与每 ~2 分钟重发：非 retain，所以 HA 重启后靠重发补实体 */
+  private void publishDiscovery() {
+    String[] topics = discoveryTopics();
+    String[] jsons = discoveryJson();
+    for (int i = 0; i < topics.length && i < jsons.length; i++) publish(topics[i], jsons[i], false);
+    lastDiscoveryAt = System.currentTimeMillis();
   }
 
   private static void writeStr(java.io.ByteArrayOutputStream b, String s) throws IOException {
