@@ -1083,6 +1083,26 @@
     if (S.audio) { try { S.audio.currentTime = 0; } catch (e) { } }
   }
 
+  /* HA 的「上一曲」按语义切到上一首：不走 prev() 里「当前曲播过 3 秒就重播」的交互习惯
+     （手机上点上一曲确实常被理解成重播，但墙上的中控屏按一次就该换歌）。
+     曲库模式且随机时仍按历史回退；没有上一首时才重播当前曲。 */
+  function prevTrack() {
+    if (libMode() && S.shuffle) {
+      if (S.hist.length > 2) { S.hist.pop(); playTrack(S.hist[S.hist.length - 1], null, -1); return; }
+    }
+    if (S.order.length) {
+      var pos = S.order.indexOf(S.qi);
+      if (pos > 0) { playTrack(S.queue[S.order[pos - 1]], null, S.order[pos - 1]); return; }
+      if (pos <= 0 && S.repeat === 'all') { playTrack(S.queue[S.order[S.order.length - 1]], null, S.order[S.order.length - 1]); return; }
+      if (pos <= 0 && S.track && S.queue.length > 1) {
+        /* qi 为 -1（从曲库直接播）或已到队首：退到队尾/最后一条，保证按钮不会「按了没反应」 */
+        var last = S.order.length - 1;
+        if (S.order[last] !== S.qi) { playTrack(S.queue[S.order[last]], null, S.order[last]); return; }
+      }
+    }
+    if (S.audio) { try { S.audio.currentTime = 0; } catch (e) { } }
+  }
+
   /* ---------------- 播放模式 ---------------- */
   function modeLabel() {
     if (S.shuffle) return '播放模式：随机';
@@ -2048,7 +2068,10 @@
     queueList: function () { return S.order.map(function (i) { return S.queue[i]; }); },
     openQueue: openQueueView, toggleShuffle: toggleShuffle, cycleRepeat: cycleRepeat, cycleMode: cycleMode,
     mode: function () { return { shuffle: S.shuffle, repeat: S.repeat, label: modeLabel() }; },
-    next: next, prev: prev, togglePlay: toggle, playDefault: playDefault, stopPlay: stopPlay,
+    next: next, prev: prev, prevTrack: prevTrack, togglePlay: toggle, playDefault: playDefault, stopPlay: stopPlay,
+    /* 音量：0..100 整数，和 HA 的 number 实体同一个刻度 */
+    volume: function () { return Math.round(S.vol * 100); },
+    setVolume: function (pct) { setVol(clamp(num(pct, 70) / 100, 0, 1)); },
     isPlaying: function () { return !!(S.audio && S.audio.src && !S.audio.paused); },
     openAll: function () { open(true); openLibView(); },
     libInfo: function () { return { view: S.view, src: S.src, loaded: S.lib.items.length, total: S.lib.total, randLeft: S.randQ.length, hist: S.hist.length } }

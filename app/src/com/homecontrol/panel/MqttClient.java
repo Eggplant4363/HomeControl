@@ -87,7 +87,10 @@ public class MqttClient {
       "homeassistant/sensor/homecontrol_panel_" + slug + "_music/config",
       "homeassistant/button/homecontrol_panel_" + slug + "_music_play/config",
       "homeassistant/button/homecontrol_panel_" + slug + "_music_pause/config",
-      "homeassistant/button/homecontrol_panel_" + slug + "_music_stop/config"
+      "homeassistant/button/homecontrol_panel_" + slug + "_music_stop/config",
+      "homeassistant/button/homecontrol_panel_" + slug + "_music_prev/config",
+      "homeassistant/button/homecontrol_panel_" + slug + "_music_next/config",
+      "homeassistant/number/homecontrol_panel_" + slug + "_music_volume/config"
     };
   }
 
@@ -338,12 +341,34 @@ public class MqttClient {
     return sb.toString();
   }
 
+  /**
+   * 音量：HA 的 number 平台（mqtt 装载了 number，实测能建实体）。
+   * 下发是纯数字字符串（滑块拖动时 HA 直接发 "37"），面板侧把「纯数字」当音量百分比；
+   * 回读走同一条 state 主题的 value_json.volume，所以在 HA 里拖完能看到面板回报的真实音量。
+   */
+  private String numberJson() {
+    StringBuilder sb = new StringBuilder("{\"name\":\"中控屏音量\"");
+    sb.append(",\"default_entity_id\":\"number.homecontrol_panel_").append(slug).append("_music_volume\"");
+    sb.append(",\"unique_id\":\"homecontrol_panel_").append(slug).append("_music_volume\"");
+    sb.append(",\"command_topic\":").append(jsonString(cmdTopic()));
+    sb.append(",\"state_topic\":").append(jsonString(stateTopic()));
+    sb.append(",\"value_template\":\"{{ value_json.volume }}\"");
+    sb.append(",\"min\":0,\"max\":100,\"step\":1,\"mode\":\"slider\"");
+    sb.append(",\"unit_of_measurement\":\"%\",\"icon\":\"mdi:volume-high\"");
+    sb.append(availJson());
+    sb.append(",\"device\":").append(deviceJson()).append("}");
+    return sb.toString();
+  }
+
   private String[] discoveryJson() {
     return new String[] {
       sensorJson(),
       buttonJson("播放", "play", "mdi:play"),
       buttonJson("暂停", "pause", "mdi:pause"),
-      buttonJson("停止", "stop", "mdi:stop")
+      buttonJson("停止", "stop", "mdi:stop"),
+      buttonJson("上一曲", "prev", "mdi:skip-previous"),
+      buttonJson("下一曲", "next", "mdi:skip-next"),
+      numberJson()
     };
   }
 

@@ -56,8 +56,12 @@
       discButtons: [
         'homeassistant/button/homecontrol_panel_' + sl + '_music_play/config',
         'homeassistant/button/homecontrol_panel_' + sl + '_music_pause/config',
-        'homeassistant/button/homecontrol_panel_' + sl + '_music_stop/config'
-      ]
+        'homeassistant/button/homecontrol_panel_' + sl + '_music_stop/config',
+        'homeassistant/button/homecontrol_panel_' + sl + '_music_prev/config',
+        'homeassistant/button/homecontrol_panel_' + sl + '_music_next/config'
+      ],
+      /* 音量走 HA 的 number 平台（mqtt 装载了它）：滑块下发纯数字，回读 state 里的 value_json.volume */
+      discVolume: 'homeassistant/number/homecontrol_panel_' + sl + '_music_volume/config'
     };
   }
 
@@ -80,6 +84,11 @@
   function mapCmd(payload) {
     var p = String(payload || '').trim().toLowerCase();
     if (p === 'play' || p === 'pause' || p === 'toggle' || p === 'next' || p === 'prev' || p === 'stop') return p;
+    /* HA 的 number 滑块发的是纯数字（"37" 或 "37.0"），按音量百分比理解 */
+    if (/^[0-9]{1,3}(\.[0-9]+)?$/.test(p)) {
+      var v = Math.max(0, Math.min(100, Math.round(parseFloat(p))));
+      return 'volume:' + v;
+    }
     return null;
   }
 
@@ -98,7 +107,11 @@
     else if (m === 'stop') { if (mu.stopPlay) mu.stopPlay(); else if (playing) mu.togglePlay(); }
     else if (m === 'toggle') { mu.togglePlay(); }
     else if (m === 'next') { mu.next(); }
-    else if (m === 'prev') { mu.prev(); }
+    else if (m === 'prev') { if (mu.prevTrack) mu.prevTrack(); else mu.prev(); }
+    else if (m.indexOf('volume:') === 0) {
+      if (mu.setVolume) mu.setVolume(parseInt(m.slice(7), 10));
+    }
+    pushState(); /* 命令执行完立刻回报一次，HA 滑块不用等下一轮轮询 */
   }
 
   /* 状态上报载荷：idle / paused / playing + 当前歌名（HA attribute 显示） */
@@ -106,7 +119,19 @@
     var mu = window.MusicUI;
     var track = (mu && mu.playing) ? mu.playing() : null;
     var status = !track ? 'idle' : (mu.isPlaying && mu.isPlaying() ? 'playing' : 'paused');
-    return JSON.stringify({ status: status, title: (track && track.title) || '' });
+    var vol = (mu && mu.volume) ? mu.volume() : null;
+    return JSON.stringify({ status: status, title: (track && track.title) || '', volume: vol });
+  }
+
+  /* 主动发一次状态（命令执行完立即回报；轮询也走这里） */
+  function pushState() {
+    var b = bridge();
+    if (!b || !b.mqttPublish) return;
+    var c = readCfg();
+    if (!c.enabled) return;
+    var p = statePayload();
+    if (p === lastSent) return;
+    if (b.mqttPublish(topics(slug()).state, p, '0')) lastSent = p;
   }
 
   function statusLine() {
@@ -193,15 +218,7 @@
   };
 
   /* 状态轮询：变了才发；未启用/没连上时桥自己返回 false，零成本 */
-  setInterval(function () {
-    var b = bridge();
-    if (!b || !b.mqttPublish) return;
-    var c = readCfg();
-    if (!c.enabled) return;
-    var p = statePayload();
-    if (p === lastSent) return;
-    if (b.mqttPublish(topics(slug()).state, p, '0')) lastSent = p;
-  }, POLL_MS);
+  setInterval(pushState, POLL_MS);
 
   /* 供 tools/test-ui.js 断言的纯函数（不碰 DOM/桥） */
   window.HCMqtt = {
