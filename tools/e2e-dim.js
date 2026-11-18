@@ -106,6 +106,13 @@ const httpGet = url => new Promise((resolve, reject) => {
   check(await evalJs("getComputedStyle(document.getElementById('dim')).backgroundColor === 'rgb(0, 0, 0)'"), '背景纯黑');
   check(await evalJs("getComputedStyle(document.getElementById('dimNow')).display === 'none'"), '没放歌时「正在播放」不显示');
   const clockTop = await evalJs("document.getElementById('dimTime').getBoundingClientRect().top");
+  /* 没放歌时时间就是整屏唯一的东西，垂直居中 */
+  const centered = await evalJs(`(function(){
+    var r = document.getElementById('dimTime').getBoundingClientRect();
+    return Math.abs((r.top + r.bottom) / 2 - window.innerHeight / 2);
+  })()`);
+  check(centered <= 40, '没放歌时时间垂直居中', '偏 ' + Math.round(centered) + 'px');
+  check(await evalJs("document.getElementById('dim').className.indexOf('with-music') < 0"), '没放歌时不加 with-music');
   await shot('dim-1-clock.png');
 
   /* ---------- ② 放歌时补一条正在播放 ---------- */
@@ -132,7 +139,8 @@ const httpGet = url => new Promise((resolve, reject) => {
   const coverShown = await waitFor("document.getElementById('dimCover').className.indexOf('has') >= 0", 4000);
   check(coverShown, '封面图加载后盖住占位音符');
   const clockTop2 = await evalJs("document.getElementById('dimTime').getBoundingClientRect().top");
-  check(Math.abs(clockTop2 - clockTop) < 1, '「正在播放」出现时时钟不跳位置', 'before ' + clockTop + ' after ' + clockTop2);
+  check(await evalJs("document.getElementById('dim').className.indexOf('with-music') >= 0"), '放歌时 #dim 带上 with-music');
+  check(clockTop2 < clockTop - 120, '放歌后时间被抬到上方（让出底部）', 'before ' + Math.round(clockTop) + ' after ' + Math.round(clockTop2));
   await shot('dim-2-music.png');
 
   /* ---------- ③ 暂停后收起 ---------- */

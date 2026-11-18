@@ -999,6 +999,7 @@ ok(idxHtml.indexOf('class="dim-hint"') < 0 && fs.readFileSync(path.join(root, 'p
 var dimNow = documentStub.getElementById('dimNow');
 DS.paint();
 eq(dimNow.className, 'dim-now', '没在放歌时「正在播放」不显示');
+ok(documentStub.getElementById('dim').className.indexOf('with-music') < 0, '没放歌时时间不加 with-music（保持垂直居中）');
 documentStub.getElementById('mFill').style.width = '42%';
 documentStub.getElementById('mPos').textContent = '1:23';
 documentStub.getElementById('mDur').textContent = '3:20';
@@ -1008,6 +1009,8 @@ windowStub.MusicUI = {
 };
 DS.paint();
 eq(dimNow.className, 'dim-now on', '放歌时「正在播放」显示');
+ok(documentStub.getElementById('dim').className.indexOf('with-music') >= 0, '放歌时 #dim 加 with-music（时间抬到上方）');
+ok(fs.readFileSync(path.join(root, 'panel', 'css', 'app.css'), 'utf8').indexOf('.dim.with-music') >= 0, 'CSS 有 .dim.with-music 抬升规则');
 eq(documentStub.getElementById('dimTitle').textContent, '暖光', '曲名进待机页');
 eq(documentStub.getElementById('dimArtist').textContent, 'Demo', '艺术家进待机页');
 eq(documentStub.getElementById('dimCoverImg').src, 'http://h/c.png', '封面地址进待机页');
@@ -1017,6 +1020,7 @@ eq(documentStub.getElementById('dimDur').textContent, '3:20', '总时长镜像�
 windowStub.MusicUI.isPlaying = function () { return false; };
 DS.paint();
 eq(dimNow.className, 'dim-now', '暂停后「正在播放」自动收起');
+ok(documentStub.getElementById('dim').className.indexOf('with-music') < 0, '暂停后 with-music 一起撤掉（时间回到正中）');
 ok(appJs.indexOf('window.DimScreen.show()') >= 0 && appJs.indexOf('window.DimScreen.hide()') >= 0, 'app.js 进出熄屏时通知待机页');
 ok(fs.readFileSync(path.join(root, 'tools', 'lint-es5.js'), 'utf8').indexOf('panel/js/dimscreen.js') >= 0, 'lint-es5 覆盖 dimscreen.js');
 

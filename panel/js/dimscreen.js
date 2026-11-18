@@ -93,15 +93,32 @@
     try { return mu.playing ? mu.playing() : null; } catch (e) { return null; }
   }
 
+  /* 有没有「正在播放」这一条：同时切换 #dimNow 的 on 和 #dim 的 with-music。
+   * 待机页默认把时间放在整屏正中（屏上只有时间），一旦底部来了「正在播放」，
+   * with-music 把时间抬到上方让出位置——抬多高由 CSS 决定，JS 只管这个状态。 */
+  function setNowPlaying(on) {
+    var box = $('dimNow');
+    if (box) {
+      var cls = on ? 'dim-now on' : 'dim-now';
+      if (box.className !== cls) box.className = cls;
+    }
+    var dim = $('dim');
+    if (dim) {
+      var has = (' ' + dim.className + ' ').indexOf(' with-music ') >= 0;
+      if (on && !has) dim.className = dim.className ? dim.className + ' with-music' : 'with-music';
+      if (!on && has) dim.className = (' ' + dim.className + ' ').replace(/ with-music /g, ' ').replace(/^\s+|\s+$/g, '');
+    }
+  }
+
   function paintMusic() {
     var box = $('dimNow');
     if (!box) return;
     var t = currentTrack();
     if (!t || (!t.title && !t.artist)) {
-      if (box.className !== 'dim-now') box.className = 'dim-now';
+      setNowPlaying(false);
       return;
     }
-    if (box.className !== 'dim-now on') box.className = 'dim-now on';
+    setNowPlaying(true);
     var ti = $('dimTitle');
     var ar = $('dimArtist');
     var title = String(t.title || '未知曲目');
@@ -129,8 +146,7 @@
 
   function hide() {
     if (timer !== null) { clearInterval(timer); timer = null; }
-    var box = $('dimNow');
-    if (box) box.className = 'dim-now';
+    setNowPlaying(false);
   }
 
   window.DimScreen = {
