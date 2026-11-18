@@ -1,4 +1,4 @@
-# Manual APK build: aapt2 -> javac -> d8 -> zip -> zipalign -> apksigner.
+﻿# Manual APK build: aapt2 -> javac -> d8 -> zip -> zipalign -> apksigner.
 # No Gradle, no dependencies beyond the Android SDK build-tools and a JDK 17.
 # �汾�źͱ����߲�������ǰÿ�����汾��Ҫ����һ�� patch-version-NN.js��������ʽ�Ѿ��սᣩ��
 #   tools\build.ps1                    �� debug �������� HA����ǰ�汾 67 / 0.7.30��
@@ -9,8 +9,8 @@
 [CmdletBinding()]
 param(
     [string]$OutName = "homecontrol.apk",
-    [int]$VersionCode = 85,
-    [string]$VersionName = "0.7.48",
+    [int]$VersionCode = 86,
+    [string]$VersionName = "0.7.49",
     [string]$Variant = "debug"          # debug | release
 )
 
