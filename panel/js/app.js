@@ -1117,10 +1117,8 @@
       friendly_name: name + ' · 连接', device_class: 'connectivity', last_seen: seen, by: 'panel'
     });
     if (info.battery >= 0) {
-      selfPost(SELF.batt, String(info.battery), {
-        friendly_name: name + ' · 电量', device_class: 'battery', unit_of_measurement: '%',
-        charging: info.charging, last_seen: seen, by: 'panel'
-      });
+      /* 电量实体归 MQTT（homeassistant/sensor/<slug>_battery）：这里再写同一个
+         entity_id 会和 MQTT discovery 抢，HA 会静默拒掉后到的那个，实体名字/属性来回跳。 */
       selfPost(SELF.charg, info.charging ? 'on' : 'off', {
         friendly_name: name + ' · 充电', device_class: 'charging', last_seen: seen, by: 'panel'
       });
@@ -4001,69 +3999,118 @@ function bindDim() {
     }
   }
 
-  function panelSheetHtml() {
-    var p = prefs();
-    var html = '<div class="sheet-title">设置</div>' +
-      '<div class="sheet-desc">这些设置只记在这台平板上，改完立刻生效。卡片最大宽度 = 每行卡片数（' + num(prefs().cols, 4) + ' 列）。编辑卡片时拖右下角的小箭头，就能像磁贴一样拉伸大小。</div>';
+  /* 设置页二级菜单：一级是这 8 个标签，点进去才是一组设置。
+     以前 8 节全挤在一页里，找「电池保养」要在平板上滚两屏。 */
+  var SETTINGS_TABS = [
+    { id: 'ui', t: '外观' },
+    { id: 'screen', t: '屏幕' },
+    { id: 'music', t: '音乐' },
+    { id: 'batt', t: '电池' },
+    { id: 'cards', t: '卡片' },
+    { id: 'conn', t: '连接' },
+    { id: 'upd', t: '升级' },
+    { id: 'about', t: '关于' }
+  ];
 
-    html += '<div class="set-sec">显示</div>' +
-      segRow('每行卡片', 'cols', [{ v: 3, t: '3' }, { v: 4, t: '4' }, { v: 5, t: '5' }, { v: 6, t: '6' }]) +
-      segRow('卡片大小', 'size', [{ v: 'sm', t: '紧凑' }, { v: 'md', t: '标准' }, { v: 'lg', t: '大' }]) +
-      segRow('传感器卡片', 'sensors', [{ v: true, t: '显示' }, { v: false, t: '隐藏' }]) +
-      segRow('离线设备', 'offline', [{ v: true, t: '隐藏' }, { v: false, t: '保留' }]) +
-      segRow('皮肤', 'theme', [{ v: 'dark', t: '深色' }, { v: 'light', t: '明亮' }]);
+  function settingsTab() {
+    var t = S.settingsTab;
+    for (var i = 0; i < SETTINGS_TABS.length; i++) if (SETTINGS_TABS[i].id === t) return t;
+    return 'ui';
+  }
 
-    html += '<div class="set-sec">交互</div>' +
-      segRow('点一下卡片', 'tap', [{ v: 'toggle', t: '直接开关' }, { v: 'sheet', t: '打开面板' }]) +
-      segRow('误触撤销', 'undo', [{ v: 3, t: '3 秒' }, { v: 5, t: '5 秒' }, { v: 8, t: '8 秒' }]);
+  function settingsTabsHtml() {
+    var cur = settingsTab(), h = '<div class="set-tabs">';
+    SETTINGS_TABS.forEach(function (x) {
+      h += '<button class="set-tab' + (x.id === cur ? ' on' : '') + '" data-act="settings-tab" data-val="' + x.id + '">' + esc(x.t) + '</button>';
+    });
+    return h + '</div>';
+  }
 
-    html += '<div class="set-sec">屏幕</div>' +
-      segRow('空闲自动调暗', 'autoDim', [{ v: true, t: '开' }, { v: false, t: '关' }]) +
-      segRow('离家熄屏 · 回家亮屏', 'awayScreen', [{ v: true, t: '开' }, { v: false, t: '关' }]) +
-      segRow('没人碰多久后熄屏', 'awayOff', [{ v: 2000, t: '2 秒' }, { v: 5000, t: '5 秒' }, { v: 15000, t: '15 秒' }]) +
-      screenAuthRow() +
-      segRow('唤醒亮度', 'bright', [{ v: 40, t: '40%' }, { v: 70, t: '70%' }, { v: 100, t: '100%' }]) +
-      segRow('夜间调暗', 'night', [{ v: true, t: '开' }, { v: false, t: '关' }]) +
-      segRow('防烧屏位移', 'burn', [{ v: true, t: '开' }, { v: false, t: '关' }]);
-
-    html += '<div class="set-sec">房间（不显示就不进顶栏和「全部」）</div>';
-    var hid = hiddenRooms();
+  function roomRowsHtml() {
+    var hid = hiddenRooms(), h = '';
     cfg.rooms.forEach(function (r) {
       var off = hid.indexOf(r.id) > -1;
-      html += '<div class="p-row"><div class="p-name">' + svg(r.icon || 'sofa') + esc(r.name) + '</div>' +
+      h += '<div class="p-row"><div class="p-name">' + svg(r.icon || 'sofa') + esc(r.name) + '</div>' +
         '<button class="p-sw' + (off ? '' : ' on') + '" data-act="room-toggle:' + esc(r.id) + '">' +
         (off ? '已隐藏' : '显示中') + '</button></div>';
     });
+    return h;
+  }
 
-    html += '<div class="set-sec">负一屏（主屏往右滑）</div>' +
-      '<div class="set-row"><div class="set-k">音乐</div><div class="set-v">' +
-      '<button class="btn" data-act="music-cfg">' + esc(musicKindLabel(musicNow().kind)) + ' · 设置</button>' +
-      '<button class="btn" data-act="music-open">打开</button></div></div>';
+  /** 二级菜单：每个标签页自己的内容（segRow / 外部模块一节都照旧） */
+  function settingsSectionHtml(tab) {
+    var p = prefs();
+    if (tab === 'ui') {
+      return '<div class="set-sec">显示</div>' +
+        segRow('每行卡片', 'cols', [{ v: 3, t: '3' }, { v: 4, t: '4' }, { v: 5, t: '5' }, { v: 6, t: '6' }]) +
+        segRow('卡片大小', 'size', [{ v: 'sm', t: '紧凑' }, { v: 'md', t: '标准' }, { v: 'lg', t: '大' }]) +
+        segRow('传感器卡片', 'sensors', [{ v: true, t: '显示' }, { v: false, t: '隐藏' }]) +
+        segRow('离线设备', 'offline', [{ v: true, t: '隐藏' }, { v: false, t: '保留' }]) +
+        segRow('皮肤', 'theme', [{ v: 'dark', t: '深色' }, { v: 'light', t: '明亮' }]) +
+        '<div class="set-sec">交互</div>' +
+        segRow('点一下卡片', 'tap', [{ v: 'toggle', t: '直接开关' }, { v: 'sheet', t: '打开面板' }]) +
+        segRow('误触撤销', 'undo', [{ v: 3, t: '3 秒' }, { v: 5, t: '5 秒' }, { v: 8, t: '8 秒' }]) +
+        '<div class="set-sec">房间（不显示就不进顶栏和「全部」）</div>' + roomRowsHtml() +
+        '<div class="cfg-actions"><button class="btn" data-act="room-reset">恢复默认房间</button>' +
+        '<button class="btn" data-act="names-reset">恢复默认名称</button></div>';
+    }
+    if (tab === 'screen') {
+      return '<div class="set-sec">屏幕</div>' +
+        segRow('空闲自动调暗', 'autoDim', [{ v: true, t: '开' }, { v: false, t: '关' }]) +
+        segRow('离家熄屏 · 回家亮屏', 'awayScreen', [{ v: true, t: '开' }, { v: false, t: '关' }]) +
+        segRow('没人碰多久后熄屏', 'awayOff', [{ v: 2000, t: '2 秒' }, { v: 5000, t: '5 秒' }, { v: 15000, t: '15 秒' }]) +
+        screenAuthRow() +
+        segRow('唤醒亮度', 'bright', [{ v: 40, t: '40%' }, { v: 70, t: '70%' }, { v: 100, t: '100%' }]) +
+        segRow('夜间调暗', 'night', [{ v: true, t: '开' }, { v: false, t: '关' }]) +
+        segRow('防烧屏位移', 'burn', [{ v: true, t: '开' }, { v: false, t: '关' }]);
+    }
+    if (tab === 'music') {
+      return '<div class="set-sec">负一屏（主屏往右滑）</div>' +
+        '<div class="sheet-desc">主屏往右滑就是音乐页。音源可以连道理鱼或任何 Subsonic 兼容服务。</div>' +
+        '<div class="set-row"><div class="set-k">音乐</div><div class="set-v">' +
+        '<button class="btn" data-act="music-cfg">' + esc(musicKindLabel(musicNow().kind)) + ' · 设置</button>' +
+        '<button class="btn" data-act="music-open">打开</button></div></div>';
+    }
+    if (tab === 'batt') {
+      return '<div class="set-sec">电池保养</div>' +
+        '<div class="sheet-desc">常年插电会把电池顶在 100%，容易鼓包。开了以后每 30 秒查一次：电量低于「开始充电」就打开充电开关、高于「停止充电」就关掉。</div>' +
+        segRow('自动保养', 'battGuard', [{ v: true, t: '开' }, { v: false, t: '关' }]) +
+        '<div class="set-row"><div class="set-k">充电开关</div><div class="set-v">' +
+        '<button class="btn" data-act="batt-switch">' + esc(battSwitchLabel()) + '</button></div></div>' +
+        segRow('开始充电', 'battLow', [{ v: 30, t: '30%' }, { v: 40, t: '40%' }, { v: 50, t: '50%' }]) +
+        segRow('停止充电', 'battHigh', [{ v: 70, t: '70%' }, { v: 80, t: '80%' }, { v: 90, t: '90%' }]);
+    }
+    if (tab === 'cards') {
+      return '<div class="set-sec">卡片</div>' +
+        '<div class="sheet-desc">卡片最大宽度 = 每行卡片数（' + num(p.cols, 4) + ' 列）。编辑卡片时拖右下角的小箭头，就能像磁贴一样拉伸大小。</div>' +
+        '<div class="cfg-actions"><button class="btn primary" data-act="edit-open">编辑卡片</button>' +
+        '<button class="btn" data-act="edit-reset">清空所有卡片</button></div>';
+    }
+    if (tab === 'conn') {
+      var h = '<div class="set-sec">Home Assistant</div>' +
+        '<div class="sheet-desc">地址和令牌存在 /sdcard/HomeControl/ha.json；连不上时开诊断页看这几行。</div>' +
+        '<div class="cfg-actions"><button class="btn primary" data-act="open-cfg">HA 地址与令牌</button>' +
+        '<button class="btn" data-act="diag-open">连接诊断</button></div>';
+      /* MQTT 节点（panel/js/mqtt.js）：由它自己渲染一节 */
+      if (window.HCMqtt) h += window.HCMqtt.sectionHtml();
+      return h;
+    }
+    if (tab === 'upd') {
+      /* 升级（panel/js/update.js）：整块由它自己渲染 */
+      if (window.HCUpdate) return window.HCUpdate.sectionHtml();
+      return '<div class="set-sec">升级</div><div class="sheet-desc">这个版本没有升级模块。</div>';
+    }
+    return '<div class="set-sec">关于</div>' +
+      '<div class="sheet-desc">这些设置只记在这台平板上，改完立刻生效。</div>' +
+      /* 「完成」由 panelSheetHtml 的全局按钮提供，这里不再重复一个 */
+      '<div class="cfg-actions"><button class="btn" data-act="pref-reset">恢复默认设置</button>' +
+      '<button class="btn" data-act="panel-reload">重新加载面板</button></div>';
+  }
 
-    html += '<div class="set-sec">电池保养</div>' +
-      '<div class="sheet-desc">常年插电会把电池顶在 100%，容易鼓包。开了以后每 30 秒查一次：电量低于「开始充电」就打开充电开关、高于「停止充电」就关掉。</div>' +
-      segRow('自动保养', 'battGuard', [{ v: true, t: '开' }, { v: false, t: '关' }]) +
-      '<div class="set-row"><div class="set-k">充电开关</div><div class="set-v">' +
-      '<button class="btn" data-act="batt-switch">' + esc(battSwitchLabel()) + '</button></div></div>' +
-      segRow('开始充电', 'battLow', [{ v: 30, t: '30%' }, { v: 40, t: '40%' }, { v: 50, t: '50%' }]) +
-      segRow('停止充电', 'battHigh', [{ v: 70, t: '70%' }, { v: 80, t: '80%' }, { v: 90, t: '90%' }]);
-
-    /* 升级（panel/js/update.js）：整块由它自己渲染，这里只负责留位置 */
-    if (window.HCUpdate) html += window.HCUpdate.sectionHtml();
-
-    /* MQTT 节点（panel/js/mqtt.js）：同样由它自己渲染一节 */
-    if (window.HCMqtt) html += window.HCMqtt.sectionHtml();
-
-    html += '<div class="set-sec">卡片</div>' +
-      '<div class="cfg-actions"><button class="btn primary" data-act="edit-open">编辑卡片</button>' +
-      '<button class="btn" data-act="edit-reset">清空所有卡片</button></div>' +
-      '<div class="set-sec">其它</div>' +
-      '<button class="btn" data-act="names-reset">恢复默认名称</button>' +
-      '<button class="btn" data-act="room-reset">恢复默认房间</button>' +
-      '<button class="btn" data-act="pref-reset">恢复默认设置</button></div>' +
-      '<div class="cfg-actions"><button class="btn" data-act="open-cfg">HA 地址与令牌</button>' +
-      '<button class="btn" data-act="panel-reload">重新加载面板</button>' +
-      '<button class="btn primary" data-act="close">完成</button></div>';
+  function panelSheetHtml() {
+    var html = '<div class="sheet-title">设置</div>' + settingsTabsHtml();
+    html += settingsSectionHtml(settingsTab());
+    html += '<div class="cfg-actions"><button class="btn primary" data-act="close">完成</button></div>';
     return html;
   }
 
@@ -4216,6 +4263,17 @@ function bindDim() {
       var actEl = closest(ev.target, null, 'data-act');
       if (!actEl) return;
       var act = actEl.getAttribute('data-act');
+      /* 二级菜单：换标签页只重建设置页（内容少，重建比逐行改省事），滚动回到顶 */
+      if (act === 'settings-tab') {
+        S.settingsTab = actEl.getAttribute('data-val');
+        var th = settingsHost();
+        if (th) th.innerHTML = panelSheetHtml();
+        if (el.view && S.sheetShow === 'panel') el.view.scrollTop = 0;
+        if (el.sheetInner) el.sheetInner.scrollTop = 0;
+        actLog('settings tab ' + S.settingsTab);
+        return;
+      }
+      if (act === 'diag-open') { if (S.sheetShow === 'panel') closeSettingsView(); else closeSheet(); setTimeout(openDiagSheet, 60); return; }
       if (act === 'diag-probe') { toast('正在测试连接…'); setTimeout(refreshDiagProbe, 60); return; }
       if (act === 'diag-reload') { reloadSoon('正在重新加载…'); return; }
       if (act === 'diag-cache') {
@@ -5137,6 +5195,9 @@ function boot() {
     /* mqtt.js 要用同一个设备 slug（HA 实体名/主题），从这里取，别两处各算一遍 */
     selfSlug: selfSlug,
     guideSheetHtml: guideSheetHtml, panelSheetHtml: panelSheetHtml, prefs: prefs, PREDEF: PREF_DEF,
+    /* 设置页二级菜单：test-ui 逐标签验「这一节确实属于这个标签」 */
+    SETTINGS_TABS: SETTINGS_TABS, settingsTab: settingsTab, settingsTabsHtml: settingsTabsHtml,
+    settingsSectionHtml: settingsSectionHtml, setSettingsTab: function (t) { S.settingsTab = t; },
     readEdit: readEdit, writeEdit: writeEdit, cardVisible: cardVisible, setCardVisible: setCardVisible, cardSpan: cardSpan,
     refreshSheet: refreshSheet, refreshAddRows: refreshAddRows, els: el,
     cellRows: cellRows, rowSpan: rowSpan, resizeCard: resizeCard, sizeSheetHtml: sizeSheetHtml, spanText: spanText,

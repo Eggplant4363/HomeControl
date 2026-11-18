@@ -787,6 +787,10 @@ body::before { content: none; }
 .tile.span-2.rows-2 .t-val { font-size: calc(var(--fsz) * .31); }
 
 /* 设置页 */
+/* 二级菜单：一级标签一行（可换行），当前标签用强调色描边 */
+.set-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin: 14px 0 2px; contain: layout style; }
+.set-tab { height: 34px; padding: 0 14px; border-radius: 9px; border: 1px solid rgba(var(--surf),.12); background: rgba(var(--surf),.05); color: var(--text-3); font-size: 13px; contain: layout style; }
+.set-tab.on { background: rgba(var(--accent-rgb),.22); border-color: rgba(var(--accent-rgb),.55); color: var(--text-2); }
 .set-sec { margin: 20px 0 4px; font-size: 12px; letter-spacing: .5px; color: var(--text-4); contain: layout style paint; }
 .set-row { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid rgba(var(--surf),.06); contain: layout style paint; }
 /* 设置页滚动：行内元素一律隔离绘制，避免整行跟着背景重绘 */

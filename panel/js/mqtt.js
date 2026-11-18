@@ -30,6 +30,8 @@
   var POLL_MS = 4000;
   var VOL_STEP = 5; /* 音量 +/- 按钮的步长（百分点） */
   var lastSent = '';
+  var lastSentAt = 0;   /* 上次真正发出去的时间：超过 RESEND_MS 即使值没变也补发一次 */
+  var RESEND_MS = 60000;
   var lastStatus = '';
 
   function bridge() {
@@ -78,9 +80,7 @@
       ],
       /* 音量走 HA 的 number 平台（mqtt 装载了它）：滑块下发纯数字，回读 state 里的 value_json.volume；
          另配两个按钮做 5% 步进，墙上点按比拖滑块方便 */
-      discVolume: 'homeassistant/number/homecontrol_panel_' + sl + '_music_volume/config',
-      /* 电量：sensor + device_class battery，值取 state 里的 battery 字段 */
-      discBattery: 'homeassistant/sensor/homecontrol_panel_' + sl + '_battery/config'
+      discVolume: 'homeassistant/number/homecontrol_panel_' + sl + '_music_volume/config'
     };
   }
 
@@ -166,14 +166,19 @@
   }
 
   /* 主动发一次状态（命令执行完立即回报；轮询也走这里） */
-  function pushState() {
+  /* 状态上报。两处「必须发」的例外：
+     ① 值变了；
+     ② 距上次发出已超过 RESEND_MS —— 因为 discovery/availability/state 都是非 retain，
+        HA 若在实体建好之前收到这条 state 就会丢掉，只发一次会让实体永远停在 unknown。 */
+  function pushState(force) {
     var b = bridge();
     if (!b || !b.mqttPublish) return;
     var c = readCfg();
     if (!c.enabled) return;
     var p = statePayload();
-    if (p === lastSent) return;
-    if (b.mqttPublish(topics(slug()).state, p, '0')) lastSent = p;
+    var stale = (Date.now() - lastSentAt) > RESEND_MS;
+    if (p === lastSent && !stale && !force) return;
+    if (b.mqttPublish(topics(slug()).state, p, '0')) { lastSent = p; lastSentAt = Date.now(); }
   }
 
   function statusLine() {
@@ -252,7 +257,12 @@
       if (json === lastStatus) return;
       // 刚连上（含 broker 踢线后重连）：清掉 lastSent，让下一轮轮询把当前状态重发一次。
       // discovery/availability 都是非 retain，HA 重启或实体刚建时 state 是未知的，必须主动补一条。
-      if (s.state === 'connected' || s.state === 'connected-no-sub') lastSent = '';
+      if (s.state === 'connected' || s.state === 'connected-no-sub') {
+        lastSent = ''; lastSentAt = 0;
+        pushState(true);
+        setTimeout(function () { pushState(true); }, 1500);
+        setTimeout(function () { pushState(true); }, 6000);
+      }
       lastStatus = json;
       if (s.state === 'connected') toast('MQTT 已连接：HA 里会有「中控屏音乐」+ 播放/暂停/停止/上下曲/音量按钮 和「中控屏电量」');
       else if (s.state === 'connected-no-sub') toast('MQTT 已连接（订阅被 broker 拒：过滤器非法/ACL，HA 只能看状态）');
