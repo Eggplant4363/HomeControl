@@ -1190,6 +1190,46 @@
     return false;
   }
 
+  /* ---------------- HA 播放歌单（偏好存在 panel/js/music.js 的配置里） ---------------- */
+
+  function haPlLabel() {
+    var mu = window.MusicUI;
+    var cur = (mu && mu.haPlaylist) ? mu.haPlaylist() : { id: '', name: '' };
+    if (!cur.id) return '不指定';
+    return cur.name || ('歌单 ' + cur.id);
+  }
+
+  function haPlRowsHtml(list) {
+    var mu = window.MusicUI;
+    var cur = (mu && mu.haPlaylist) ? mu.haPlaylist().id : '';
+    var rows = ['<div class="p-row"><div class="p-name">不指定（用曲库第一首）</div>' +
+      '<button class="p-sw' + (cur ? '' : ' on') + '" data-act="ha-pl-set:">' + (cur ? '选择' : '已选') + '</button></div>'];
+    for (var i = 0; i < list.length; i++) {
+      var it = list[i], sel = String(it.id) === String(cur);
+      rows.push('<div class="p-row"><div class="p-name">' + esc(it.name) +
+        (it.count ? ' · ' + num(it.count, 0) + ' 首' : '') + '</div>' +
+        '<button class="p-sw' + (sel ? ' on' : '') + '" data-act="ha-pl-set:' + esc(it.id) + '" data-name="' + esc(it.name) + '">' +
+        (sel ? '已选' : '选择') + '</button></div>');
+    }
+    if (!list.length) rows.push('<div class="empty">没拿到歌单（先连上音乐服务）</div>');
+    return rows.join('') + '<div class="cfg-actions"><button class="btn primary" data-act="close">返回</button></div>';
+  }
+
+  function openHaPlSheet() {
+    if (S.sheetShow === 'panel') closeSettingsView();
+    S.sheetOpenedAt = Date.now();
+    S.sheetItem = null;
+    S.sheetEntity = null;
+    el.sheetInner.innerHTML = '<div class="sheet-title">HA 播放歌单</div>' +
+      '<div class="sheet-desc">HA 里点「播放」而这台平板当前没在放歌时，先播这个歌单的第一首。</div>' +
+      '<div class="empty">正在载入歌单…</div>';
+    el.mask.className = 'mask show';
+    el.sheet.className = 'sheet show';
+    var mu = window.MusicUI;
+    if (!mu || !mu.pickPlaylists) { el.sheetInner.innerHTML = haPlRowsHtml([]); return; }
+    mu.pickPlaylists(function (list) { el.sheetInner.innerHTML = haPlRowsHtml(list || []); });
+  }
+
   function battSwitchSheetHtml() {
     var cur = prefs().battSwitch || '';
     var html = '<div class="sheet-title">充电开关</div>' +
@@ -3458,6 +3498,7 @@
       el.dim.className = 'dim show';
     }
     S.dimOn = true;
+    if (window.DimScreen) window.DimScreen.show();
     if (el.dimTime) {
       var d = new Date();
       el.dimTime.textContent = pad(d.getHours()) + ':' + pad(d.getMinutes());
@@ -3470,6 +3511,7 @@
     setBacklight(pb >= 100 ? -1 : pb / 100);
     if (!S.dimOn) return;
     S.dimOn = false;
+    if (window.DimScreen) window.DimScreen.hide();
     if (el.dim) el.dim.className = 'dim';
     scheduleDim();
   }
@@ -4069,7 +4111,12 @@ function bindDim() {
         '<div class="sheet-desc">主屏往右滑就是音乐页。音源可以连道理鱼或任何 Subsonic 兼容服务。</div>' +
         '<div class="set-row"><div class="set-k">音乐</div><div class="set-v">' +
         '<button class="btn" data-act="music-cfg">' + esc(musicKindLabel(musicNow().kind)) + ' · 设置</button>' +
-        '<button class="btn" data-act="music-open">打开</button></div></div>';
+        '<button class="btn" data-act="music-open">打开</button></div></div>' +
+        '<div class="set-sec">Home Assistant</div>' +
+        '<div class="sheet-desc">HA 里点「播放」而这台平板当前没在放歌时，先播这里选的歌单的第一首。' +
+        '选「不指定」就退回曲库第一首。</div>' +
+        '<div class="set-row"><div class="set-k">HA 播放歌单</div><div class="set-v">' +
+        '<button class="btn" data-act="ha-pl">' + esc(haPlLabel()) + '</button></div></div>';
     }
     if (tab === 'batt') {
       return '<div class="set-sec">电池保养</div>' +
@@ -4389,6 +4436,17 @@ function bindDim() {
       if (act === 'music-save') { saveMusicCfg(false); return; }
       if (act === 'music-demo') { saveMusicCfg(true); return; }
       if (act === 'batt-switch') { openBattSwitchSheet(); return; }
+      if (act === 'ha-pl') { openHaPlSheet(); return; }
+      if (act.indexOf('ha-pl-set:') === 0) {
+        var plId = act.slice(10);
+        var plName = actEl.getAttribute('data-name') || '';
+        var muPl = window.MusicUI;
+        if (muPl && muPl.setHaPlaylist) muPl.setHaPlaylist(plId, plName);
+        closeSheet();
+        setTimeout(openSettingsView, 60);
+        toast(plId ? ('HA 播放先播「' + plName + '」') : 'HA 播放改用曲库第一首');
+        return;
+      }
       if (act.indexOf('batt-switch-set:') === 0) {
         setPref('battSwitch', act.slice(16));
         closeSheet();

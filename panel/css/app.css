@@ -505,19 +505,39 @@ body::before { content: none; }
   background: rgba(var(--surf),.06); color: var(--text-2); font-size: 14px; outline: none;
 }
 .btn.primary { background: rgba(var(--accent-rgb),.22); border-color: rgba(var(--accent-rgb),.55); color: var(--text-2); }
-/* ---------- 夜间/空闲熄屏遮罩（纯黑，字大而粗，隔着几米也能读） ---------- */
+/* ---------- 夜间/空闲熄屏遮罩（纯黑待机页：大时钟 + 日期；放歌时补一条正在播放） ---------- */
 .dim {
   position: fixed; left: 0; top: 0; right: 0; bottom: 0; z-index: 90;
-  display: none; flex-direction: column; align-items: center; justify-content: center;
+  display: none; flex-direction: column; align-items: center; justify-content: flex-start;
+  padding-top: 13vh;
   background: #000; transition: opacity .6s; opacity: 0;
 }
 .dim.show { display: flex; opacity: 1; }
+/* 时钟块固定在同样的高度：下方「正在播放」出现/消失时时间不会上下跳 */
+.dim-clock { text-align: center; }
 .dim-time {
   font-size: 220px; font-weight: 700; letter-spacing: 2px; color: #fff;
   line-height: 1.02; font-variant-numeric: tabular-nums;
 }
-.dim .dim-time { line-height: 1.05; }
-.dim-hint { margin-top: 24px; font-size: 18px; font-weight: 600; letter-spacing: .5px; color: rgba(255,255,255,.72); }
+.dim-date { margin-top: 6px; font-size: 22px; font-weight: 600; letter-spacing: 1px; color: rgba(255,255,255,.42); }
+/* 正在播放：贴在底部一条，宽度限住，长名字省略号 */
+.dim-now { display: none; position: absolute; left: 50%; bottom: 12vh; width: 62%; max-width: 900px; transform: translateX(-50%); align-items: center; }
+.dim-now.on { display: flex; }
+.dim-cover {
+  position: relative; flex: 0 0 auto; width: 104px; height: 104px; border-radius: 14px; margin-right: 24px;
+  background: rgba(255,255,255,.06); color: rgba(255,255,255,.34);
+  display: flex; align-items: center; justify-content: center;
+}
+.dim-cover img { display: none; width: 100%; height: 100%; border-radius: 14px; object-fit: cover; }
+.dim-cover.has img { display: block; }
+.dim-cover.has .dim-cover-ph { display: none; }
+.dim-cover-ph svg, .dim-cover-ph { width: 34px; height: 34px; }
+.dim-meta { flex: 1 1 auto; min-width: 0; }
+.dim-title { font-size: 34px; font-weight: 600; line-height: 1.2; color: rgba(255,255,255,.92); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dim-artist { margin-top: 8px; font-size: 21px; color: rgba(255,255,255,.5); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dim-bar { margin-top: 15px; height: 3px; border-radius: 2px; background: rgba(255,255,255,.14); overflow: hidden; }
+.dim-bar i { display: block; height: 100%; width: 0; border-radius: 2px; background: rgba(255,255,255,.72); }
+.dim-times { margin-top: 9px; display: flex; justify-content: space-between; font-size: 15px; color: rgba(255,255,255,.38); font-variant-numeric: tabular-nums; }
 .empty { flex-direction: column; text-align: center; }
 .empty .empty-main { font-size: 15px; color: rgba(var(--surf),.55); }
 .empty .empty-sub { display: block; margin-top: 10px; font-size: 13px; color: rgba(var(--surf),.35); }
@@ -788,8 +808,8 @@ body::before { content: none; }
 
 /* 设置页 */
 /* 二级菜单：一级标签一行（可换行），当前标签用强调色描边 */
-.set-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin: 14px 0 2px; contain: layout style; }
-.set-tab { height: 34px; padding: 0 14px; border-radius: 9px; border: 1px solid rgba(var(--surf),.12); background: rgba(var(--surf),.05); color: var(--text-3); font-size: 13px; contain: layout style; }
+.set-tabs { display: flex; flex-wrap: wrap; margin: 11px 0 -1px -6px; contain: layout style; }
+.set-tab { height: 34px; margin: 3px 0 3px 6px; padding: 0 14px; border-radius: 9px; border: 1px solid rgba(var(--surf),.12); background: rgba(var(--surf),.05); color: var(--text-3); font-size: 13px; contain: layout style; }
 .set-tab.on { background: rgba(var(--accent-rgb),.22); border-color: rgba(var(--accent-rgb),.55); color: var(--text-2); }
 .set-sec { margin: 20px 0 4px; font-size: 12px; letter-spacing: .5px; color: var(--text-4); contain: layout style paint; }
 .set-row { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid rgba(var(--surf),.06); contain: layout style paint; }

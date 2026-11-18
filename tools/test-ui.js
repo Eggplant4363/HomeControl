@@ -127,6 +127,7 @@ load('panel/js/config.js');
 load('panel/js/icons.js');
 load('panel/js/layout.js');
 load('panel/js/update.js');
+load('panel/js/dimscreen.js');
 load('panel/js/mqtt.js');
 load('panel/js/app.js');
 
@@ -980,6 +981,44 @@ ok(updJs.indexOf('upd-retry-mirror') >= 0 && appJs.indexOf('upd-retry-mirror') >
 ok(updJs.indexOf('SocketTimeout') >= 0, '超时错误单独识别，给出可操作提示');
 ok(mqttJs.indexOf("m === 'stop'") >= 0 && mqttJs.indexOf('mu.stopPlay') >= 0, 'HA 停止按钮走 stopPlay（回未在播放，不是暂停）');
 ok(musicJs.indexOf('playTrack(S.lib.items[0], S.lib.items, 0)') >= 0, 'playDefault 冷启动会拉全库并播第一首');
+ok(musicJs.indexOf('function haPlaylist()') >= 0 && musicJs.indexOf('function setHaPlaylist(') >= 0, 'HA 播放歌单可读写（music.js）');
+ok(musicJs.indexOf('haPlaylist: haPlaylist, setHaPlaylist: setHaPlaylist, pickPlaylists: pickPlaylists') >= 0, 'MusicUI 导出 HA 播放歌单三件套');
+ok(musicJs.indexOf('var want = haPlaylist();') >= 0 && musicJs.indexOf('function playPlaylistFirst(') >= 0, 'playDefault 优先播设置里的歌单');
+ok(musicJs.indexOf('haPlaylist: m.haPlaylist') >= 0, 'defaultCfg 带 haPlaylist 字段（否则 mergeCfg 会把它丢掉）');
+ok(appJs.indexOf('data-act="ha-pl"') >= 0 && appJs.indexOf('ha-pl-set:') >= 0, '设置页「音乐」里有 HA 播放歌单入口与选择处理');
+
+/* ---------- 空闲待机页（dimscreen.js）：删掉唤醒提示，放歌时补一条正在播放 ---------- */
+load('panel/js/dimscreen.js');
+var DS = windowStub.DimScreen;
+ok(!!DS && typeof DS.show === 'function' && typeof DS.hide === 'function', 'dimscreen.js 导出 DimScreen.show/hide/paint');
+eq(DS.dateText(new Date(2026, 10, 18)), '11月18日 · 周三', '待机页日期副行格式（11月18日 · 周三）');
+ok(idxHtml.indexOf('轻触屏幕唤醒') < 0, 'index.html 已删除「轻触屏幕唤醒」提示');
+ok(idxHtml.indexOf('js/dimscreen.js') >= 0, 'index.html 加载 dimscreen.js');
+ok(idxHtml.indexOf('id="dimDate"') >= 0 && idxHtml.indexOf('id="dimNow"') >= 0, '待机页有日期行与「正在播放」容器');
+ok(idxHtml.indexOf('class="dim-hint"') < 0 && fs.readFileSync(path.join(root, 'panel', 'css', 'app.css'), 'utf8').indexOf('.dim-hint') < 0, '提示的 DOM 与样式都清掉了');
+var dimNow = documentStub.getElementById('dimNow');
+DS.paint();
+eq(dimNow.className, 'dim-now', '没在放歌时「正在播放」不显示');
+documentStub.getElementById('mFill').style.width = '42%';
+documentStub.getElementById('mPos').textContent = '1:23';
+documentStub.getElementById('mDur').textContent = '3:20';
+windowStub.MusicUI = {
+  isPlaying: function () { return true; },
+  playing: function () { return { title: '暖光', artist: 'Demo', cover: 'http://h/c.png' }; }
+};
+DS.paint();
+eq(dimNow.className, 'dim-now on', '放歌时「正在播放」显示');
+eq(documentStub.getElementById('dimTitle').textContent, '暖光', '曲名进待机页');
+eq(documentStub.getElementById('dimArtist').textContent, 'Demo', '艺术家进待机页');
+eq(documentStub.getElementById('dimCoverImg').src, 'http://h/c.png', '封面地址进待机页');
+eq(documentStub.getElementById('dimBar').style.width, '42%', '进度条镜像音乐页');
+eq(documentStub.getElementById('dimPos').textContent, '1:23', '已播时间镜像音乐页');
+eq(documentStub.getElementById('dimDur').textContent, '3:20', '总时长镜像音乐页');
+windowStub.MusicUI.isPlaying = function () { return false; };
+DS.paint();
+eq(dimNow.className, 'dim-now', '暂停后「正在播放」自动收起');
+ok(appJs.indexOf('window.DimScreen.show()') >= 0 && appJs.indexOf('window.DimScreen.hide()') >= 0, 'app.js 进出熄屏时通知待机页');
+ok(fs.readFileSync(path.join(root, 'tools', 'lint-es5.js'), 'utf8').indexOf('panel/js/dimscreen.js') >= 0, 'lint-es5 覆盖 dimscreen.js');
 
 console.log('');
 if (failed === 0) {

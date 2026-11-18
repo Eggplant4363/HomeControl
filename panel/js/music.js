@@ -153,7 +153,11 @@
       baseUrl: m.baseUrl || '',
       user: m.user || '',
       pass: m.pass || '',
-      enabled: m.enabled !== false
+      enabled: m.enabled !== false,
+      /* HA 里点「播放」而面板当前没在放歌时，先播这个歌单的第一首；
+         空 = 不指定，退回曲库第一首（设置页「音乐」里选） */
+      haPlaylist: m.haPlaylist || '',
+      haPlaylistName: m.haPlaylistName || ''
     };
   }
 
@@ -1010,7 +1014,8 @@
   }
 
   /** HA「播放」按钮用：只播不暂停（toggle() 在播放中会变成暂停，语义不对）。
-   *  冷启动时曲库是空的，先开音乐页拉第一页全库，拿到第一首再播。 */
+   *  冷启动时曲库是空的，先开音乐页拉第一页全库，拿到第一首再播。
+   *  设置了「HA 播放歌单」就优先播那个歌单的第一首。 */
   function playDefault() {
     var a = ensureAudio();
     if (S.track) {
@@ -1021,6 +1026,8 @@
       return true;
     }
     if (S.queue.length) { playTrack(S.queue[0], S.queue, 0); return true; }
+    var want = haPlaylist();
+    if (want.id) { playPlaylistFirst(want.id, want.name); return true; }
     if (S.lib.items.length) { playTrack(S.lib.items[0], S.lib.items, 0); return true; }
     open(true);
     openLibView();
@@ -1034,6 +1041,68 @@
       setTimeout(wait, 300);
     })();
     return true;
+  }
+
+  /* ---------------- 「HA 播放歌单」 ---------------- */
+
+  /** 当前选的歌单：{ id, name }（id 为空表示不指定） */
+  function haPlaylist() {
+    var cfg = readCfg();
+    return { id: String(cfg.haPlaylist || ''), name: String(cfg.haPlaylistName || '') };
+  }
+
+  /** 设置页选歌单：只存偏好，不动正在放的队列/列表（不走 saveCfg，免得把曲库清空重连） */
+  function setHaPlaylist(id, name) {
+    S.cfg.haPlaylist = String(id || '');
+    S.cfg.haPlaylistName = name ? String(name) : '';
+    try { localStorage.setItem(MUSIC_KEY, JSON.stringify(S.cfg)); } catch (e) { }
+    return true;
+  }
+
+  /** 设置页用：拿歌单列表；冷启动时后端还没登录，轮询等它回来（最多 ~12 秒） */
+  function pickPlaylists(cb) {
+    if (typeof cb !== 'function') return;
+    if (!S.backend) buildBackend();
+    if (S.playlists && S.playlists.length) { cb(S.playlists.slice(0)); return; }
+    loadPlaylists(true);
+    var tries = 0;
+    (function wait() {
+      if (S.playlists && S.playlists.length) { cb(S.playlists.slice(0)); return; }
+      if (++tries > 40) { cb([]); return; }
+      if (!S.loading) loadPlaylists(true);
+      setTimeout(wait, 300);
+    })();
+  }
+
+  /** 播某个歌单的第一首（HA 冷启动路径）。歌单可能是空的/读失败，重试几次再报错。 */
+  function playPlaylistFirst(plId, plName) {
+    open(true);
+    var tries = 0;
+    (function wait() {
+      if (!S.backend) buildBackend();
+      if (!S.backend) {
+        if (++tries > 40) { setStatus('error', '音乐服务没准备好'); return; }
+        setTimeout(wait, 300);
+        return;
+      }
+      S.backend.tracks(plId, function (err, list) {
+        if (!err && list && list.length) {
+          S.view = 'tracks';
+          S.tracks = list;
+          S.curPlaylist = plId;
+          S.crumb = plName || '';
+          paintCrumb();
+          paintList();
+          playTrack(list[0], list, 0);
+          return;
+        }
+        if (++tries > 3) {
+          setStatus('error', err ? ('读歌单失败：' + err) : '这个歌单是空的');
+          return;
+        }
+        setTimeout(wait, 600);
+      });
+    })();
   }
 
   /** HA「停止」按钮用：真的要停到「未在播放」，而不是像暂停那样留在曲目上。
@@ -2069,6 +2138,7 @@
     openQueue: openQueueView, toggleShuffle: toggleShuffle, cycleRepeat: cycleRepeat, cycleMode: cycleMode,
     mode: function () { return { shuffle: S.shuffle, repeat: S.repeat, label: modeLabel() }; },
     next: next, prev: prev, prevTrack: prevTrack, togglePlay: toggle, playDefault: playDefault, stopPlay: stopPlay,
+    haPlaylist: haPlaylist, setHaPlaylist: setHaPlaylist, pickPlaylists: pickPlaylists,
     /* 音量：0..100 整数，和 HA 的 number 实体同一个刻度 */
     volume: function () { return Math.round(S.vol * 100); },
     setVolume: function (pct) { setVol(clamp(num(pct, 70) / 100, 0, 1)); },
