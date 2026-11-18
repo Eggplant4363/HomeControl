@@ -399,6 +399,16 @@ var tabCss = fs.readFileSync(path.join(root, 'panel', 'css', 'app.css'), 'utf8')
 eq(tabCss.indexOf('.set-tab') >= 0, true, '标签页有样式');
 eq(tabCss.indexOf('.set-tab.on') >= 0, true, '当前标签样式');
 
+/* ---------- 歌单页「返回」按钮：暗色幽灵胶囊，不用浏览器默认灰底按钮 ---------- */
+eq(tabCss.indexOf('.m-crumb .m-back') >= 0, true, '返回按钮有专属样式（不能靠 Chromium 默认 button）');
+ok(tabCss.indexOf('.m-crumb .m-back') >= 0 && tabCss.slice(tabCss.indexOf('.m-crumb .m-back'), tabCss.indexOf('.m-crumb .m-back') + 260).indexOf('background: rgba(var(--surf)') >= 0,
+  '返回按钮用面板的暗色表面做底（不是 UA 的 rgb(239,239,239) 亮灰）');
+ok(tabCss.indexOf('.m-crumb .m-back') >= 0 && tabCss.slice(tabCss.indexOf('.m-crumb .m-back'), tabCss.indexOf('.m-crumb .m-back') + 260).indexOf('border: 1px solid rgba(var(--surf)') >= 0,
+  '返回按钮有描边（不是 UA 的灰边框）');
+eq(tabCss.indexOf('.m-crumb .m-back svg') >= 0, true, '返回按钮图标有明确尺寸（不然继承 .m-btn 的 26px）');
+ok(tabCss.indexOf('.m-crumb .m-back svg') >= 0 && tabCss.slice(tabCss.indexOf('.m-crumb .m-back svg'), tabCss.indexOf('.m-crumb .m-back svg') + 90).indexOf('width: 18px') >= 0,
+  '图标 18px：和文字同量级，胶囊不会被撑爆');
+
 /* ---------- 编辑：默认不添加设备 / 每行 3~6 / 顺序稳定 / 卡片跨列 ---------- */
 windowStub.localStorage.removeItem('hc.edit');
 windowStub.localStorage.removeItem('hc.prefs');
