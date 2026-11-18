@@ -28,6 +28,7 @@
     toastTimer = setTimeout(function () { t.className = 'toast'; }, 2200);
   }
   var POLL_MS = 4000;
+  var VOL_STEP = 5; /* 音量 +/- 按钮的步长（百分点） */
   var lastSent = '';
   var lastStatus = '';
 
@@ -35,7 +36,20 @@
     return (typeof AndroidBridge !== 'undefined') ? AndroidBridge : null;
   }
 
+  /* 设备名（mqtt.json 的 name）：**必须和 Java 侧一样用这个名字**。
+     Java 的 MqttClient.slug 取的就是它，discovery/availability 都按它发；JS 侧若改用设备型号，
+     一旦「名称」和型号不一致，state 就会发到另一条主题上（HA 实体永远 unknown）。
+     0.7.45 前只按型号取 slug，模拟器/改过名称的设备都会踩这个坑。 */
+  function cfgName() {
+    var b = bridge();
+    var raw = (b && b.readText) ? b.readText(CFG_FILE) : '';
+    if (!raw) return '';
+    try { var o = JSON.parse(raw); return (o && o.name) ? String(o.name).trim() : ''; } catch (e) { return ''; }
+  }
+
   function slug() {
+    var nm = cfgName();
+    if (nm) return nm;
     var t = window.__PANEL_TEST__;
     if (t && t.selfSlug) { try { return t.selfSlug(); } catch (e) { } }
     var b = bridge();
@@ -58,10 +72,15 @@
         'homeassistant/button/homecontrol_panel_' + sl + '_music_pause/config',
         'homeassistant/button/homecontrol_panel_' + sl + '_music_stop/config',
         'homeassistant/button/homecontrol_panel_' + sl + '_music_prev/config',
-        'homeassistant/button/homecontrol_panel_' + sl + '_music_next/config'
+        'homeassistant/button/homecontrol_panel_' + sl + '_music_next/config',
+        'homeassistant/button/homecontrol_panel_' + sl + '_music_volume_up/config',
+        'homeassistant/button/homecontrol_panel_' + sl + '_music_volume_down/config'
       ],
-      /* 音量走 HA 的 number 平台（mqtt 装载了它）：滑块下发纯数字，回读 state 里的 value_json.volume */
-      discVolume: 'homeassistant/number/homecontrol_panel_' + sl + '_music_volume/config'
+      /* 音量走 HA 的 number 平台（mqtt 装载了它）：滑块下发纯数字，回读 state 里的 value_json.volume；
+         另配两个按钮做 5% 步进，墙上点按比拖滑块方便 */
+      discVolume: 'homeassistant/number/homecontrol_panel_' + sl + '_music_volume/config',
+      /* 电量：sensor + device_class battery，值取 state 里的 battery 字段 */
+      discBattery: 'homeassistant/sensor/homecontrol_panel_' + sl + '_battery/config'
     };
   }
 
@@ -84,6 +103,9 @@
   function mapCmd(payload) {
     var p = String(payload || '').trim().toLowerCase();
     if (p === 'play' || p === 'pause' || p === 'toggle' || p === 'next' || p === 'prev' || p === 'stop') return p;
+    /* 音量 +/- 按钮：步长 5%，夹在 0..100（runCmd 里用当前音量算新值） */
+    if (p === 'volume_up' || p === 'volup') return 'volup';
+    if (p === 'volume_down' || p === 'voldown') return 'voldown';
     /* HA 的 number 滑块发的是纯数字（"37" 或 "37.0"），按音量百分比理解 */
     if (/^[0-9]{1,3}(\.[0-9]+)?$/.test(p)) {
       var v = Math.max(0, Math.min(100, Math.round(parseFloat(p))));
@@ -111,16 +133,36 @@
     else if (m.indexOf('volume:') === 0) {
       if (mu.setVolume) mu.setVolume(parseInt(m.slice(7), 10));
     }
+    else if (m === 'volup' || m === 'voldown') {
+      if (mu.setVolume && mu.volume) {
+        var cur = mu.volume();
+        var step = VOL_STEP;
+        mu.setVolume(Math.max(0, Math.min(100, cur + (m === 'volup' ? step : -step))));
+      }
+    }
     pushState(); /* 命令执行完立刻回报一次，HA 滑块不用等下一轮轮询 */
   }
 
   /* 状态上报载荷：idle / paused / playing + 当前歌名（HA attribute 显示） */
+  /* 电量：桥的 battery() 返回 {level, charging}；取不到就报 null，HA 侧显示 unknown 而不是 0 */
+  function batteryInfo() {
+    var b = bridge();
+    if (!b || !b.battery) return { level: null, charging: false };
+    try {
+      var o = JSON.parse(b.battery());
+      var lv = parseInt(o.level, 10);
+      return { level: (isFinite(lv) && lv >= 0) ? lv : null, charging: !!o.charging };
+    } catch (e) { return { level: null, charging: false }; }
+  }
+
   function statePayload() {
     var mu = window.MusicUI;
     var track = (mu && mu.playing) ? mu.playing() : null;
     var status = !track ? 'idle' : (mu.isPlaying && mu.isPlaying() ? 'playing' : 'paused');
     var vol = (mu && mu.volume) ? mu.volume() : null;
-    return JSON.stringify({ status: status, title: (track && track.title) || '', volume: vol });
+    var bt = batteryInfo();
+    return JSON.stringify({ status: status, title: (track && track.title) || '', volume: vol,
+      battery: bt.level, charging: bt.charging });
   }
 
   /* 主动发一次状态（命令执行完立即回报；轮询也走这里） */
@@ -162,7 +204,8 @@
     var c = readCfg();
     var h = '<div class="set-sec">MQTT 节点</div>' +
       '<div class="sheet-desc">接上 MQTT 后，HA 里会出现「中控屏音乐」传感器（状态 playing/paused/idle，歌名看属性）' +
-      '和 播放/暂停/停止 三个按钮，点按钮就控制这台平板的道理鱼。' +
+      '、播放/暂停/停止/上一曲/下一曲 按钮、音量滑块与 音量+/音量- 按钮，' +
+      '以及「中控屏电量」传感器（含是否充电属性）。' +
       '需先在 HA 里添加 MQTT integration 指向下面的 broker。</div>' +
       '<div class="cfg-row"><div class="cfg-k">主机</div><input class="cfg-in" id="mqHost" value="' + esc(c.host) + '" placeholder="10.10.1.8"></div>' +
       '<div class="cfg-row"><div class="cfg-k">端口</div><input class="cfg-in" id="mqPort" value="' + esc(String(c.port)) + '" placeholder="1883"></div>' +
@@ -211,7 +254,7 @@
       // discovery/availability 都是非 retain，HA 重启或实体刚建时 state 是未知的，必须主动补一条。
       if (s.state === 'connected' || s.state === 'connected-no-sub') lastSent = '';
       lastStatus = json;
-      if (s.state === 'connected') toast('MQTT 已连接：HA 里会出现「中控屏音乐」+ 播放/暂停/停止按钮');
+      if (s.state === 'connected') toast('MQTT 已连接：HA 里会有「中控屏音乐」+ 播放/暂停/停止/上下曲/音量按钮 和「中控屏电量」');
       else if (s.state === 'connected-no-sub') toast('MQTT 已连接（订阅被 broker 拒：过滤器非法/ACL，HA 只能看状态）');
       else if (s.state === 'offline') toast('MQTT 连不上：' + (s.err || '重试中'));
     } catch (e) { }

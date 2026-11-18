@@ -90,7 +90,10 @@ public class MqttClient {
       "homeassistant/button/homecontrol_panel_" + slug + "_music_stop/config",
       "homeassistant/button/homecontrol_panel_" + slug + "_music_prev/config",
       "homeassistant/button/homecontrol_panel_" + slug + "_music_next/config",
-      "homeassistant/number/homecontrol_panel_" + slug + "_music_volume/config"
+      "homeassistant/button/homecontrol_panel_" + slug + "_music_volume_up/config",
+      "homeassistant/button/homecontrol_panel_" + slug + "_music_volume_down/config",
+      "homeassistant/number/homecontrol_panel_" + slug + "_music_volume/config",
+      "homeassistant/sensor/homecontrol_panel_" + slug + "_battery/config"
     };
   }
 
@@ -360,6 +363,26 @@ public class MqttClient {
     return sb.toString();
   }
 
+  /**
+   * 电量：sensor + device_class battery（HA 会自动画电池图标、按 % 显示）。
+   * 数值来自 panel/js/mqtt.js 的 statePayload() —— 面板每次轮询把 battery/charging 一起上报，
+   * 所以电量变化最多 4 秒就能在 HA 里看到。charging 放在属性里，不必再建 binary_sensor。
+   */
+  private String batteryJson() {
+    StringBuilder sb = new StringBuilder("{\"name\":\"中控屏电量\"");
+    sb.append(",\"default_entity_id\":\"sensor.homecontrol_panel_").append(slug).append("_battery\"");
+    sb.append(",\"unique_id\":\"homecontrol_panel_").append(slug).append("_battery\"");
+    sb.append(",\"state_topic\":").append(jsonString(stateTopic()));
+    sb.append(",\"value_template\":\"{{ value_json.battery }}\"");
+    sb.append(",\"json_attributes_topic\":").append(jsonString(stateTopic()));
+    sb.append(",\"unit_of_measurement\":\"%\"");
+    sb.append(",\"device_class\":\"battery\"");
+    sb.append(",\"state_class\":\"measurement\"");
+    sb.append(availJson());
+    sb.append(",\"device\":").append(deviceJson()).append("}");
+    return sb.toString();
+  }
+
   private String[] discoveryJson() {
     return new String[] {
       sensorJson(),
@@ -368,7 +391,10 @@ public class MqttClient {
       buttonJson("停止", "stop", "mdi:stop"),
       buttonJson("上一曲", "prev", "mdi:skip-previous"),
       buttonJson("下一曲", "next", "mdi:skip-next"),
-      numberJson()
+      buttonJson("音量 +", "volume_up", "mdi:volume-plus"),
+      buttonJson("音量 -", "volume_down", "mdi:volume-minus"),
+      numberJson(),
+      batteryJson()
     };
   }
 
