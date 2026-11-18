@@ -9,8 +9,8 @@
 [CmdletBinding()]
 param(
     [string]$OutName = "homecontrol.apk",
-    [int]$VersionCode = 86,
-    [string]$VersionName = "0.7.49",
+    [int]$VersionCode = 87,
+    [string]$VersionName = "0.7.50",
     [string]$Variant = "debug"          # debug | release
 )
 
@@ -135,7 +135,12 @@ foreach ($stale in @($unsigned, $aligned)) {
     if (Test-Path $stale) { Remove-Item $stale -Force -ErrorAction SilentlyContinue }
 }
 Copy-Item $baseApk $unsigned -Force
-$zip = [System.IO.Compression.ZipFile]::Open($unsigned, [System.IO.Compression.ZipArchiveMode]"Update")
+# 刚复制出来的文件偶尔被杀软/索引服务短暂占用（Open 报 being used by another process），重试几次
+$zip = $null
+for ($try = 1; $try -le 6; $try++) {
+    try { $zip = [System.IO.Compression.ZipFile]::Open($unsigned, [System.IO.Compression.ZipArchiveMode]"Update"); break }
+    catch { if ($try -eq 6) { throw }; Start-Sleep -Milliseconds 400 }
+}
 $null = [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip, (Join-Path $b "dex\classes.dex"), "classes.dex", [System.IO.Compression.CompressionLevel]"Optimal")
 $zip.Dispose()
 Write-Host "[6/7] classes.dex packed"

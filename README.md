@@ -45,7 +45,7 @@ tools/
   real-ha-check.js     连真实 HA 核对实体与房间分类
   devserver.js         PC 侧静态服务（8787），用于 PC 上快速看页面
 dist/homecontrol.apk   构建产物
-docs/screens/          实机截图（panel-home / panel-config / panel-diag / panel-real-layout / panel-study / panel-cover / panel-climate-heatcool / panel-night-dim / panel-many-rooms 等）
+docs/screens/          实机截图（panel-home / panel-config / panel-diag / panel-real-layout / panel-study / panel-cover / panel-climate-heatcool / panel-night-dim / panel-dim-clock / panel-dim-music / panel-many-rooms 等）
 ha.json.example        HA 地址 + 令牌的配置样例
 ```
 
@@ -68,7 +68,7 @@ powershell -ExecutionPolicy Bypass -File tools\deploy.ps1 -SkipApk   # 只改了
 
 它会依次做：adb 在线检查（离线时直接告诉你「长按电源键 10 秒」而不是抛异常）→ 装 APK → 推 `panel\` 到 `/sdcard/HomeControl/panel/` → 改写 `url.txt` → force-stop + 启动 → 校验 `page finished` / 无脚本错误 / 前台是壳 App，最后打印 DEPLOY OK。
 
-版本号随构建更新：`versionName 0.7.49` / `versionCode 86`（`build.ps1` 的默认值就是当前版本。**约定：每次改动后都发一次新版本，迭代尽可能小**——versionCode +1、versionName 只进补丁位，如 `-VersionCode 87 -VersionName "0.7.50"`，并同步改这一行，不用再写一次性升版本脚本——装到已装更高 versionCode 的设备上会 `INSTALL_FAILED_VERSION_DOWNGRADE`），诊断页第一行就能看到「版本 0.7.43 · MI PAD 2」。
+版本号随构建更新：`versionName 0.7.50` / `versionCode 87`（`build.ps1` 的默认值就是当前版本。**约定：每次改动后都发一次新版本，迭代尽可能小**——versionCode +1、versionName 只进补丁位，如 `-VersionCode 88 -VersionName "0.7.51"`，并同步改这一行，不用再写一次性升版本脚本——装到已装更高 versionCode 的设备上会 `INSTALL_FAILED_VERSION_DOWNGRADE`），诊断页第一行就能看到「版本 0.7.43 · MI PAD 2」。
 
 面板把自己也注册进 Home Assistant（0.7.9）：走 `POST /api/states/<entity_id>`（实测 201，不存在就新建，不需要 MQTT），每分钟报一次 `sensor.homecontrol_panel`（在线状态、型号、App 版本、IP/SSID、皮肤、电量、充电、`last_seen`）、`binary_sensor.homecontrol_panel_connected`、`sensor.homecontrol_panel_battery`、`binary_sensor.homecontrol_panel_charging`、`switch.homecontrol_panel_dark_mode`。那个开关是双向的：面板写自己的皮肤，HA 里把开关拨了，面板跟着换皮肤（`selfWritten` 用来区分「HA 那边改了」和「我们自己写的」，不会自己跟自己打架）。注意 HA 的 REST 建的是实体，不是设备注册表里的设备，所以在 HA 界面上它们归在「未分配设备」下。
 ## 构建与部署
@@ -77,7 +77,7 @@ powershell -ExecutionPolicy Bypass -File tools\deploy.ps1 -SkipApk   # 只改了
 # 构建（路径由 tools\env.ps1 解析：SDK / build-tools / android.jar / JDK / adb，可用 HC_ANDROID_SDK 等环境变量覆盖）
 powershell -ExecutionPolicy Bypass -File .\tools\build.ps1                                  # debug 变体，含假 HA + 调试开关
 powershell -ExecutionPolicy Bypass -File .\tools\build.ps1 -Variant release -OutName homecontrol-release.apk   # 正式包：不含 MockHaServer
-powershell -ExecutionPolicy Bypass -File .\tools\build.ps1 -VersionCode 87 -VersionName "0.7.50"   # 发新包：版本号 +1（默认值就是当前版本 86 / 0.7.49）
+powershell -ExecutionPolicy Bypass -File .\tools\build.ps1 -VersionCode 88 -VersionName "0.7.51"   # 发新包：版本号 +1（默认值就是当前版本 87 / 0.7.50）
 
 # 安装
 adb install -r .\dist\homecontrol.apk
@@ -106,7 +106,7 @@ powershell -ExecutionPolicy Bypass -File .\tools\push.ps1 -Prod     # 生产形�
 - **逃生口**：1.5 秒内连按两次返回键 → 打开系统设置（恢复原桌面：设置 → 主屏幕 → 系统桌面）
 - **配置读取**：`/sdcard/HomeControl/url.txt` 指定页面地址（`file://` 或 `http(s)://`）；`/sdcard/HomeControl/ha.json` 提供 HA 地址与令牌
 - **平板内直接配置**：长按右上角状态胶囊 0.8 秒 → 「连接设置」弹层，填地址 + 令牌点「保存并重连」（写入 `ha.json` 后自动 reload）；点「改用模拟数据」删掉 `ha.json` 回到模拟模式。这样上墙后不用再摸电脑
-- **夜间 / 空闲熄屏**：空闲 90 秒（夜间 23:00–07:00 只需 20 秒）自动把整屏压成**纯黑**（以前是半透明遮罩，底下卡片的残影会透出来），中间留一个 220px 粗体纯白的大号时间 + 一行「轻触屏幕唤醒」；轻触任意位置唤醒，唤醒那一下不会误触下面的卡片。回归：`node tools/check-dim.js <序列>`（读 `getComputedStyle` 断言纯黑、不透明度 1、时钟 ≥200px/≥700 粗）。参数在 `panel/js/config.js` 的 `dim` 段
+- **夜间 / 空闲熄屏**：空闲 90 秒（夜间 23:00–07:00 只需 20 秒）自动把整屏压成**纯黑**（以前是半透明遮罩，底下卡片的残影会透出来），中间留一个 220px 粗体纯白的大号时间 + 一行日期副行（`11月18日 · 周三`）；**不再有「轻触屏幕唤醒」那行提示**——整屏纯黑上只有时间，本身就在说「碰一下」，多余的字反而破坏黑夜里的干净画面；轻触任意位置唤醒，唤醒那一下不会误触下面的卡片。**有音乐在放时**底部浮出「封面 + 曲名 + 艺术家 + 进度条 + 已播/总时长」（`panel/js/dimscreen.js` 的 `DimScreen`：只读 `MusicUI.isPlaying()` / `MusicUI.playing()` 和音乐页已有的 `#mFill`/`#mPos`/`#mDur`，不碰播放逻辑、不改播放状态；暂停或退出音乐页后 1 秒内自动收起，没放歌时不占位、时钟也不跳位）。回归：`node tools/check-dim.js <序列>`（读 `getComputedStyle` 断言纯黑、不透明度 1、时钟 ≥200px/≥700 粗）+ `node tools/e2e-dim.js`（24 项：提示节点已删、日期格式、放歌时四要素 + 时钟不跳位、暂停收起）。参数在 `panel/js/config.js` 的 `dim` 段
 - **连背光一起调**：压暗时通过 `window.setAttributes()` 把本窗口的 `screenBrightness` 降到 `dim.brightness`（默认 0.35），退出时传 `-1` 恢复系统亮度。只作用本窗口、不需要 WRITE_SETTINGS 权限；夜里是真的不刺眼、也省电，不是只盖一层黑遮罩
 - **防烧屏位移**：每 5 分钟把 `#app` 整体随机平移 1~2px（`cfg.burnIn.shiftEverySec` / `maxShift`，`panel/js/app.js` 的 `startPixelShift()`），配合 `scale(1.01)` 盖住边缘。像素级偏移肉眼看不出来，但静态的时钟、卡片边框不会长期压在同一个物理像素上
 - **记住房间**：选中的房间存 localStorage['hc.room']，凌晨静默重载 / 应用重启后回到同一个房间，不会跳回「全部」；如果那个房间在真实 HA 里已经不存在，自动回落到「全部」
@@ -411,7 +411,7 @@ WebSocket 帧统计）。注意这是模拟器数字，Chromium 57 真机还没�
 要让升级真正可用，还需要两件事：
 
 - **发一个 release**：tag 用 `v0.7.14` 这种格式，附件上传 APK（文件名任意，`.apk` 结尾即可）。
-  `tools/release.ps1` 就是干这个的（走 GitHub API，需要 `GITHUB_TOKEN` 环境变量——用 git 凭据管理器里那份即可：`$env:GITHUB_TOKEN` 从 `git credential fill` 取）。每次改动发新 APK 时都要跟着发一次 release：`.\tools\release.ps1 -Version 0.7.49 -Notes "…"`（release 已到 v0.7.49
+  `tools/release.ps1` 就是干这个的（走 GitHub API，需要 `GITHUB_TOKEN` 环境变量——用 git 凭据管理器里那份即可：`$env:GITHUB_TOKEN` 从 `git credential fill` 取）。每次改动发新 APK 时都要跟着发一次 release：`.\tools\release.ps1 -Version 0.7.50 -Notes "…"`（release 已到 v0.7.50
 
 ## MQTT 节点（0.7.23+，实测 10.10.1.8 的 EMQX）
 
@@ -425,6 +425,7 @@ WebSocket 帧统计）。注意这是模拟器数字，Chromium 57 真机还没�
 - **先发 discovery，再发 availability**（0.7.34）：实体是在 HA 处理 discovery 的那一刻才创建的，之前发的 `online` 会被丢掉，实体一直停在 `unavailable`（实测）。面板现在 connectOnce 里是 `publishDiscovery(); publish(availTopic(), "online", false);`，重连时 JS 侧还会清 `lastSent` 把当前状态补发一次。
 - **HA 按钮直通音乐页**（0.7.37 起）：`tools/ha-press.js button.<…>_music_play / _pause / _stop` 三个键实测直达面板（logcat `HomeMqtt: cmd … <- play`）。「播放」早年走 `MusicUI.togglePlay()`，冷启动没选歌时只弹一句「先去右侧歌单里点一首」，所以 HA 按下去没声音——现在走新增的 `MusicUI.playDefault()`（有歌就续播、无歌就打开音乐页拉全库第一页并播第一首；注意 `loadLibPage()` 在登录完成前会因 `S.backend` 为空静默返回，所以 playDefault 的轮询里每 300ms 重喊一次 `openLibView()`）。「停止」也从「暂停」改成 `MusicUI.stopPlay()`：停音频、清 `S.track`、回到「未在播放」，sensor 变 `idle`（暂停仍是 `paused`）。
 - **电量 / 音量按钮 / slug 必须与 Java 一致**（0.7.45）：新增 `sensor.homecontrol_panel_<slug>_battery`（`value_template: {{ value_json.battery }}`、`device_class: battery`、单位 %；**电量实体只由 MQTT 发**，`app.js` 的 REST `selfPost` 不再写同一个 entity_id——两个来源抢一个 id 会被 HA 静默拒掉后到的那个，实体名字/属性会来回跳）与 `button.…_music_volume_up` / `button.…_music_volume_down`（`payload_press: volume_up/volume_down`，步长 5%，钳在 0–100）。实测 `volume_up` 93→98（系统 `STREAM_MUSIC` 14→15/150）、`volume_down` 回 93，HA 的 number 同步。**同时修掉一个致命的不一致**：`panel/js/mqtt.js` 的 `slug()` 原来只按设备型号取（`sdk_gphone_x86_64`），而 Java `MqttClient.slug` 取的是 `mqtt.json` 的 `name`——两者不一致时 discovery/availability 发到 A 主题、state 发到 B 主题，HA 实体永远 `unknown`（电量/音量都读不出来）。现在 JS 也先读 `mqtt.json` 的 `name`（`cfgName()`），与 Java 同源。
+- **空闲待机页：只有时间，放歌时才多一些**（0.7.50）：熄屏后整屏纯黑，中间是 220px 粗体时间 + 一行日期副行（`11月18日 · 周三`），**「轻触屏幕唤醒」那行提示已删掉**——全黑画面上只有时间本身就在说「碰一下」，多一行小字反而脏；触摸仍然照旧唤醒，那一下也不会误触卡片。音乐在放时，底部浮出「封面 + 曲名 + 艺术家 + 进度条 + 已播/总时长」；暂停或换成未播放状态后 1 秒内自动收起。实现全在新的 `panel/js/dimscreen.js`（`DimScreen.show/hide/paint/dateText/isOn`，每秒刷新用 `setInterval` 只活在熄屏期间）：音乐信息**只读公开接口** `MusicUI.isPlaying()` / `MusicUI.playing()`，进度直接镜像音乐页已有的 `#mFill` / `#mPos` / `#mDur`，不碰 `music.js` 内部状态也不改播放逻辑；封面只在 src 变化时重设、加载失败退回占位音符。`enterDim()` / `exitDim()` 里各加一行 `DimScreen.show()` / `.hide()`（没有 `DimScreen` 时自动跳过）。时钟用 `padding-top:13vh` 固定，下方「正在播放」出现/消失时**时间不会跳位置**。顺手修掉 `.set-tabs` 用 flex `gap` 在 Chromium 57 上无效的老问题（改 margin）。回归：`node tools/e2e-dim.js`（24 项）+ `node tools/check-dim.js <序列>`；截图 `docs/screens/panel-dim-clock.png`、`docs/screens/panel-dim-music.png`。
 - **HA 播放歌单**（0.7.49）：设置 →「音乐」→「HA 播放歌单」，从道理鱼的歌单里选一个。HA 里点「播放」而面板当前没在放歌时，`MusicUI.playDefault()` 先播这个歌单的第一首（`playPlaylistFirst()`：`S.backend.tracks(id)` 拿到列表 → `playTrack(list[0], list, 0)`，同时把右侧列表切到该歌单）；选「不指定」则退回曲库第一首。偏好存在音乐配置里（`defaultCfg()` 的 `haPlaylist` / `haPlaylistName`，localStorage 的 `hc.music`），改它不会重连音乐服务、不动当前队列。设置页的列表由 `MusicUI.pickPlaylists(cb)` 提供（冷启动时后端还没登录，会每 300ms 重试到拿回歌单）。
 - **上一曲 / 下一曲 / 音量**（0.7.43）：`button.…_music_prev`、`button.…_music_next`（`payload_press: prev/next`）和 `number.…_music_volume`（`min 0 / max 100 / step 1 / mode slider`，`value_template: {{ value_json.volume }}`，下发是纯数字字符串）。HA 的「上一曲」按语义是**上一首**，所以走新增的 `MusicUI.prevTrack()`，不是交互版 `prev()`——后者在 `S.audio.currentTime > 3` 时会重播当前曲（手机上「上一曲」常被这么理解，但墙上中控屏按一次就该换歌）；`prevTrack()` 在队首/`qi=-1`（从曲库直接播）时退到队尾，随机+曲库模式按 `S.hist` 回退。音量 `set_value 30` 实测系统 `STREAM_MUSIC` 变成 `45/150`（正好 30%），面板立刻把 `volume` 回写进 state，HA 滑块不会跳回旧值。
 - 调试脚本：`tools/mqtt-probe.js`、`tools/mqtt-pub.js`、`tools/mqtt-mitm.js`（MITM 抓 MQTTX 报文逐字节对照）、`tools/mqtt-music-e2e.js`（按 `MqttClient.java` 的 payload 原样发 4 条 discovery + availability + state，然后查 `/api/states` 验收实体，**改 payload 后先用它验 HA 侧再谈真机**）、`tools/ha-clean.ps1`（`config/entity_registry/remove` 批量删探针实体）、`tools/ha-find.js`（按 friendly_name 反查 entity_id）、`tools/ha-ws.ps1`（PowerShell .NET WebSocket 读 `system_log/list`、`config/entity_registry/list`；Node 手写 WS 会被 HA 直接 code=1000 关掉，`tools/ha-ws.js` 不可用）。JS 探针里事件监听要写 `s.on('connect', cb)`——写成 `s.on.connect = cb` 只是给函数挂属性、不会发报文（踩过坑：会误判「发布被接受」）；脚本文件必须带 UTF-8 BOM，否则 PowerShell 5.1 按 GBK 读中文注释会解析炸；**pwsh 内联带引号的 JSON 会被吃掉引号**（实测发出 `{` 坏包，HA 报 `Unable to parse JSON discovery payload`），含 JSON 的一律写成 .js 文件再 `node` 跑；也**别用 `Set-Content` 改含中文的 .js**（5.1 按 ANSI 写回，中文变乱码后 HA 同样报 parse 失败）。
@@ -895,7 +896,7 @@ powershell -ExecutionPolicy Bypass -File .\tools\smoke.ps1
 - 默认走**模拟数据**（`panel/js/config.js` 里 `mock: true`），37 个实体的完整交互已逐项验证
 - 真实模式：协议层由 `tools/test-ha.js` 全绿覆盖；设备端 UI 链路用 fixture 方案验收通过；只差真实地址 + 令牌做最终联调
 - 局域网限制（实测）：平板 → PC 方向所有端口（80/443/8080/5037/5555/9999/8123）都是 SocketTimeoutException，Windows 防火墙三个 profile 全开且加规则需要管理员权限，所以「设备连 PC 上的假 HA」这条路不通；真实 HA 只要在同一网段且允许入站就没问题。`adb reverse` 也因旧 adbd 报 protocol fault 不可用，热更新改用 `.rev` 文件 + mtime 轮询
-- 上墙：已设为默认桌面，重启自动拉起（实测）；常亮、锁屏覆盖、看门狗、双返回键逃生口均可用；夜间/空闲自动熄屏（实测，纯黑 + 220px 粗体时钟；`node tools/check-dim.js <序列>`；旧图 docs/screens/panel-night-dim.png 是改纯黑之前的半透明版本）；长按时间可开诊断页（docs/screens/panel-diag.png）；每天 04:00 静默重载一次
+- 上墙：已设为默认桌面，重启自动拉起（实测）；常亮、锁屏覆盖、看门狗、双返回键逃生口均可用；夜间/空闲自动熄屏（实测，纯黑 + 220px 粗体时钟 + 日期副行 + 放歌时底部「正在播放」，无唤醒提示文字；`node tools/check-dim.js <序列>` / `node tools/e2e-dim.js`；截图 docs/screens/panel-dim-clock.png 与 panel-dim-music.png；旧图 docs/screens/panel-night-dim.png 是改纯黑之前的半透明版本）；长按时间可开诊断页（docs/screens/panel-diag.png）；每天 04:00 静默重载一次
 - **假死自愈（实测）**：面板 JS 每 4 秒心跳一次；壳 App 的看门狗每 15 秒检查，**屏幕亮着**且超过 45 秒没心跳才 web.reload()（PowerManager.isInteractive()；熄屏 + Doze 会冻结 WebView 定时器，所以熄屏时看门狗直接跳过，不再整夜每 45s 重载），首帧前给 180 秒宽限（慢网络下 first states 实测可到 35 秒，45 秒阈值会把正在启动的页面打断）。真机验证两条：① URL 加 ?selftest=hang 让页面主线程卡死 60 秒 → logcat 出现 watchdog: no heartbeat for 45s, reloading，卡死结束后自动重载、页面恢复、无人工干预；② 熄屏静置 110 秒 → 0 条 watchdog/reload 日志（改之前每 45 秒一次）。诊断页与回归脚本可以读桥的 `info().beatAge`（距上次心跳多少毫秒）直接确认 JS 定时器还活着
 - **进程被杀后的恢复**：默认桌面角色保证按 Home 键 / 重启都会重新拉起（实测 force-stop 后按 Home 重新拉起、重启后无需解锁直接进面板）；MIUI 的 AutoStart 会拒绝后台自启广播，所以不依赖开机广播这一路
 
