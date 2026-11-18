@@ -2143,6 +2143,9 @@
     volume: function () { return Math.round(S.vol * 100); },
     setVolume: function (pct) { setVol(clamp(num(pct, 70) / 100, 0, 1)); },
     isPlaying: function () { return !!(S.audio && S.audio.src && !S.audio.paused); },
+    /* 待机页用：当前歌词与当前行号，纯只读（不改播放状态、不触发拉取） */
+    lyrics: function () { return S.lyrics; },
+    lyricLine: function () { return lyricIdxNow(); },
     openAll: function () { open(true); openLibView(); },
     libInfo: function () { return { view: S.view, src: S.src, loaded: S.lib.items.length, total: S.lib.total, randLeft: S.randQ.length, hist: S.hist.length } }
   };

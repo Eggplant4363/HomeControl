@@ -1017,9 +1017,26 @@ eq(documentStub.getElementById('dimCoverImg').src, 'http://h/c.png', '封面地�
 eq(documentStub.getElementById('dimBar').style.width, '42%', '进度条镜像音乐页');
 eq(documentStub.getElementById('dimPos').textContent, '1:23', '已播时间镜像音乐页');
 eq(documentStub.getElementById('dimDur').textContent, '3:20', '总时长镜像音乐页');
+/* 歌词：时间与「正在播放」中间那块 */
+eq(documentStub.getElementById('dimLyric').className, 'dim-lyric', '没有歌词时不显示歌词块');
+windowStub.MusicUI.lyrics = function () { return { synced: true, lines: [{ t: 0, text: '第一行' }, { t: 30, text: '第二行' }, { t: 60, text: '第三行' }] }; };
+windowStub.MusicUI.lyricLine = function () { return 1; };
+DS.paint();
+eq(documentStub.getElementById('dimLyric').className, 'dim-lyric on', '有歌词时歌词块显示');
+eq(documentStub.getElementById('dimLrNow').textContent, '第二行', '当前行进歌词块');
+eq(documentStub.getElementById('dimLrPrev').textContent, '第一行', '上一行也显示（次要）');
+eq(documentStub.getElementById('dimLrNext').textContent, '第三行', '下一行也显示（次要）');
+windowStub.MusicUI.lyricLine = function () { return 2; };
+DS.paint();
+eq(documentStub.getElementById('dimLrNow').textContent, '第三行', '行号变了歌词跟着换');
+eq(documentStub.getElementById('dimLrNext').textContent, '', '最后一行时下一行为空');
+ok(musicJs.indexOf('lyrics: function') >= 0 && musicJs.indexOf('lyricLine: function') >= 0, 'music.js 暴露只读的 lyrics/lyricLine');
+ok(idxHtml.indexOf('id="dimLyric"') >= 0 && idxHtml.indexOf('id="dimLrNow"') >= 0, 'index.html 有待机页歌词节点');
+ok(fs.readFileSync(path.join(root, 'panel', 'css', 'app.css'), 'utf8').indexOf('.dim-lyric') >= 0, 'CSS 有待机页歌词样式');
 windowStub.MusicUI.isPlaying = function () { return false; };
 DS.paint();
 eq(dimNow.className, 'dim-now', '暂停后「正在播放」自动收起');
+eq(documentStub.getElementById('dimLyric').className, 'dim-lyric', '暂停后歌词一起收起');
 ok(documentStub.getElementById('dim').className.indexOf('with-music') < 0, '暂停后 with-music 一起撤掉（时间回到正中）');
 ok(appJs.indexOf('window.DimScreen.show()') >= 0 && appJs.indexOf('window.DimScreen.hide()') >= 0, 'app.js 进出熄屏时通知待机页');
 ok(fs.readFileSync(path.join(root, 'tools', 'lint-es5.js'), 'utf8').indexOf('panel/js/dimscreen.js') >= 0, 'lint-es5 覆盖 dimscreen.js');

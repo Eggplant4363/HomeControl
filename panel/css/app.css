@@ -514,7 +514,7 @@ body::before { content: none; }
 }
 .dim.show { display: flex; opacity: 1; }
 /* 没放歌时时间就是整屏唯一的元素，垂直居中；一旦底部有「正在播放」，把时间抬到上方让出位置 */
-.dim.with-music { justify-content: flex-start; padding-top: 9vh; }
+.dim.with-music { justify-content: flex-start; padding-top: 9vh; padding-bottom: 31vh; }
 .dim-clock { text-align: center; }
 .dim-time {
   font-size: 220px; font-weight: 700; letter-spacing: 2px; color: #fff;
@@ -522,6 +522,17 @@ body::before { content: none; }
 }
 .dim-date { margin-top: 6px; font-size: 22px; font-weight: 600; letter-spacing: 1px; color: rgba(255,255,255,.42); }
 /* 正在播放：贴在底部一条，宽度限住，长名字省略号 */
+/* 歌词：介于时间与底部「正在播放」之间的一块，绝对定位所以完全不影响时间的居中/抬升 */
+/* 歌词块走文档流：夹在时间与底部「正在播放」之间，由 flex 自己分配空间，不写死百分比
+ * （小窗口上绝对定位会和日期行/播放条撞在一起） */
+.dim-lyric {
+  display: none; flex: 1 1 auto; flex-direction: column; justify-content: center; align-items: center;
+  width: 76%; max-width: 1000px; text-align: center; overflow: hidden;
+}
+.dim-lyric.on { display: flex; }
+.dim-lr { font-size: 36px; font-weight: 600; line-height: 1.4; color: rgba(255,255,255,.92); transition: color .3s; }
+.dim-lr-soon { font-size: 20px; line-height: 1.5; color: rgba(255,255,255,.3); }
+.dim-lr-soon:empty { display: none; }
 .dim-now { display: none; position: absolute; left: 50%; bottom: 12vh; width: 62%; max-width: 900px; transform: translateX(-50%); align-items: center; }
 .dim-now.on { display: flex; }
 .dim-cover {
@@ -1030,7 +1041,16 @@ body::before { content: none; }
 
 .m-right { flex: 1; min-width: 0; display: flex; flex-direction: column; padding-left: 24px; }
 .m-crumb { display: flex; align-items: center; flex: 0 0 auto; height: 40px; font-size: 15px; color: var(--text-2); }
-.m-crumb .m-back { height: 32px; font-size: 13px; padding: 0 10px 0 4px; margin-right: 12px; border-radius: 10px; }
+/* 返回按钮：和面板其它控件同一套「暗色幽灵胶囊」，不用浏览器默认的灰底按钮
+   （Chromium 默认 button 是亮灰底黑字，在暗色界面上格外扎眼） */
+.m-crumb .m-back {
+  display: inline-flex; align-items: center; height: 30px; padding: 0 12px 0 9px;
+  margin-right: 12px; border-radius: 15px; font-size: 13px;
+  background: rgba(var(--surf), .06); border: 1px solid rgba(var(--surf), .14);
+  color: var(--text-2);
+}
+.m-crumb .m-back svg { width: 18px; height: 18px; margin-right: 7px; flex: 0 0 auto; }
+.m-crumb .m-back:active { transform: scale(.95); background: rgba(var(--surf), .13); }
 .m-crumb-t { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 500; }
 .m-list {
   flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch;

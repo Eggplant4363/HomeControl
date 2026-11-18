@@ -125,7 +125,10 @@ const httpGet = url => new Promise((resolve, reject) => {
     var d = document.getElementById('mDur'); if (d) d.textContent = '3:20';
     window.MusicUI = {
       isPlaying: function () { return true; },
-      playing: function () { return { title: '暖光', artist: 'Demo', cover: ${JSON.stringify(cover)} }; }
+      playing: function () { return { title: '暖光', artist: 'Demo', cover: ${JSON.stringify(cover)} }; },
+      lyrics: function () { return { synced: true, lines: [
+        { t: 0, text: '第一句歌词' }, { t: 20, text: '暖光照进来' }, { t: 40, text: '第三句歌词' }] }; },
+      lyricLine: function () { return 1; }
     };
     window.DimScreen.paint();
     return true;
@@ -141,7 +144,21 @@ const httpGet = url => new Promise((resolve, reject) => {
   const clockTop2 = await evalJs("document.getElementById('dimTime').getBoundingClientRect().top");
   check(await evalJs("document.getElementById('dim').className.indexOf('with-music') >= 0"), '放歌时 #dim 带上 with-music');
   check(clockTop2 < clockTop - 120, '放歌后时间被抬到上方（让出底部）', 'before ' + Math.round(clockTop) + ' after ' + Math.round(clockTop2));
+  check(await evalJs("document.getElementById('dimLyric').className === 'dim-lyric on'"), '歌词块显示');
+  check(await evalJs("document.getElementById('dimLrNow').textContent === '暖光照进来'"), '当前行进歌词块');
+  check(await evalJs("document.getElementById('dimLrPrev').textContent === '第一句歌词' && document.getElementById('dimLrNext').textContent === '第三句歌词'"), '上下行也显示（次要）');
+  const lyrPos = await evalJs(`(function(){
+    var l = document.getElementById('dimLrPrev').getBoundingClientRect();
+    var l2 = document.getElementById('dimLrNext').getBoundingClientRect();
+    var t = document.getElementById('dimDate').getBoundingClientRect();
+    var n = document.getElementById('dimNow').getBoundingClientRect();
+    return { belowClock: l.top > t.bottom, aboveNow: l2.bottom < n.top, gap: Math.round(n.top - l2.bottom) };
+  })()`);
+  check(lyrPos.belowClock && lyrPos.aboveNow, '歌词在时间与「正在播放」之间', JSON.stringify(lyrPos));
   await shot('dim-2-music.png');
+  await evalJs("window.MusicUI.lyricLine = function () { return 2; }; true");
+  await evalJs("window.DimScreen.paint(); true");
+  check(await evalJs("document.getElementById('dimLrNow').textContent === '第三句歌词'"), '行号推进后歌词跟着换');
 
   /* ---------- ③ 暂停后收起 ---------- */
   console.log('\n③ 暂停后收起');
@@ -149,6 +166,7 @@ const httpGet = url => new Promise((resolve, reject) => {
   const hid = await waitFor("document.getElementById('dimNow').className === 'dim-now'", 4000);
   check(hid, '暂停后自动收起（不用等退出熄屏）');
   check(await evalJs("getComputedStyle(document.getElementById('dimNow')).display === 'none'"), '收起后不占位');
+  check(await evalJs("document.getElementById('dimLyric').className === 'dim-lyric'"), '暂停后歌词一起收起');
 
   /* ---------- ④ 退出熄屏 ---------- */
   console.log('\n④ 退出熄屏');
