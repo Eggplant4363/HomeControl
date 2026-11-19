@@ -3827,7 +3827,7 @@ function bindDim() {
     ]).then(function (res) {
       var built = null;
       try {
-        built = window.Layout.build(S.states, res[0], res[1], res[2]);
+        built = window.Layout.build(S.states, res[0], res[1], res[2], "sensor.homecontrol_panel_" + selfSlug() + "_battery");
       } catch (e) {
         built = null;
       }

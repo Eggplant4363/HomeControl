@@ -361,6 +361,42 @@ eq(windowStub.Layout.shortDev('米家智能鱼缸'), '鱼缸', 'shortDev 去米�
 eq(windowStub.Layout.shortDev('REDMI 投影仪 4 Pro'), '投影仪 4', 'shortDev 去品牌与 Pro 后缀');
 eq(windowStub.Layout.shortDev('Xiaomi 温度计 Pro'), '温度计', 'shortDev 去品牌与 Pro 后缀');
 
+/* ---- 布局过滤：电池类传感器整体不收，但「中控屏自己」的电量要收（墙上想看） ---- */
+(function () {
+  var st = {
+    'sensor.midear_battery': { entity_id: 'sensor.midear_battery', state: '88', attributes: { device_class: 'battery', unit_of_measurement: '%' } },
+    'sensor.homecontrol_panel_21051182c_battery': { entity_id: 'sensor.homecontrol_panel_21051182c_battery', state: '76', attributes: { device_class: 'battery', unit_of_measurement: '%' } },
+    'sensor.homecontrol_panel_21051182c_music': { entity_id: 'sensor.homecontrol_panel_21051182c_music', state: 'idle', attributes: {} },
+    'sensor.living_temp': { entity_id: 'sensor.living_temp', state: '21', attributes: { device_class: 'temperature' } }
+  };
+  var built = windowStub.Layout.build(st, [], [], [], 'sensor.homecontrol_panel_21051182c_battery');
+  var ids = [];
+  built.rooms.forEach(function (r) { r.tiles.forEach(function (t) { ids.push(t.entity); }); });
+  eq(ids.indexOf('sensor.homecontrol_panel_21051182c_battery') >= 0, true, '布局：中控屏自己的电量收进卡片');
+  eq(ids.indexOf('sensor.midear_battery') < 0, true, '布局：别的设备的电池不收（避免挤掉温湿度）');
+  eq(ids.indexOf('sensor.homecontrol_panel_21051182c_music') < 0, true, '布局：中控屏的 music 状态不当卡片');
+  /* 其它机器人的电量不显示：只认传进来的「本机」那一个 id */
+  var st2 = {
+    'sensor.homecontrol_panel_hc_emu_battery': { entity_id: 'sensor.homecontrol_panel_hc_emu_battery', state: '99', attributes: { device_class: 'battery' } },
+    'sensor.homecontrol_panel_21051182c_battery': { entity_id: 'sensor.homecontrol_panel_21051182c_battery', state: '76', attributes: { device_class: 'battery' } }
+  };
+  var b2 = windowStub.Layout.build(st2, [], [], [], 'sensor.homecontrol_panel_21051182c_battery');
+  var ids2 = [];
+  b2.rooms.forEach(function (r) { r.tiles.forEach(function (t) { ids2.push(t.entity); }); });
+  eq(ids2.length, 1, '布局：只显示本机那台的电量（别的屏的电量不进来）');
+  eq(ids2[0], 'sensor.homecontrol_panel_21051182c_battery', '布局：留下的是本机电量卡');
+  /* 房间 sensor 名额已满时，本机电量也不被挤掉 */
+  var many = {};
+  for (var i = 0; i < 20; i++) many['sensor.t' + i] = { entity_id: 'sensor.t' + i, state: String(i), attributes: { device_class: 'temperature' } };
+  many['sensor.homecontrol_panel_21051182c_battery'] = { entity_id: 'sensor.homecontrol_panel_21051182c_battery', state: '76', attributes: { device_class: 'battery' } };
+  var b3 = windowStub.Layout.build(many, [], [], [], 'sensor.homecontrol_panel_21051182c_battery');
+  var ids3 = [];
+  b3.rooms.forEach(function (r) { r.tiles.forEach(function (t) { ids3.push(t.entity); }); });
+  eq(ids3.indexOf('sensor.homecontrol_panel_21051182c_battery') >= 0, true, '布局：传感器满 12 张时本机电量仍保留');
+  eq(ids3.length, 13, '布局：满额房间 = 12 张传感器 + 1 张本机电量');
+  eq(ids.indexOf('sensor.living_temp') >= 0, true, '布局：普通温度传感器照旧');
+})();
+
 eq(typeof api.prefs, 'function', '导出 prefs');
 eq(api.prefs().cols, 4, '默认每行 4 张');
 eq(api.prefs().tap, 'toggle', '默认点一下直接开关');
@@ -1011,44 +1047,69 @@ ok(musicJs.indexOf('var want = haPlaylist();') >= 0 && musicJs.indexOf('function
 ok(musicJs.indexOf('haPlaylist: m.haPlaylist') >= 0, 'defaultCfg 带 haPlaylist 字段（否则 mergeCfg 会把它丢掉）');
 ok(appJs.indexOf('data-act="ha-pl"') >= 0 && appJs.indexOf('ha-pl-set:') >= 0, '设置页「音乐」里有 HA 播放歌单入口与选择处理');
 
-/* ---------- 「我喜欢」（收藏）：行内心形 + 本机快照 + 独立视图 ---------- */
+/* ---------- 「我喜欢」（收藏）：行内心形 + 服务器账号里的收藏歌单 + 独立视图 ---------- */
 ok(musicSrc.indexOf('function toggleFav') >= 0 && musicSrc.indexOf('function openFavView') >= 0, 'music.js 有收藏开关与「我喜欢」视图');
 ok(musicSrc.indexOf('data-mact="fav"') >= 0 && musicSrc.indexOf('data-mact="fav-open"') >= 0, '每行右侧心形 + 歌单页「我喜欢」入口');
 ok(musicSrc.indexOf("if (a === 'fav')") >= 0 && musicSrc.indexOf("if (a === 'fav-open')") >= 0, '点击派发处理 fav / fav-open');
-ok(musicSrc.indexOf('if (favMode()) { S.tracks = favs.slice(); paintList(); }') >= 0, '在收藏列表里点掉心形：这一行立刻消失');
+ok(musicSrc.indexOf('if (favMode()) { S.tracks = favList.slice(); paintList(); }') >= 0, '在收藏列表里点掉心形：这一行立刻消失');
 ok(musicSrc.indexOf('repaintHeart(btn, fid)') >= 0, '点心形只改那个节点，不重建 1500 行列表');
 ok(musicSrc.indexOf('favHeart(t.id)') >= 0 && (musicSrc.match(/favHeart\(t\.id\)/g) || []).length >= 2, '歌单行和收藏行都画心形');
 ok(fs.readFileSync(path.join(root, 'panel', 'js', 'icons.js'), 'utf8').indexOf('heartFill') >= 0, 'icons.js 有实心心形（已收藏）');
 ok(tabCss.indexOf('.m-fav') >= 0 && tabCss.indexOf('.m-fav.on') >= 0 && tabCss.slice(tabCss.indexOf('.m-fav.on'), tabCss.indexOf('.m-fav.on') + 60).indexOf('var(--accent-hex)') >= 0,
   '已收藏的心形用皮肤主色（不是浏览器默认灰）');
+/* 收藏写服务器，不落本机（用户明确否掉了本机版） */
+ok(musicSrc.indexOf('hc.music.fav') < 0 && musicSrc.indexOf('FAV_MAX') < 0, '收藏不再存本机 localStorage');
+ok(musicSrc.indexOf('__system_default_favorites__') >= 0, '按服务器的系统收藏标记认歌单（不靠歌名里有没有「喜欢」）');
+ok(musicSrc.indexOf('DaoliyuBackend.prototype.addFav') >= 0 && musicSrc.indexOf('DaoliyuBackend.prototype.removeFav') >= 0, '后端有加/移收藏两个方法');
+ok(musicSrc.indexOf("'POST'") >= 0 && musicSrc.indexOf("'/tracks/'") >= 0, '移出用 DELETE /api/playlists/<id>/tracks/<trackId>');
+ok(musicSrc.indexOf('function favHeart') >= 0 && musicSrc.indexOf("if (!favSupported()) return '';") >= 0, '不支持收藏的后端不画心形');
 
-/* 行为：第一次点=加入并落盘，第二次点=移出；坏输入不崩 */
-windowStub.localStorage.removeItem('hc.music.fav');
+/* 行为：桩后端——第一次点=发到服务器，第二次点=从服务器移回；不支持的后端不画心形 */
 var muFav = windowStub.MusicUI;
 var favToasts = [];
 var prevToast = windowStub.__PANEL_TOAST__;
 windowStub.__PANEL_TOAST__ = function (t) { favToasts.push(t); };   /* 测试桩里没有 #toast 节点，先接住提示 */
-eq(muFav.favCount(), 0, '刚进面板没有收藏');
-eq(muFav.toggleFav({ id: 'song-9', title: '测试曲', artist: '某人', duration: 120 }), true, '第一次点心形 = 加入');
-eq(muFav.isFav('song-9'), true, 'isFav 认得这条');
-eq(muFav.favCount(), 1, '收藏数 +1');
-ok(favToasts.join('|').indexOf('已加入「我喜欢」') >= 0, '加入时有提示（说了歌名）');
-var favSnap = JSON.parse(windowStub.localStorage.getItem('hc.music.fav'));
-eq(favSnap.items[0].title, '测试曲', '快照存了标题/歌手（服务器没连上时也能列出收藏的歌）');
-eq(muFav.toggleFav({ id: 'song-9', title: '测试曲' }), false, '再点一次 = 移出');
-eq(muFav.favCount(), 0, '移出了，磁盘也同步');
-ok(favToasts.join('|').indexOf('已从「我喜欢」移除') >= 0, '移出时也有提示');
-eq(muFav.toggleFav(null), false, '没有曲目时不崩');
-eq(muFav.toggleFav({ id: '' }), false, '空编号不收藏');
-muFav.toggleFav({ id: 'song-1', title: '甲' });
-muFav.toggleFav({ id: 'song-2', title: '乙' });
-eq(muFav.favCount(), 2, '两条收藏');
-eq(muFav.favs()[0].title, '乙', '新收藏排在最前');
-muFav.openFav();
-eq(muFav.view(), 'fav', 'openFav 切到「我喜欢」视图');
-eq(muFav.libInfo().fav, 2, 'libInfo 带收藏数');
-windowStub.__PANEL_TOAST__ = prevToast;
-windowStub.localStorage.removeItem('hc.music.fav');
+var fakeAdded = [], fakeRemoved = [];
+var fakeBackend = {
+  favPlaylist: function (cb) { cb(null, 'pl_fake', 'orrismi喜欢的音乐'); },
+  favIds: function (cb) { cb(null, { 'old-1': 1 }, [{ id: 'old-1', title: '老收藏', artist: '某人', duration: 100 }]); },
+  addFav: function (id, cb) { fakeAdded.push(id); cb(null); },
+  removeFav: function (id, cb) { fakeRemoved.push(id); cb(null); }
+};
+eq(muFav.favSupported(), false, '默认后端（读不到音乐配置时）没有收藏能力');
+muFav.toggleFav({ id: 'song-9', title: '测试曲' }, function (err) { eq(err, 'unsupported', '没有收藏能力的后端：报 unsupported 不崩'); });
+muFav.__test.setBackend(fakeBackend);
+eq(muFav.favSupported(), true, '道理鱼后端有收藏能力');
+muFav.loadFav(function (err) {
+  eq(err, null, '取账号收藏成功');
+  eq(muFav.favReady(), true, '收藏集合已就绪');
+  eq(muFav.favCount(), 1, '服务器说有 1 首收藏');
+  eq(muFav.isFav('old-1'), true, 'isFav 认得服务器里那条');
+  eq(muFav.__test.favState().name, 'orrismi喜欢的音乐', '入口文案用的是服务器歌单真名');
+  muFav.toggleFav({ id: 'song-9', title: '测试曲', artist: '某人', duration: 120 }, function (e1, added) {
+    eq(e1, null, '加入没报错');
+    eq(added, true, '这次是加入');
+    eq(fakeAdded.join(','), 'song-9', '真的打到后端（不是本机存一份）');
+    eq(muFav.isFav('song-9'), true, '加入后 isFav 立刻生效');
+    eq(muFav.favCount(), 2, '收藏数 +1');
+    eq(muFav.favs()[0].title, '测试曲', '新收藏排在最前');
+    ok(favToasts.join('|').indexOf('已收藏') >= 0, '加入时有提示（说了歌名）');
+    muFav.toggleFav({ id: 'song-9', title: '测试曲' }, function (e2, added2) {
+      eq(e2, null, '移出没报错');
+      eq(added2, false, '再点一次 = 移出');
+      eq(fakeRemoved.join(','), 'song-9', '移出也打到服务器');
+      eq(muFav.isFav('song-9'), false, '移出后 isFav 立刻失效');
+      eq(muFav.favCount(), 1, '回到服务器那 1 首');
+      ok(favToasts.join('|').indexOf('已移出「喜欢」') >= 0, '移出时也有提示');
+      muFav.toggleFav(null, function (e3) { eq(e3, 'no-id', '没有曲目时报 no-id 不崩'); });
+      muFav.toggleFav({ id: '' }, function (e4) { eq(e4, 'no-id', '空编号不收藏'); });
+      muFav.openFav();
+      eq(muFav.view(), 'fav', 'openFav 切到「我喜欢」视图');
+      eq(muFav.libInfo().fav, 1, 'libInfo 带收藏数');
+      windowStub.__PANEL_TOAST__ = prevToast;
+    });
+  });
+});
 
 /* ---------- 空闲待机页（dimscreen.js）：删掉唤醒提示，放歌时补一条正在播放 ---------- */
 load('panel/js/dimscreen.js');

@@ -10,6 +10,9 @@
   /* 米家设备的“指示灯/屏幕亮度”这类实体不是给人操作的功能灯，墙上不该出现 */
   var NOISE_ID = /(_indicator_light|_indicator|_screen_brightness)$/;
   var NOISE_NAME = /指示灯|屏幕亮度|指示燈/;
+  /* 中控屏自己通过 MQTT 报回 HA 的电量（sensor.homecontrol_panel_<slug>_battery）。
+     单独处理：通用规则里的 battery 不收，而且要绕开每个房间的 sensor 张数上限。 */
+  var SELF_BATT = /^sensor\.homecontrol_panel_.*_battery/;
   var SENSOR_CLASSES = {
     temperature: 1, humidity: 1, motion: 1, occupancy: 1, door: 1, window: 1,
     smoke: 1, gas: 1, moisture: 1, illuminance: 1, co2: 1, carbon_dioxide: 1, pm25: 1, pm10: 1
@@ -100,7 +103,7 @@
    * @param devices [{id,area_id,name}]
    * @param entities[{entity_id,area_id,device_id,name,original_name,entity_category,hidden_by,disabled_by}]
    */
-  function build(states, areas, devices, entities) {
+  function build(states, areas, devices, entities, selfBattId) {
     var devArea = {}, devName = {}, entArea = {}, entName = {}, entById = {}, areaName = {}, areaIcon = {};
     (devices || []).forEach(function (d) {
       if (!d || !d.id) return;
@@ -152,7 +155,11 @@
 
       if (type === 'sensor') {
         var dc = attrs.device_class;
-        if (!dc || !SENSOR_CLASSES[dc]) continue;
+        /* battery 不放进通用白名单：全屋几百个电池卡会把房间里的温湿度挤掉
+           （每个房间 sensor 上限 12）。但「中控屏自己」通过 MQTT 报回 HA 的
+           电量是想在墙上看的那一个，单独放行。 */
+        var selfBatt = selfBattId ? String(id) === selfBattId : SELF_BATT.test(String(id));
+        if (!selfBatt && (!dc || !SENSOR_CLASSES[dc])) continue;
       }
 
       if ((type === 'light' || type === 'switch') && (NOISE_ID.test(String(id)) || NOISE_NAME.test(shortName(id, st)))) continue;
@@ -184,6 +191,9 @@
       });
       var perType = {};
       list = list.filter(function (t) {
+        /* 中控屏自己的电量不占 sensor 的名额：别的房间里 sensor 常常正好卡在 12 张，
+           这一张会被挤掉，而它恰恰是墙上看电量的那一个 */
+        if (selfBattId && t.entity === selfBattId) return true;
         var cap = TYPE_CAP[t.type] == null ? 24 : TYPE_CAP[t.type];
         perType[t.type] = (perType[t.type] || 0) + 1;
         return perType[t.type] <= cap;
