@@ -130,6 +130,7 @@ load('panel/js/update.js');
 load('panel/js/dimscreen.js');
 load('panel/js/mqtt.js');
 load('panel/js/app.js');
+load('panel/js/music.js');   /* 「我喜欢」的行为断言要用 MusicUI 的收藏接口 */
 
 var api = windowStub.__PANEL_TEST__;
 if (!api) {
@@ -384,6 +385,17 @@ eq(api.settingsSectionHtml('music').indexOf('data-act="music-cfg"') >= 0, true, 
 eq(api.settingsSectionHtml('cards').indexOf('data-act="edit-open"') >= 0, true, '卡片：编辑入口在这里');
 eq(api.settingsSectionHtml('conn').indexOf('data-act="open-cfg"') >= 0, true, '连接：HA 地址入口在这里');
 eq(api.settingsSectionHtml('conn').indexOf('mqtt-save') >= 0, true, '连接：MQTT 节归到连接标签下');
+/* 设备列表刷新（0.7.53）：手动按钮 + 定时刷新 */
+var connHtml = api.settingsSectionHtml('conn');
+eq(connHtml.indexOf('data-act="ent-refresh"') >= 0, true, '连接：有「刷新设备列表」按钮');
+eq(connHtml.indexOf('刷新设备列表') >= 0, true, '连接：按钮文案是「刷新设备列表」');
+eq(connHtml.indexOf('data-key="entRefresh"') >= 0, true, '连接：定时刷新选项在连接页');
+eq(connHtml.indexOf('data-val="15"') >= 0, true, '连接：定时刷新默认 15 分钟');
+eq(typeof api.refreshEntities, 'function', '导出了 refreshEntities');
+eq(typeof api.scheduleEntityRefresh, 'function', '导出了 scheduleEntityRefresh');
+var bkSrc = fs.readFileSync(path.join(root, 'panel', 'js', 'backend.js'), 'utf8');
+eq(bkSrc.indexOf('HABackend.prototype.reloadStates') >= 0, true, 'backend 有 reloadStates（重拉 get_states）');
+eq(bkSrc.indexOf('MockBackend.prototype.reloadStates') >= 0, true, '模拟后端也能刷新');
 eq(api.settingsSectionHtml('upd').indexOf('data-act="upd-check"') >= 0, true, '升级：升级节归到升级标签下');
 eq(api.settingsSectionHtml('about').indexOf('恢复默认设置') >= 0, true, '关于：恢复默认设置在这里');
 eq(api.settingsSectionHtml('about').indexOf('data-act="panel-reload"') >= 0, true, '关于：重新加载在这里');
@@ -395,6 +407,8 @@ eq(tabSrc.indexOf("'settings-tab'") >= 0, true, 'app.js 处理 settings-tab 动�
 eq(tabSrc.indexOf('settingsSectionHtml') >= 0, true, 'app.js 按标签渲染内容');
 eq(tabSrc.indexOf("'diag-open'") >= 0, true, '连接页能打开诊断页');
 eq(tabSrc.indexOf('SETTINGS_TABS') >= 0, true, '一级标签表存在');
+eq(tabSrc.indexOf("'ent-refresh'") >= 0, true, 'app.js 处理 ent-refresh 动作');
+eq(tabSrc.indexOf('scheduleEntityRefresh();') >= 0, true, 'app.js 启动时会排定时刷新');
 var tabCss = fs.readFileSync(path.join(root, 'panel', 'css', 'app.css'), 'utf8');
 eq(tabCss.indexOf('.set-tab') >= 0, true, '标签页有样式');
 eq(tabCss.indexOf('.set-tab.on') >= 0, true, '当前标签样式');
@@ -996,6 +1010,45 @@ ok(musicJs.indexOf('haPlaylist: haPlaylist, setHaPlaylist: setHaPlaylist, pickPl
 ok(musicJs.indexOf('var want = haPlaylist();') >= 0 && musicJs.indexOf('function playPlaylistFirst(') >= 0, 'playDefault 优先播设置里的歌单');
 ok(musicJs.indexOf('haPlaylist: m.haPlaylist') >= 0, 'defaultCfg 带 haPlaylist 字段（否则 mergeCfg 会把它丢掉）');
 ok(appJs.indexOf('data-act="ha-pl"') >= 0 && appJs.indexOf('ha-pl-set:') >= 0, '设置页「音乐」里有 HA 播放歌单入口与选择处理');
+
+/* ---------- 「我喜欢」（收藏）：行内心形 + 本机快照 + 独立视图 ---------- */
+ok(musicSrc.indexOf('function toggleFav') >= 0 && musicSrc.indexOf('function openFavView') >= 0, 'music.js 有收藏开关与「我喜欢」视图');
+ok(musicSrc.indexOf('data-mact="fav"') >= 0 && musicSrc.indexOf('data-mact="fav-open"') >= 0, '每行右侧心形 + 歌单页「我喜欢」入口');
+ok(musicSrc.indexOf("if (a === 'fav')") >= 0 && musicSrc.indexOf("if (a === 'fav-open')") >= 0, '点击派发处理 fav / fav-open');
+ok(musicSrc.indexOf('if (favMode()) { S.tracks = favs.slice(); paintList(); }') >= 0, '在收藏列表里点掉心形：这一行立刻消失');
+ok(musicSrc.indexOf('repaintHeart(btn, fid)') >= 0, '点心形只改那个节点，不重建 1500 行列表');
+ok(musicSrc.indexOf('favHeart(t.id)') >= 0 && (musicSrc.match(/favHeart\(t\.id\)/g) || []).length >= 2, '歌单行和收藏行都画心形');
+ok(fs.readFileSync(path.join(root, 'panel', 'js', 'icons.js'), 'utf8').indexOf('heartFill') >= 0, 'icons.js 有实心心形（已收藏）');
+ok(tabCss.indexOf('.m-fav') >= 0 && tabCss.indexOf('.m-fav.on') >= 0 && tabCss.slice(tabCss.indexOf('.m-fav.on'), tabCss.indexOf('.m-fav.on') + 60).indexOf('var(--accent-hex)') >= 0,
+  '已收藏的心形用皮肤主色（不是浏览器默认灰）');
+
+/* 行为：第一次点=加入并落盘，第二次点=移出；坏输入不崩 */
+windowStub.localStorage.removeItem('hc.music.fav');
+var muFav = windowStub.MusicUI;
+var favToasts = [];
+var prevToast = windowStub.__PANEL_TOAST__;
+windowStub.__PANEL_TOAST__ = function (t) { favToasts.push(t); };   /* 测试桩里没有 #toast 节点，先接住提示 */
+eq(muFav.favCount(), 0, '刚进面板没有收藏');
+eq(muFav.toggleFav({ id: 'song-9', title: '测试曲', artist: '某人', duration: 120 }), true, '第一次点心形 = 加入');
+eq(muFav.isFav('song-9'), true, 'isFav 认得这条');
+eq(muFav.favCount(), 1, '收藏数 +1');
+ok(favToasts.join('|').indexOf('已加入「我喜欢」') >= 0, '加入时有提示（说了歌名）');
+var favSnap = JSON.parse(windowStub.localStorage.getItem('hc.music.fav'));
+eq(favSnap.items[0].title, '测试曲', '快照存了标题/歌手（服务器没连上时也能列出收藏的歌）');
+eq(muFav.toggleFav({ id: 'song-9', title: '测试曲' }), false, '再点一次 = 移出');
+eq(muFav.favCount(), 0, '移出了，磁盘也同步');
+ok(favToasts.join('|').indexOf('已从「我喜欢」移除') >= 0, '移出时也有提示');
+eq(muFav.toggleFav(null), false, '没有曲目时不崩');
+eq(muFav.toggleFav({ id: '' }), false, '空编号不收藏');
+muFav.toggleFav({ id: 'song-1', title: '甲' });
+muFav.toggleFav({ id: 'song-2', title: '乙' });
+eq(muFav.favCount(), 2, '两条收藏');
+eq(muFav.favs()[0].title, '乙', '新收藏排在最前');
+muFav.openFav();
+eq(muFav.view(), 'fav', 'openFav 切到「我喜欢」视图');
+eq(muFav.libInfo().fav, 2, 'libInfo 带收藏数');
+windowStub.__PANEL_TOAST__ = prevToast;
+windowStub.localStorage.removeItem('hc.music.fav');
 
 /* ---------- 空闲待机页（dimscreen.js）：删掉唤醒提示，放歌时补一条正在播放 ---------- */
 load('panel/js/dimscreen.js');

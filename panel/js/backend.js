@@ -218,6 +218,35 @@
     this.stateCb(copy);
   };
 
+  /** 重新拉一次全量状态：HA 里新加的实体、断线期间错过的变更都能补回来。
+      回调 cb(ok, 实体数)。WS 在线走 get_states（有推送，快），不在线退回 REST。 */
+  HABackend.prototype.reloadStates = function (cb) {
+    var self = this;
+    function apply(list) {
+      self.states = {};
+      for (var i = 0; i < list.length; i++) {
+        var st = list[i];
+        if (st && st.entity_id) self.states[st.entity_id] = st;
+      }
+      self.statesLoaded = true;
+      var n = 0;
+      for (var id in self.states) n++;
+      self.emitStates();
+      if (cb) cb(true, n);
+    }
+    if (this.ws && this.ws.readyState === 1) {
+      this.request({ type: 'get_states' }, function (list) {
+        if (!list) { if (cb) cb(false, 0); return; }
+        apply(list);
+      });
+      return;
+    }
+    this.rest('GET', '/api/states', null, function (ok, code, data) {
+      if (!ok || !data || !data.length) { if (cb) cb(false, 0); return; }
+      apply(data);
+    });
+  };
+
   /** 通用命令：返回 Promise，用于 get_states 之外的查询（如各 registry） */
   HABackend.prototype.requestCmd = function (msg) {
     var self = this;
@@ -571,6 +600,14 @@
 
   MockBackend.prototype.requestCmd = function () {
     return Promise.reject(new Error('模拟数据不支持该命令'));
+  };
+
+  /* 模拟数据没有"新设备"可拉，刷新就是重发一次当前全量（面板借此重排布局） */
+  MockBackend.prototype.reloadStates = function (cb) {
+    var self = this, n = 0;
+    this.emit();
+    for (var id in this.states) n++;
+    if (cb) cb(true, n);
   };
 
   window.HABackend = HABackend;

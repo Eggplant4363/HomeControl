@@ -229,6 +229,33 @@ const check = (ok, name, extra) => {
   await click('[data-act="close"]');
   await sleep(300);
 
+  console.log('=== 7. 刷新设备列表（手动按钮 + 定时刷新）===');
+  await longPress('#time', 900);
+  await waitFor(`!!document.querySelector('[data-act="diag-panel"]')`);
+  await click('[data-act="diag-panel"]');
+  await sleep(400);
+  await evalJs(`(function(){var b=document.querySelectorAll('[data-act="settings-tab"]');for(var i=0;i<b.length;i++)if(b[i].getAttribute('data-val')==='conn'){b[i].click();return 1;}return 0;})()`);
+  await sleep(500);
+  const hasBtn = await evalJs(`!!document.querySelector('[data-act="ent-refresh"]')`);
+  check(hasBtn === true, '连接页有「刷新设备列表」按钮');
+  /* 先把定时刷新设成 5 分钟，验偏好落盘；再点手动刷新验 toast */
+  await evalJs(`(function(){var b=document.querySelectorAll('[data-key="entRefresh"]');for(var i=0;i<b.length;i++)if(b[i].getAttribute('data-val')==='5')b[i].click();return 1;})()`);
+  await sleep(400);
+  const entPref = await store('hc.prefs');
+  check(String(entPref).indexOf('"entRefresh":5') >= 0, '定时刷新写入偏好（' + entPref + '）');
+  await click('[data-act="ent-refresh"]');
+  let toastTxt = '';
+  for (let i = 0; i < 12; i++) {
+    await sleep(250);
+    toastTxt = await evalJs(`(function(){var t=document.querySelector('.toast');return t?t.textContent:'';})()`);
+    if (String(toastTxt).indexOf('设备列表已刷新') >= 0) break;
+  }
+  check(String(toastTxt).indexOf('设备列表已刷新') >= 0, '点刷新有反馈（' + toastTxt + '）');
+  const stillPanel = await evalJs(`!!document.querySelector('.grid')`);
+  check(stillPanel === true, '刷新只重建布局，面板没被重载掉');
+  await click('[data-act="close"]');
+  await sleep(300);
+
   await shot('panel-settings.png');
 
   closeAll(ws, edge);

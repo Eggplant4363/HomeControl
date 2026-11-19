@@ -969,7 +969,7 @@
 
   /* ---------------- 面板设置（显示/交互/屏幕） ---------------- */
   var PREFS_KEY = 'hc.prefs';
-  var PREF_DEF = { cols: 4, allCards: false, size: 'md', sensors: true, offline: false, tap: 'toggle', undo: 5, autoDim: true, bright: 100, night: true, burn: true, theme: 'dark', battGuard: false, battSwitch: '', battLow: 40, battHigh: 80, awayScreen: true, awayOff: 5000 };
+  var PREF_DEF = { cols: 4, allCards: false, size: 'md', sensors: true, offline: false, tap: 'toggle', undo: 5, autoDim: true, bright: 100, night: true, burn: true, theme: 'dark', battGuard: false, battSwitch: '', battLow: 40, battHigh: 80, awayScreen: true, awayOff: 5000, entRefresh: 15 };
   /* prefs() 同样按 localStorage 原始串缓存：改设置 → 串变了 → 自动重算 */
   var prefsRaw = null, prefsObj = null;
 
@@ -3811,8 +3811,8 @@ function bindDim() {
     return ha;
   }
 
-  function applyAutoLayout() {
-    if (S.layoutBuilding) return;
+  function applyAutoLayout(cb) {
+    if (S.layoutBuilding) { if (cb) cb(false); return; }
     S.layoutBuilding = true;
     var b = S.backend;
     var empty = [];
@@ -3848,11 +3848,47 @@ function bindDim() {
       S.layoutBuilding = false;
       renderGrid(true);
       refreshSheet();
+      if (cb) cb(true);
     }, function () {
       S.layoutReady = true;
       S.layoutBuilding = false;
       renderGrid(true);
+      if (cb) cb(false);
     });
+  }
+
+  /* ---------------- 设备列表刷新 ---------------- */
+  /* 以前只有启动那一刻 applyAutoLayout() 一次：HA 里新加的设备、新改的房间，
+     面板要整页重载才看得见。现在给一个手动按钮 + 定时刷新，只重建布局不动别的。 */
+  function refreshEntities(silent) {
+    if (S.entRefreshing) return false;
+    S.entRefreshing = true;
+    if (!silent) toast('正在刷新设备列表…');
+    var b = S.backend;
+    function rebuild() {
+      applyAutoLayout(function () {
+        S.entRefreshing = false;
+        var n = 0;
+        (cfg.rooms || []).forEach(function (r) { n += (r.tiles || []).length; });
+        if (!silent) toast('设备列表已刷新 · ' + n + ' 张卡');
+      });
+    }
+    if (S.real && b && b.reloadStates) b.reloadStates(function () { rebuild(); });
+    else rebuild();
+    return true;
+  }
+
+  /* 定时刷新：默认 15 分钟一次（设置里可选 关 / 5 / 15 / 30）。
+     熄屏或后台、正在编辑、弹层打开时都跳过——那时候重排没有意义还打断人。 */
+  function scheduleEntityRefresh() {
+    clearInterval(S.entTimer);
+    var m = num(prefs().entRefresh, 15);
+    if (!m) return;
+    S.entTimer = setInterval(function () {
+      if (document.hidden) return;
+      if (S.editing || S.sheetShow) return;
+      refreshEntities(true);
+    }, m * 60000);
   }
 
   /* ---------------- 壳 App 桥接 ---------------- */
@@ -4138,6 +4174,10 @@ function bindDim() {
         '<div class="sheet-desc">地址和令牌存在 /sdcard/HomeControl/ha.json；连不上时开诊断页看这几行。</div>' +
         '<div class="cfg-actions"><button class="btn primary" data-act="open-cfg">HA 地址与令牌</button>' +
         '<button class="btn" data-act="diag-open">连接诊断</button></div>';
+      h += '<div class="set-sec">设备列表</div>' +
+        '<div class="sheet-desc">HA 里新加的设备（或改了名字/房间）不会自动出现，点下面按钮重新拉一次就行，不用整页重载。</div>' +
+        '<div class="cfg-actions"><button class="btn primary" data-act="ent-refresh">刷新设备列表</button></div>' +
+        segRow('定时刷新', 'entRefresh', [{ v: 0, t: '关' }, { v: 5, t: '5 分钟' }, { v: 15, t: '15 分钟' }, { v: 30, t: '30 分钟' }]);
       /* MQTT 节点（panel/js/mqtt.js）：由它自己渲染一节 */
       if (window.HCMqtt) h += window.HCMqtt.sectionHtml();
       return h;
@@ -4320,6 +4360,7 @@ function bindDim() {
         actLog('settings tab ' + S.settingsTab);
         return;
       }
+      if (act === 'ent-refresh') { refreshEntities(false); return; }
       if (act === 'diag-open') { if (S.sheetShow === 'panel') closeSettingsView(); else closeSheet(); setTimeout(openDiagSheet, 60); return; }
       if (act === 'diag-probe') { toast('正在测试连接…'); setTimeout(refreshDiagProbe, 60); return; }
       if (act === 'diag-reload') { reloadSoon('正在重新加载…'); return; }
@@ -4406,6 +4447,7 @@ function bindDim() {
         else if (pkey === 'allCards') renderGrid(true);
         else if (pkey === 'sensors' || pkey === 'offline') renderGrid(true);
         if (pkey.indexOf('batt') === 0) battGuard();
+        if (pkey === 'entRefresh') scheduleEntityRefresh();
         if (pkey === 'awayScreen' || pkey === 'awayOff') applyScreenPolicy();
         return;
       }
@@ -4418,7 +4460,8 @@ function bindDim() {
       }
       if (act === 'pref-reset') {
         resetPrefs();
-        ['cols', 'size', 'sensors', 'offline', 'tap', 'undo', 'autoDim', 'bright', 'night', 'burn', 'awayScreen', 'awayOff'].forEach(repaintSegRow);
+        ['cols', 'size', 'sensors', 'offline', 'tap', 'undo', 'autoDim', 'bright', 'night', 'burn', 'awayScreen', 'awayOff', 'entRefresh'].forEach(repaintSegRow);
+        scheduleEntityRefresh();
         applyScreenPolicy();
         gridClassOnly();
         renderTabs();
@@ -4462,6 +4505,7 @@ function bindDim() {
         toast('已清除充电开关');
         return;
       }
+      if (act === 'ent-refresh') { refreshEntities(false); return; }
       if (act === 'panel-reload') { reloadSoon('正在重新加载…'); return; }
       if (act.indexOf('upd-') === 0) {
         var up = window.HCUpdate;
@@ -5207,6 +5251,8 @@ function boot() {
     setTimeout(reportSelf, 3000);
     /* 电池保养：每 30 秒查一次；连上后 20 秒先查一次（状态表已刷、自身电量已报） */
     setTimeout(battGuard, 20000);
+    /* 定时刷新设备列表（设置里可关）；熄屏/编辑/弹层时会自己跳过 */
+    scheduleEntityRefresh();
     applyPrefs();
   bindDim();
   startPixelShift();
@@ -5236,6 +5282,9 @@ function boot() {
     /* 测试用：模拟一条增量推送 / 读当前状态表（tools 里的 UI 测试会用） */
     pushState: onState,
     statesRef: function () { return S.states || {}; },
+    /* 设备列表刷新：手动按钮 / 定时器都走这里，测试里可直接调 */
+    refreshEntities: refreshEntities, scheduleEntityRefresh: scheduleEntityRefresh,
+    applyAutoLayout: applyAutoLayout,
     stats: function () {
       return {
         renders: S.renderCount || 0,
