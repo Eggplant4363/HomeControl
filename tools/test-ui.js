@@ -545,12 +545,18 @@ eq(colsOpts, 4, '每行卡片可选 3/4/5/6');
     ] }
   ];
   var html = api.addSheetHtml();
+  /* 两级菜单：一级只列设备（点进去），二级才列这台设备的实体 */
   eq(html.indexOf('ed-dev') >= 0, true, '添加面板：有设备分组头');
-  eq(html.indexOf('data-act="add-device:dev1"') >= 0, true, '添加面板：dev1 设备头在列');
-  eq(html.indexOf('data-act="add-device:dev3"') >= 0, true, '添加面板：dev3 设备头在列');
-  eq(html.indexOf('data-act="add-device:__none__"') >= 0, true, '添加面板：无设备实体归「其它设备」');
-  eq(html.indexOf('ed-row ed-sub') >= 0, true, '添加面板：实体行带 ed-sub 缩进');
-  eq(html.indexOf('data-act="add-toggle:light.a"') >= 0, true, '添加面板：单条实体仍可 add-toggle');
+  eq(html.indexOf('data-act="add-open:dev1"') >= 0, true, '添加面板一级：dev1 点进二级');
+  eq(html.indexOf('data-act="add-open:dev3"') >= 0, true, '添加面板一级：dev3 点进二级');
+  eq(html.indexOf('data-act="add-open:__none__"') >= 0, true, '添加面板一级：无设备实体归「其它设备」');
+  eq(html.indexOf('ed-row ed-sub') < 0, true, '添加面板一级：不直接铺实体行');
+  eq(html.indexOf('data-act="add-toggle:') < 0, true, '添加面板一级：没有实体勾选行');
+  var html2 = api.addSheetHtmlAt('dev1');
+  eq(html2.indexOf('data-act="add-toggle:light.a"') >= 0, true, '添加面板二级：单条实体可 add-toggle');
+  eq(html2.indexOf('data-act="add-back"') >= 0, true, '添加面板二级：有返回设备按钮');
+  eq(html2.indexOf('data-act="add-device:dev1"') >= 0, true, '添加面板二级：可整台设备加入/去掉');
+  eq(html2.indexOf('data-act="add-toggle:switch.c"') < 0, true, '添加面板二级：只列这台设备的实体');
   /* 整组切换的收集逻辑 + 翻转 */
   windowStub.localStorage.setItem('hc.edit', JSON.stringify({ added: {}, order: [] }));
   api.writeEdit(JSON.parse(windowStub.localStorage.getItem('hc.edit')));

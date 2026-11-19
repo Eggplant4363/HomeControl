@@ -634,6 +634,84 @@
     });
   };
 
+  /* ---------------- 收藏（「我喜欢」）：服务器账号自己的系统收藏歌单 ----------------
+     道理鱼给每个账号建了一个收藏歌单，用 description=__system_default_favorites__ 标记
+     （实测账号 orrismi@163.com 里它叫「orrismi喜欢的音乐」，127 首）。
+     加入 = POST /api/playlists/<id>/tracks {"trackId":"…"}（实测 201，回一条 plt_… 关联记录）；
+     移出 = DELETE /api/playlists/<id>/tracks/<trackId>（实测 204）。
+     所以收藏存在账号上，换平板/重装 App 都还在——面板只缓存成员集合。 */
+  DaoliyuBackend.prototype.favPlaylist = function (cb) {
+    var self = this;
+    if (this.favPlId) { cb(null, this.favPlId, this.favPlName); return; }
+    this.api('GET', '/api/playlists/web/mine', '', function (err, text) {
+      if (err) { cb(err); return; }
+      var arr = safeJson(text) || [];
+      if (arr && !arr.length && arr.items) arr = arr.items;
+      var hit = null;
+      for (var i = 0; i < arr.length; i++) {
+        var p = arr[i] || {};
+        if (String(p.description || '') === '__system_default_favorites__') { hit = p; break; }
+      }
+      if (!hit) {
+        /* 没有那个标记时：退回到名字里有「喜欢」但不是「不喜欢」的歌单 */
+        for (var j = 0; j < arr.length; j++) {
+          var q = arr[j] || {};
+          var nm = String(q.name || '');
+          if (nm.indexOf('不喜欢') < 0 && nm.indexOf('喜欢') >= 0) { hit = q; break; }
+        }
+      }
+      if (!hit) { cb('这个账号里没有「喜欢」歌单'); return; }
+      self.favPlId = String(hit.id);
+      self.favPlName = hit.name || '我喜欢';
+      cb(null, self.favPlId, self.favPlName);
+    });
+  };
+
+  /* 收藏成员：cb(err, {id:1,…}, 按服务器顺序的曲目数组) */
+  DaoliyuBackend.prototype.favIds = function (cb) {
+    var self = this;
+    this.favPlaylist(function (err, id) {
+      if (err) { cb(err); return; }
+      var set = {}, list = [], skip = 0, total = 1;
+      var step = function () {
+        self.api('GET', '/api/playlists/' + encodeURIComponent(id) + '/tracks?skip=' + skip + '&take=200', '', function (e2, text) {
+          if (e2) { cb(e2); return; }
+          var o = safeJson(text) || {};
+          var items = o.items || (o.length ? o : []);
+          total = num(o.total, total);
+          for (var i = 0; i < items.length; i++) {
+            var t = items[i] && items[i].track ? items[i].track : items[i];
+            if (!t || !t.id) continue;
+            var tid = String(t.id);
+            if (!set[tid]) { set[tid] = 1; list.push(self.mapTrack(t)); }
+          }
+          skip += items.length;
+          if (items.length > 0 && skip < total && list.length < 600) step();
+          else cb(null, set, list);
+        });
+      };
+      step();
+    });
+  };
+
+  DaoliyuBackend.prototype.addFav = function (trackId, cb) {
+    var self = this;
+    this.favPlaylist(function (err, id) {
+      if (err) { cb(err); return; }
+      self.api('POST', '/api/playlists/' + encodeURIComponent(id) + '/tracks',
+        JSON.stringify({ trackId: String(trackId) }), function (e2) { cb(e2 || null); });
+    });
+  };
+
+  DaoliyuBackend.prototype.removeFav = function (trackId, cb) {
+    var self = this;
+    this.favPlaylist(function (err, id) {
+      if (err) { cb(err); return; }
+      self.api('DELETE', '/api/playlists/' + encodeURIComponent(id) + '/tracks/' + encodeURIComponent(String(trackId)),
+        '', function (e2) { cb(e2 || null); });
+    });
+  };
+
   /* 一条曲目 -> 面板内部形状（歌单曲目和全库曲目同一套字段） */
   DaoliyuBackend.prototype.mapTrack = function (t) {
         var artists = '';
@@ -1213,8 +1291,8 @@
 
   function openQueueView() {
     if (S.view === 'queue') {
-      S.view = libMode() ? 'lib' : (S.tracks ? 'tracks' : 'pl');
-      S.crumb = libMode() ? '所有歌曲' : (S.tracks ? (playlistName() || '歌单') : '歌单');
+      S.view = libMode() ? 'lib' : (favMode() ? 'fav' : (S.tracks ? 'tracks' : 'pl'));
+      S.crumb = libMode() ? '所有歌曲' : (favMode() ? '我喜欢' : (S.tracks ? (playlistName() || '歌单') : '歌单'));
     } else {
       S.view = 'queue';
       S.crumb = '播放列表';
@@ -1318,12 +1396,106 @@
     return t;
   }
 
+  /* ---------------- 喜欢（收藏）：写服务器账号里的系统收藏歌单 ----------------
+     本机只缓存成员集合 favSet（打开音乐页时取一次），服务器才是真相：
+     加/移都直接打到道理鱼（见 DaoliyuBackend.favPlaylist/addFav/removeFav）。 */
+  var favSet = null;      /* { trackId: 1 }；null = 还没从服务器取回来 */
+  var favList = [];       /* 「我喜欢」视图里的曲目（服务器给的顺序） */
+  var favBusy = false;
+  var favName = '';       /* 服务器那个歌单的名字（用来在入口上写清是账号里的） */
+
+  function favSupported() { return !!(S.backend && S.backend.favIds); }
+
+  function loadFav(cb) {
+    if (!favSupported()) { if (cb) cb('这个音乐服务没有收藏歌单'); return; }
+    if (favBusy) { if (cb) cb('正在取收藏'); return; }
+    favBusy = true;
+    S.backend.favPlaylist(function (e0, id, name) {
+      if (e0) { favBusy = false; toast('找不到「喜欢」歌单：' + e0); if (cb) cb(e0); return; }
+      favName = name || '我喜欢';
+      S.backend.favIds(function (err, set, list) {
+        favBusy = false;
+        if (err) { toast('取「喜欢」歌单失败：' + err); if (cb) cb(err); return; }
+        favSet = set;
+        favList = list || [];
+        if (cb) cb(null);
+      });
+    });
+  }
+
+  function isFav(id) { return !!(favSet && favSet[String(id)]); }
+  function favCount() { return favSet ? Object.keys(favSet).length : 0; }
+  /** 当前视野里按 id 找曲目（收藏时要拿标题/歌手，不能只靠 id） */
+  function trackById(id) {
+    id = String(id);
+    if (!id) return null;
+    var lists = [S.tracks, S.lib.items, S.queue, S.randQ, S.track ? [S.track] : null, favList];
+    for (var i = 0; i < lists.length; i++) {
+      var l = lists[i];
+      if (!l) continue;
+      for (var j = 0; j < l.length; j++) if (l[j] && String(l[j].id) === id) return l[j];
+    }
+    return null;
+  }
+  /** 点心形：往账号的「喜欢」歌单里加 / 移。cb(err, true=加入 false=移出) */
+  function toggleFav(t, cb) {
+    if (!t || t.id == null || String(t.id) === '') { toast('这首没有编号，没法收藏'); if (cb) cb('no-id', false); return; }
+    if (!favSupported()) { toast('这个音乐服务没有收藏歌单'); if (cb) cb('unsupported', false); return; }
+    if (!favSet) { loadFav(function (e0) { if (!e0) toggleFav(t, cb); }); return; }
+    var id = String(t.id);
+    var adding = !favSet[id];
+    var run = adding ? S.backend.addFav : S.backend.removeFav;
+    run.call(S.backend, id, function (err) {
+      if (err) { toast(adding ? '收藏失败：' + err : '取消收藏失败：' + err); if (cb) cb(err, false); return; }
+      if (adding) {
+        favSet[id] = 1;
+        favList.unshift(t);
+        toast('已收藏：' + (t.title || '') + '（存到账号 ' + (S.cfg && S.cfg.user ? S.cfg.user : '') + '）');
+      } else {
+        delete favSet[id];
+        for (var i = 0; i < favList.length; i++) if (String(favList[i].id) === id) { favList.splice(i, 1); break; }
+        toast('已移出「喜欢」：' + (t.title || ''));
+      }
+      if (cb) cb(null, adding);
+    });
+  }
+  function favHeart(id) {
+    if (!favSupported()) return '';
+    var on = isFav(id);
+    return '<span class="m-fav' + (on ? ' on' : '') + '" data-mact="fav" data-id="' + esc(String(id)) + '" aria-label="喜欢">' + svg(on ? 'heartFill' : 'heart') + '</span>';
+  }
+  /* 行内原地改心形：全量重绘在 LIB_MAX_ROWS=1500 时太贵，这里只换点到的那个节点 */
+  function repaintHeart(node, id) {
+    if (!node) return;
+    var on = isFav(id);
+    node.className = 'm-fav' + (on ? ' on' : '');
+    var h = svg(on ? 'heartFill' : 'heart');
+    if (node.innerHTML !== h) node.innerHTML = h;
+  }
+  function favMode() { return S.src === 'fav'; }
+  function sourceLabel() { return libMode() ? '所有歌曲' : (favMode() ? '我喜欢' : (playlistName() || '歌单')); }
+  function openFavView() {
+    loadFav(function (err) {
+      if (err) return;
+      S.view = 'fav';
+      S.src = 'fav';
+      S.tracks = favList.slice();   /* 副本：播放列表要稳定，收藏变化不影响正在播的队列 */
+      S.curPlaylist = '';
+      S.crumb = '我喜欢';
+      paintCrumb();
+      paintList();
+      paintTransport();
+      act('music open favorites n=' + favList.length);
+    });
+  }
+
   function libRowHtml(t, i) {
     var on = S.track && t.id === S.track.id ? ' on' : '';
     return '<button class="m-song' + on + '" data-mact="libtrack" data-idx="' + i + '">' +
       '<span class="m-song-ico">' + svg(on && S.audio && !S.audio.paused ? 'wave' : 'play') + '</span>' +
       '<span class="m-song-main"><span class="m-song-t">' + esc(t.title || '未命名') + '</span>' +
       '<span class="m-song-a">' + esc((t.artist || '') + (t.album ? ' · ' + t.album : '')) + '</span></span>' +
+      favHeart(t.id) +
       '<span class="m-song-d">' + fmtTime(t.duration) + '</span></button>';
   }
 
@@ -1374,6 +1546,31 @@
       h += '<div class="m-lib-more" data-mact="lib-more">还有 ' + (S.lib.total - items.length) + ' 首没装进来 · 点这里再装 ' + LIB_PAGE + ' 首</div>';
     } else {
       h += '<div class="m-lib-tip">全部 ' + S.lib.total + ' 首都已装好 · 开「随机」时不用装完，服务器直接给随机曲目</div>';
+    }
+    e.list.innerHTML = h;
+    resetRowMark();
+  }
+
+  /* 「我喜欢」：服务器账号里那个收藏歌单的列表，每行心形是实心（再点一下就是移出） */
+  function paintFav() {
+    var e = S.el;
+    var list = S.tracks || [];
+    if (!list.length) {
+      e.list.innerHTML = '<div class="m-empty">还没有喜欢的歌<br><span class="m-empty-d">在歌单或「所有歌曲」里点歌名右边的 ♥，收藏的歌会写进你账号的「喜欢」歌单（换平板也还在）</span></div>';
+      resetRowMark();
+      return;
+    }
+    var h = '';
+    var curId = S.track ? String(S.track.id) : '';
+    for (var i = 0; i < list.length; i++) {
+      var t = list[i];
+      var on = String(t.id) === curId ? ' on' : '';
+      h += '<button class="m-song' + on + '" data-mact="track" data-idx="' + i + '">' +
+        '<span class="m-song-ico">' + svg(on && S.audio && !S.audio.paused ? 'wave' : 'play') + '</span>' +
+        '<span class="m-song-main"><span class="m-song-t">' + esc(t.title || '未命名') + '</span>' +
+        '<span class="m-song-a">' + esc((t.artist || '') + (t.album ? ' · ' + t.album : '')) + '</span></span>' +
+        favHeart(t.id) +
+        '<span class="m-song-d">' + fmtTime(t.duration) + '</span></button>';
     }
     e.list.innerHTML = h;
     resetRowMark();
@@ -1635,7 +1832,7 @@
   function paintCrumb() {
     var e = S.el;
     if (!e.crumb) return;
-    e.crumb.innerHTML = (S.view !== 'pl' ? '<button class="m-back" data-mact="back">' + svg('back') + '<span>' + esc(S.view === 'queue' ? (libMode() ? '所有歌曲' : (playlistName() || '歌单')) : '歌单') + '</span></button>' : '') +
+    e.crumb.innerHTML = (S.view !== 'pl' ? '<button class="m-back" data-mact="back">' + svg('back') + '<span>' + esc(S.view === 'queue' ? sourceLabel() : '歌单') + '</span></button>' : '') +
       '<span class="m-crumb-t">' + esc(S.crumb) + '</span>';
   }
 
@@ -1648,6 +1845,7 @@
         '<span class="m-song-ico">' + svg(S.audio && !S.audio.paused ? 'wave' : 'play') + '</span>' +
         '<span class="m-song-main"><span class="m-song-t">' + esc(S.track.title || '未命名') + '</span>' +
         '<span class="m-song-a">' + esc((S.track.artist || '') + (S.track.album ? ' · ' + S.track.album : '')) + '</span></span>' +
+        favHeart(S.track.id) +
         '<span class="m-song-d">正在播</span></button>';
       var shown = Math.min(S.randQ.length, 40);
       for (var q = 0; q < shown; q++) {
@@ -1655,6 +1853,7 @@
         hq += '<button class="m-song" data-mact="noop"><span class="m-song-ico"><span class="m-q-n">' + (q + 1) + '</span></span>' +
           '<span class="m-song-main"><span class="m-song-t">' + esc(rt.title || '未命名') + '</span>' +
           '<span class="m-song-a">' + esc((rt.artist || '') + (rt.album ? ' · ' + rt.album : '')) + '</span></span>' +
+          favHeart(rt.id) +
           '<span class="m-song-d">' + fmtTime(rt.duration) + '</span></button>';
       }
       if (!shown) hq += '<div class="m-lib-tip">这批随机曲目快用完了，会自动再拿一批</div>';
@@ -1675,6 +1874,7 @@
         '<span class="m-song-ico">' + ico + '</span>' +
         '<span class="m-song-main"><span class="m-song-t">' + esc(t.title || '未命名') + '</span>' +
         '<span class="m-song-a">' + esc((t.artist || '') + (t.album ? ' · ' + t.album : '')) + '</span></span>' +
+        favHeart(t.id) +
         '<span class="m-song-d">' + fmtTime(t.duration) + '</span></button>';
     }
     e.list.innerHTML = h;
@@ -1693,6 +1893,7 @@
     }
     if (S.view === 'queue') { paintQueue(); return; }
     if (S.view === 'lib') { paintLib(); return; }
+    if (S.view === 'fav') { paintFav(); return; }
     if (S.tracks) {
       if (!S.tracks.length) { e.list.innerHTML = '<div class="m-empty">这个歌单是空的</div>'; return; }
       var h = '';
@@ -1704,6 +1905,7 @@
           '<span class="m-song-ico">' + svg(on && S.audio && !S.audio.paused ? 'wave' : 'play') + '</span>' +
           '<span class="m-song-main"><span class="m-song-t">' + esc(t.title || '未命名') + '</span>' +
           '<span class="m-song-a">' + esc((t.artist || '') + (t.album ? ' · ' + t.album : '')) + '</span></span>' +
+          favHeart(t.id) +
           '<span class="m-song-d">' + fmtTime(t.duration) + '</span></button>';
       }
       e.list.innerHTML = h;
@@ -1714,7 +1916,15 @@
       e.list.innerHTML = '<div class="m-empty">还没有歌单<br><span class="m-empty-d">在音乐服务里建一个歌单，这里就会出现</span></div>';
       return;
     }
-    var out = '<button class="m-pl" data-mact="all">' +
+    var out = '';
+    if (favSupported()) {
+      out += '<button class="m-pl" data-mact="fav-open">' +
+        '<span class="m-pl-cover">' + svg(favCount() ? 'heartFill' : 'heart') + '</span>' +
+        '<span class="m-pl-main"><span class="m-pl-n">我喜欢</span>' +
+        '<span class="m-pl-c">' + (favSet ? favCount() + ' 首 · 存在 ' + (favName || '账号') + ' 里' : '点歌名右边的 ♥ 收藏歌曲') + '</span></span>' +
+        '<span class="m-pl-go">' + svg('chev') + '</span></button>';
+    }
+    out += '<button class="m-pl" data-mact="all">' +
       '<span class="m-pl-cover">' + svg('music') + '</span>' +
       '<span class="m-pl-main"><span class="m-pl-n">所有歌曲</span>' +
       '<span class="m-pl-c">' + (S.lib.total ? S.lib.total + ' 首 · 分页加载' : '全部歌单里的歌') + '</span></span>' +
@@ -1761,6 +1971,7 @@
     paintNow();
     paintProgress();
     if (!S.ready && !S.loading) loadPlaylists();
+    if (favSupported() && !favSet && !favBusy) loadFav(null);   /* 心形要有实心态：开页时取一次账号收藏 */
     startTick();
     act('open');
   }
@@ -1906,10 +2117,21 @@
     }
     if (a === 'back') {
       if (S.view === 'queue') {
-        S.view = S.tracks ? 'tracks' : 'pl';
-        S.crumb = S.view === 'tracks' ? (playlistName() || '歌单') : '歌单';
+        S.view = favMode() ? 'fav' : (S.tracks ? 'tracks' : 'pl');
+        S.crumb = favMode() ? '我喜欢' : (S.view === 'tracks' ? (playlistName() || '歌单') : '歌单');
         paintCrumb(); paintList(); paintTransport();
       } else backToPlaylists();
+      return;
+    }
+    if (a === 'fav-open') { openFavView(); return; }
+    if (a === 'fav') {
+      var fid = btn.getAttribute('data-id');
+      toggleFav(trackById(fid) || { id: fid }, function (err, ok) {
+        if (err) return;
+        repaintHeart(btn, fid);
+        if (favMode()) { S.tracks = favList.slice(); paintList(); }   /* 收藏列表里点掉：这一行要消失 */
+        act('music fav ' + (ok ? 'on' : 'off') + ' id=' + fid);
+      });
       return;
     }
     if (a === 'pl') { openPlaylist(btn.getAttribute('data-id')); return; }
@@ -2146,7 +2368,22 @@
     /* 待机页用：当前歌词与当前行号，纯只读（不改播放状态、不触发拉取） */
     lyrics: function () { return S.lyrics; },
     lyricLine: function () { return lyricIdxNow(); },
+    /* 喜欢（收藏）：服务器账号里的「喜欢」歌单；测试 / CDP 探针用同一套入口 */
+    favs: function () { return favList.slice(); },
+    favCount: favCount,
+    favReady: function () { return !!favSet; },
+    favSupported: favSupported,
+    favPlaylistName: function () { return favName; },
+    isFav: isFav,
+    toggleFav: toggleFav,
+    loadFav: loadFav,
+    openFav: openFavView,
     openAll: function () { open(true); openLibView(); },
-    libInfo: function () { return { view: S.view, src: S.src, loaded: S.lib.items.length, total: S.lib.total, randLeft: S.randQ.length, hist: S.hist.length } }
+    libInfo: function () { return { view: S.view, src: S.src, loaded: S.lib.items.length, total: S.lib.total, randLeft: S.randQ.length, hist: S.hist.length, fav: favCount() } },
+    /* 测试桩：换掉后端（收藏走服务器，测试里没有真服务器）；只给 tools/test-ui.js 用 */
+    __test: {
+      setBackend: function (b) { S.backend = b; favSet = null; favList = []; favBusy = false; favName = ''; },
+      favState: function () { return { ready: !!favSet, count: favCount(), list: favList.slice(), name: favName }; }
+    }
   };
 })();
