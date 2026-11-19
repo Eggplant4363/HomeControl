@@ -77,7 +77,7 @@ powershell -ExecutionPolicy Bypass -File tools\deploy.ps1 -SkipApk   # 只改了
 # 构建（路径由 tools\env.ps1 解析：SDK / build-tools / android.jar / JDK / adb，可用 HC_ANDROID_SDK 等环境变量覆盖）
 powershell -ExecutionPolicy Bypass -File .\tools\build.ps1                                  # debug 变体，含假 HA + 调试开关
 powershell -ExecutionPolicy Bypass -File .\tools\build.ps1 -Variant release -OutName homecontrol-release.apk   # 正式包：不含 MockHaServer
-powershell -ExecutionPolicy Bypass -File .\tools\build.ps1 -VersionCode 95 -VersionName "0.7.58"   # 发新包：版本号 +1（默认值就是当前版本 90 / 0.7.53）
+powershell -ExecutionPolicy Bypass -File .\tools\build.ps1 -VersionCode 95 -VersionName "0.7.58"   # 发新包：版本号 +1（默认值就是当前版本 94 / 0.7.57）
 
 # 安装
 adb install -r .\dist\homecontrol.apk
