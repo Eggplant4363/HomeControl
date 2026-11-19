@@ -69,14 +69,25 @@ const check = (ok, name, extra) => {
   check(await evalJs(`!!document.querySelector('[data-act="edit-add"]')`), '空网格里有「＋ 添加卡片」入口');
   await shot('panel-edit-empty.png');
   await click('[data-act="edit-add"]');
-  check(await waitFor(`!!document.querySelector('.sheet.show .ed-row')`), '「+ 添加卡片」打开可选列表');
-  const listRows = await evalJs(`document.querySelectorAll('.sheet.show .ed-row').length`);
-  check(listRows > 0, '列表里列出了可选设备（' + listRows + ' 个）');
-  /* 从列表挑 4 个：每点一次面板会重排，所以按「首个未勾选的行」点，不按固定下标 */
+  check(await waitFor(`!!document.querySelector('.sheet.show .ed-dev')`), '「+ 添加卡片」打开设备列表（一级）');
+  const listRows = await evalJs(`document.querySelectorAll('.sheet.show .ed-dev').length`);
+  check(listRows > 0, '一级列出了设备（' + listRows + ' 台）');
+  check((await evalJs(`document.querySelectorAll('.sheet.show .ed-row').length`)) === 0, '一级不直接铺实体行');
+  /* 两级菜单：点第一台设备进二级，再从它的实体里挑 4 个；不够就返回换下一台 */
+  await click('.sheet.show .ed-dev');
+  check(await waitFor(`!!document.querySelector('.sheet.show .ed-row')`), '点设备进二级：列出该设备的实体');
+  check(await evalJs(`!!document.querySelector('[data-act="add-back"]')`), '二级有「返回设备」按钮');
   for (let i = 0; i < 4; i++) {
     const hit = await evalJs(`(function(){var r=document.querySelectorAll('.sheet.show .ed-row');for(var k=0;k<r.length;k++){if(r[k].className.indexOf(' on')<0){r[k].click();return k+1;}}return 0;})()`);
-    if (!hit) { console.log('  （第 ' + (i + 1) + ' 次没找到未勾选的行）'); }
+    if (hit) { await sleep(250); continue; }
+    /* 这台设备的实体都勾完了：返回一级，进下一台没进过的设备 */
+    await click('[data-act="add-back"]');
     await sleep(250);
+    const dev = await evalJs(`(function(){var r=document.querySelectorAll('.sheet.show .ed-dev');for(var k=0;k<r.length;k++){var n=(r[k].querySelector('.ed-id')||{}).textContent||'';if(n.indexOf('0 / ')<0)continue;r[k].click();return k+1;}return 0;})()`);
+    if (!dev) { console.log('  （第 ' + (i + 1) + ' 次没有可加的实体了）'); break; }
+    await waitFor(`!!document.querySelector('.sheet.show .ed-row')`);
+    await sleep(200);
+    i--;
   }
   const picked = await evalJs(`document.querySelectorAll('.grid .tile[data-entity]').length`);
   check(picked === 4, '挑了 4 个 → 网格里出现 4 张卡（实际 ' + picked + '）');

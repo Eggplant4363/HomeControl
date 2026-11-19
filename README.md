@@ -68,7 +68,7 @@ powershell -ExecutionPolicy Bypass -File tools\deploy.ps1 -SkipApk   # 只改了
 
 它会依次做：adb 在线检查（离线时直接告诉你「长按电源键 10 秒」而不是抛异常）→ 装 APK → 推 `panel\` 到 `/sdcard/HomeControl/panel/` → 改写 `url.txt` → force-stop + 启动 → 校验 `page finished` / 无脚本错误 / 前台是壳 App，最后打印 DEPLOY OK。
 
-版本号随构建更新：`versionName 0.7.57` / `versionCode 94`（`build.ps1` 的默认值就是当前版本。**约定：每次改动后都发一次新版本，迭代尽可能小**——versionCode +1、versionName 只进补丁位，如 `-VersionCode 95 -VersionName "0.7.58"`，并同步改这一行，不用再写一次性升版本脚本——装到已装更高 versionCode 的设备上会 `INSTALL_FAILED_VERSION_DOWNGRADE`），诊断页第一行就能看到「版本 0.7.57 · MI PAD 2」。
+版本号随构建更新：`versionName 0.7.58` / `versionCode 95`（`build.ps1` 的默认值就是当前版本。**约定：每次改动后都发一次新版本，迭代尽可能小**——versionCode +1、versionName 只进补丁位，如 `-VersionCode 96 -VersionName "0.7.59"`，并同步改这一行，不用再写一次性升版本脚本——装到已装更高 versionCode 的设备上会 `INSTALL_FAILED_VERSION_DOWNGRADE`），诊断页第一行就能看到「版本 0.7.58 · MI PAD 2」。
 
 面板把自己也注册进 Home Assistant（0.7.9）：走 `POST /api/states/<entity_id>`（实测 201，不存在就新建，不需要 MQTT），每分钟报一次 `sensor.homecontrol_panel`（在线状态、型号、App 版本、IP/SSID、皮肤、电量、充电、`last_seen`）、`binary_sensor.homecontrol_panel_connected`、`sensor.homecontrol_panel_battery`、`binary_sensor.homecontrol_panel_charging`、`switch.homecontrol_panel_dark_mode`。那个开关是双向的：面板写自己的皮肤，HA 里把开关拨了，面板跟着换皮肤（`selfWritten` 用来区分「HA 那边改了」和「我们自己写的」，不会自己跟自己打架）。注意 HA 的 REST 建的是实体，不是设备注册表里的设备，所以在 HA 界面上它们归在「未分配设备」下。
 ## 构建与部署
@@ -77,7 +77,7 @@ powershell -ExecutionPolicy Bypass -File tools\deploy.ps1 -SkipApk   # 只改了
 # 构建（路径由 tools\env.ps1 解析：SDK / build-tools / android.jar / JDK / adb，可用 HC_ANDROID_SDK 等环境变量覆盖）
 powershell -ExecutionPolicy Bypass -File .\tools\build.ps1                                  # debug 变体，含假 HA + 调试开关
 powershell -ExecutionPolicy Bypass -File .\tools\build.ps1 -Variant release -OutName homecontrol-release.apk   # 正式包：不含 MockHaServer
-powershell -ExecutionPolicy Bypass -File .\tools\build.ps1 -VersionCode 95 -VersionName "0.7.58"   # 发新包：版本号 +1（默认值就是当前版本 94 / 0.7.57）
+powershell -ExecutionPolicy Bypass -File .\tools\build.ps1 -VersionCode 96 -VersionName "0.7.59"   # 发新包：版本号 +1（默认值就是当前版本 95 / 0.7.58）
 
 # 安装
 adb install -r .\dist\homecontrol.apk
@@ -411,7 +411,7 @@ WebSocket 帧统计）。注意这是模拟器数字，Chromium 57 真机还没�
 要让升级真正可用，还需要两件事：
 
 - **发一个 release**：tag 用 `v0.7.14` 这种格式，附件上传 APK（文件名任意，`.apk` 结尾即可）。
-  `tools/release.ps1` 就是干这个的（走 GitHub API，需要 `GITHUB_TOKEN` 环境变量——用 git 凭据管理器里那份即可：`$env:GITHUB_TOKEN` 从 `git credential fill` 取）。每次改动发新 APK 时都要跟着发一次 release：`.\tools\release.ps1 -Version 0.7.55 -Notes "…"`（release 已到 v0.7.55
+  `tools/release.ps1` 就是干这个的（走 GitHub API，需要 `GITHUB_TOKEN` 环境变量——用 git 凭据管理器里那份即可：`$env:GITHUB_TOKEN` 从 `git credential fill` 取）。每次改动发新 APK 时都要跟着发一次 release：`.\tools\release.ps1 -Version 0.7.55 -Notes "…"`（release 已到 v0.7.58
 
 ## MQTT 节点（0.7.23+，实测 10.10.1.8 的 EMQX）
 
@@ -425,6 +425,7 @@ WebSocket 帧统计）。注意这是模拟器数字，Chromium 57 真机还没�
 - **先发 discovery，再发 availability**（0.7.34）：实体是在 HA 处理 discovery 的那一刻才创建的，之前发的 `online` 会被丢掉，实体一直停在 `unavailable`（实测）。面板现在 connectOnce 里是 `publishDiscovery(); publish(availTopic(), "online", false);`，重连时 JS 侧还会清 `lastSent` 把当前状态补发一次。
 - **HA 按钮直通音乐页**（0.7.37 起）：`tools/ha-press.js button.<…>_music_play / _pause / _stop` 三个键实测直达面板（logcat `HomeMqtt: cmd … <- play`）。「播放」早年走 `MusicUI.togglePlay()`，冷启动没选歌时只弹一句「先去右侧歌单里点一首」，所以 HA 按下去没声音——现在走新增的 `MusicUI.playDefault()`（有歌就续播、无歌就打开音乐页拉全库第一页并播第一首；注意 `loadLibPage()` 在登录完成前会因 `S.backend` 为空静默返回，所以 playDefault 的轮询里每 300ms 重喊一次 `openLibView()`）。「停止」也从「暂停」改成 `MusicUI.stopPlay()`：停音频、清 `S.track`、回到「未在播放」，sensor 变 `idle`（暂停仍是 `paused`）。
 - **电量 / 音量按钮 / slug 必须与 Java 一致**（0.7.45）：新增 `sensor.homecontrol_panel_<slug>_battery`（`value_template: {{ value_json.battery }}`、`device_class: battery`、单位 %；**电量实体只由 MQTT 发**，`app.js` 的 REST `selfPost` 不再写同一个 entity_id——两个来源抢一个 id 会被 HA 静默拒掉后到的那个，实体名字/属性会来回跳）与 `button.…_music_volume_up` / `button.…_music_volume_down`（`payload_press: volume_up/volume_down`，步长 5%，钳在 0–100）。实测 `volume_up` 93→98（系统 `STREAM_MUSIC` 14→15/150）、`volume_down` 回 93，HA 的 number 同步。**同时修掉一个致命的不一致**：`panel/js/mqtt.js` 的 `slug()` 原来只按设备型号取（`sdk_gphone_x86_64`），而 Java `MqttClient.slug` 取的是 `mqtt.json` 的 `name`——两者不一致时 discovery/availability 发到 A 主题、state 发到 B 主题，HA 实体永远 `unknown`（电量/音量都读不出来）。现在 JS 也先读 `mqtt.json` 的 `name`（`cfgName()`），与 Java 同源。
+- **添加卡片改两级菜单 + 放开门类过滤**（0.7.58）：以前「＋ 添加卡片」直接把实体铺成一长列，而且 `button` / `number` / `select` / `text` / `lock` 这些域、以及没写 `device_class` 的传感器会被 `layout.js` 直接丢掉，HA 里明明有这台设备、面板上却永远搜不到（典型：MQTT 或 HASS.Agent 注册出来的按钮/数值实体）。现在 ①`typeOf()` 认全这些域（`valve`/`vacuum`/`input_switch` 归开关、`input_number` 归数值…），`TYPE_CAP` 给每类单独限额，默认房间不会再被上百个充电保护参数淹掉，但**没有任何实体被永久过滤掉**——`layout.build()` 额外返回 `all[]` 全量候选；②「＋ 添加卡片」变成两级：先按设备列（`17 / 21 个实体`、整台已加的带 ✓），点进某台设备再勾它下面的具体实体，底部「返回设备 / 本设备全部加入(去掉) / 完成」；一级底部仍是「加本房间全部 / 完成」。③被过滤掉的实体勾上后会真插进对应房间（`injectTile()` 按 `dev_id` 找到设备、按 `areaName` 找房间，落在「其他」），并记进 `hc.edit.extra`，布局重建后自动补回。新增类型也能点：`button` 按一下发 `press`、`lock` 一发 lock/unlock、`number`/`select`/`text` 显示当前值。顺手修掉一个老坑：`refreshSheet(html)` 被后定义的同名 `refreshSheet()`（实体弹层用）覆盖，导致所有「换一屏弹层」的调用都是空操作——改名为 `paintSheet(html)`。回归：`tools/test-ui.js`（581 checks）、`tools/e2e-settings.js` 两级菜单 4 项；真机截图 `docs/screens/panel-add-devices.png`、`docs/screens/panel-add-entities.png`。
 - **中控屏自己的电量卡**（0.7.56）：面板通过 MQTT 注册进 HA 后，`sensor.homecontrol_panel_<slug>_battery` 以前被 `layout.js` 的「传感器必须 device_class∈白名单」挡掉（battery 不在白名单，因为全屋几百个电池卡会挤掉房间里的温湿度）。现在对「中控屏自己」这一个电量单独放行，其它设备的电池仍然不收。回归 `tools/test-ui.js` 的「布局：中控屏自己的电量收进卡片」等 8 条；截图 `docs/screens/panel-own-battery.png`。- **设备列表刷新**（0.7.54）：HA 里新加的设备（或改了名字/房间）以前要整页重载才出现。现在设置 →「连接」→「设备列表」有 **刷新设备列表** 按钮，点一下重拉一次 `get_states` + 三个 registry 再重建布局，面板其它状态（房间选择、滚动位置）都留着；下面还有 **定时刷新** 可选 关 / 5 / 15 / 30 分钟（默认 15）。定时器在熄屏/后台、编辑卡片、弹层打开时会自己跳过，不打断人也不白耗电。实现：`backend.js` 新增 `HABackend.prototype.reloadStates(cb)`（WS 在线走 `get_states`，不在线退回 REST），`app.js` 的 `refreshEntities()` 复用 `applyAutoLayout()`。回归 `node tools/e2e-settings.js` 第 7 节、`tools/test-ui.js`；截图 `docs/screens/panel-conn-refresh.png`。
 - **歌单页「我喜欢」**（0.7.55，0.7.57 起随最新包发布）：歌单和「所有歌曲」每行右边多一个 ♥，点一下收藏、再点取消；顶部多一个「我喜欢」歌单。**收藏写进登录账号在道理鱼服务器上的「喜欢」歌单**——服务端用 `description=__system_default_favorites__` 标记那个歌单，客户端按标记找、不按名字（「不喜欢」也含「喜欢」二字会认错）；加入 `POST /api/playlists/<id>/tracks {"trackId":…}`（201）、移出 `DELETE /api/playlists/<id>/tracks/<trackId>`（204）；成员用 `GET /api/playlists/<id>/tracks?skip=&take=200` 分页读（`items[].track`）。换平板登录同一账号就是同一份收藏；服务器没有那个歌单时 ♥ 不显示。截图 `shots/v0.7.55-2026-11-19/pad5-fav-view.png`。
 - **歌单页返回按钮**（0.7.53）：进歌单后顶部那颗「返回」改成暗色幽灵胶囊（面板表面色做底、淡描边、图标 18px 与文字齐平），不再走浏览器默认的亮灰底黑字按钮——暗色界面上那颗灰胶囊格外扎眼，按下有轻微缩小反馈。截图 `shots/v0.7.53-2026-11-19/pad5-back-pill.png`。
@@ -509,7 +510,7 @@ CSS Grid 的自动排版只会横着铺（第一行第二列排在第二行第�
 ### 编辑卡片（手机桌面那套）
 
 1. 点顶栏 **✎** 进入编辑：网格只显示已添加的卡片（不会把全部设备铺出来），每张卡变成虚线框，末尾多一个 **＋ 添加卡片** 空格子。
-2. 点 **＋ 添加卡片**（编辑态没有工具条，网格末尾那个虚线格子就是入口）弹出**设备列表**，按房间分组，点一行加一张，已加的带 ✓，可反复点。
+2. 点 **＋ 添加卡片**（编辑态没有工具条，网格末尾那个虚线格子就是入口）弹出**设备列表**（一级，按设备名排，每行 `已加 / 共 个实体`，整台都加了才带 ✓），点某台设备进**二级**勾它下面的具体实体，底部有 **返回设备 / 本设备全部加入(去掉) / 完成**。被默认规则筛掉的实体（按钮、数值、选项、文本、门锁、没有 `device_class` 的传感器）也会出现在这里，勾上就真上墙。
 3. **改大小有两种**：拖卡片右下角的三角手柄（往右变宽、往下变高/变矮，松手才保存，卡片右上角实时显示 `2× · 高 2` / `1× · 半高`）；或者点中卡片后按工具条 **尺寸** 按钮，在弹层里直接选 `1×½ 半高 / 1×1 / 2×1 / 1×2 / 2×2` 五档。
 4. **换位置**：按住卡片（右下角三角手柄那块除外）拖到别的地方，手指底下的卡亮一圈、松手就插到它前面或后面；或者点中卡片后按工具条 **◀ ▶** 一次挪一位。点某张卡选中它，底部浮出工具栏：**◀ ▶** 调顺序、**尺寸 1×1** 打开尺寸弹层、**✕ 移除**；编辑期间顶栏的 ✎ 会变成蓝色 **✓**，点它就退出编辑（没有「编辑中 / 完成」那一行）。
 5. **批量选择**：编辑态顶栏 ✓ 左边多一颗「批量选择」（点过变「退出多选」）。进去以后点卡片是勾选/取消勾选，勾中的卡描浅蓝边 + 右上角蓝底 ✓；底部浮出一条 **已选 N 张卡片 / 全选 / 取消选择 / ✕ 移除 / 退出多选**，一次把勾中的卡全移除（N=0 时移除按钮是灰的）。退出编辑会自动退出多选、清掉勾选。

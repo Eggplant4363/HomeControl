@@ -341,6 +341,9 @@
     if (tile.type === 'switch') return 'plug';
     if (tile.type === 'climate') return 'snow';
     if (tile.type === 'cover') return 'curtain';
+    if (tile.type === 'lock') return 'door';
+    if (tile.type === 'button') return 'play';
+    if (tile.type === 'number' || tile.type === 'select' || tile.type === 'text') return 'list';
     if (dc === 'temperature') return 'thermo';
     if (dc === 'humidity' || dc === 'moisture') return 'drop';
     if (dc === 'battery') return 'battery';
@@ -362,6 +365,8 @@
     if (tile.type === 'light' || tile.type === 'switch' || tile.type === 'fan') return 'power';
     if (tile.type === 'scene' || tile.type === 'script') return 'scene';
     if (tile.type === 'sensor' || tile.type === 'binary_sensor' || tile.type === 'climate' || tile.type === 'cover') return 'meter';
+    if (tile.type === 'button' || tile.type === 'lock') return 'power';
+    if (tile.type === 'number' || tile.type === 'select' || tile.type === 'text') return 'meter';
     return 'idle';
   }
 
@@ -421,6 +426,16 @@
       if (st === 'unavailable') return '—';
       if (!hasPosition(attrs)) return '';
       return Math.round(num(attrs.current_position, st === 'closed' ? 0 : 100)) + '<span class="u">%</span>';
+    }
+    if (tile.type === 'button') return '';
+    if (tile.type === 'lock') {
+      if (isNa(st)) return '—';
+      return st === 'locked' ? '已锁' : (st === 'unlocking' || st === 'locking' ? '动作中' : '未锁');
+    }
+    if (tile.type === 'number' || tile.type === 'select' || tile.type === 'text') {
+      if (isNa(st)) return '—';
+      var uv = (attrs && attrs.unit_of_measurement) || '';
+      return esc(String(st)) + (uv ? '<span class="u">' + esc(uv) + '</span>' : '');
     }
     if (st === 'unavailable') return '—';
     if (binarySensor(tile)) {
@@ -1375,7 +1390,10 @@
       hidden: (o.hidden && typeof o.hidden === 'object') ? o.hidden : {},
       order: Array.isArray(o.order) ? o.order.slice() : [],
       span: (o.span && typeof o.span === 'object') ? o.span : {},
-      rows: (o.rows && typeof o.rows === 'object') ? o.rows : {}
+      rows: (o.rows && typeof o.rows === 'object') ? o.rows : {},
+      /* 手动加回面板的实体（自动布局默认不选的，例如按钮、无 device_class 的传感器）：
+         自动布局每次重建都会把 cfg.rooms 覆盖掉，所以要把这些卡记下来再补回去 */
+      extra: (o.extra && typeof o.extra === 'object') ? o.extra : {}
     };
   }
 
@@ -1747,6 +1765,40 @@
   /* ---------- 编辑模式 ---------- */
 
   /** 当前 HA 里所有可放的设备（真实模式的 registry / mock 模式的 cfg.rooms），不按「已添加」过滤 */
+  /* 「添加卡片」用的候选：优先用布局给的全量列表（连被默认规则筛掉的按钮/
+     无 device_class 的传感器也在内）；拿不到时退回房间里的卡片（测试/离线兜底）。 */
+  function pickerCards() {
+    var all = S.allTiles;
+    if (all && all.length) {
+      var seen = {}, out = [];
+      all.forEach(function (t) {
+        if (!t || !t.entity || seen[t.entity]) return;
+        seen[t.entity] = 1;
+        out.push({ tile: t, room: t.areaName || '' });
+      });
+      return out;
+    }
+    return allCards();
+  }
+
+  function pickerDevices() {
+    var list = pickerCards(), devs = [], byKey = {};
+    list.forEach(function (it) {
+      var key = String(it.tile.dev_id || '__none__');
+      if (!byKey[key]) {
+        byKey[key] = { key: key, name: key === '__none__' ? '其它设备' : (it.tile.dev || '未命名设备'), ents: [] };
+        devs.push(byKey[key]);
+      }
+      byKey[key].ents.push(it);
+    });
+    devs.sort(function (a, b) {
+      if (a.key === '__none__') return 1;
+      if (b.key === '__none__') return -1;
+      return String(a.name).localeCompare(String(b.name));
+    });
+    return devs;
+  }
+
   function allCards() {
     var out = [];
     if (S.real && !S.layoutReady) return out;
@@ -1778,7 +1830,7 @@
     writeEdit(e);
     actLog('edit all=' + (all ? list.length : 0));
     renderGrid(true);
-    if (S.sheetShow === 'edit') refreshSheet(editSheetHtml());
+    if (S.sheetShow === 'edit') paintSheet(editSheetHtml());
     else if (S.sheetShow === 'add') refreshAddRows();
   }
 
@@ -1788,7 +1840,7 @@
     actLog('edit toggle ' + entity + ' -> ' + (on ? 'on' : 'off'));
     renderGrid(true);
     /* 只有编辑帮助面板打开时才重写它；否则会把选中的卡片工具条/内容顶掉 */
-    if (S.sheetShow === 'edit') refreshSheet(editSheetHtml());
+    if (S.sheetShow === 'edit') paintSheet(editSheetHtml());
   }
 
   /** 卡片在「当前顺序」里前后挪一格（跨房间也按顺序数组来，切列数不会乱） */
@@ -1810,7 +1862,7 @@
     writeEdit(e);
     actLog('edit move ' + entity + ' ' + dir);
     renderGrid(true);
-    refreshSheet(editSheetHtml());
+    paintSheet(editSheetHtml());
   }
 
   /** 拖放落位：把 entity 插到 target 前面/后面（纯函数，离线单测直接测）
@@ -1845,7 +1897,7 @@
     writeEdit(e);
     actLog('edit drop ' + entity + (after ? ' after ' : ' before ') + target);
     renderGrid(true);
-    if (S.sheetShow === 'edit') refreshSheet(editSheetHtml());
+    if (S.sheetShow === 'edit') paintSheet(editSheetHtml());
     return true;
   }
 
@@ -1859,51 +1911,63 @@
     writeEdit(e);
     actLog('edit span ' + entity + ' ' + v);
     renderGrid(true);
-    refreshSheet(editSheetHtml());
+    paintSheet(editSheetHtml());
   }
 
   /* ---------- 添加卡片（类似手机桌面：点「+」从列表里挑） ---------- */
+  function entTypeText(tile) {
+    var T = { light: '灯', switch: '开关', cover: '窗帘', climate: '空调', camera: '摄像头',
+      sensor: '传感器', button: '按钮', lock: '门锁', number: '数值', select: '选项', text: '文本' };
+    return T[tile.type] || tile.type || '实体';
+  }
+
   function addSheetHtml() {
-    var list = allCards();
-    var h = '<div class="cfg-head">添加卡片</div>' +
-      '<div class="cfg-desc">按设备分组：点设备名整组加入 / 移除，点下面单条只加那一条。加完点「完成」。</div>';
-    if (!list.length) {
-      h += '<div class="cfg-desc">' + (S.real && !S.layoutReady ? '正在读取设备…' : '还没有读到任何设备（先连上 Home Assistant）') + '</div>';
-    } else {
-      /* 按设备分组（dev_id 相同算一台设备；没有设备的实体归到「其它设备」） */
-      var devs = [], byKey = {};
-      list.forEach(function (it) {
-        var key = it.tile.dev_id || '__none__';
-        if (!byKey[key]) {
-          byKey[key] = { key: key, name: key === '__none__' ? '其它设备' : (it.tile.dev || '未命名设备'), ents: [] };
-          devs.push(byKey[key]);
-        }
-        byKey[key].ents.push(it);
-      });
-      devs.sort(function (a, b) {
-        if (a.key === '__none__') return 1;
-        if (b.key === '__none__') return -1;
-        return String(a.name).localeCompare(String(b.name));
-      });
-      h += '<div class="ed-list">';
-      devs.forEach(function (d) {
-        var allOn = d.ents.every(function (it) { return cardVisible(it.tile.entity); });
-        h += '<button class="ed-dev' + (allOn ? ' on' : '') + '" data-act="add-device:' + esc(d.key) + '">' +
-          '<span class="ed-box">' + (allOn ? '✓' : '') + '</span>' +
-          '<span class="ed-name">' + esc(d.name) + '</span>' +
-          '<span class="ed-id">' + d.ents.length + ' 个实体</span></button>';
-        d.ents.forEach(function (it) {
-          var on = cardVisible(it.tile.entity);
-          h += '<button class="ed-row ed-sub' + (on ? ' on' : '') + '" data-act="add-toggle:' + esc(it.tile.entity) + '">' +
+    var devs = pickerDevices();
+    var cur = S.addDev == null ? '' : String(S.addDev);
+    var h = '';
+    if (!cur) {
+      /* 一级：设备列表。点某台设备进二级，勾选它下面具体哪些实体上墙 */
+      h += '<div class="cfg-head">添加卡片</div>' +
+        '<div class="cfg-desc">先选设备，再选这台设备上哪些实体要上墙。' + devs.length + ' 台设备。</div>';
+      if (!devs.length) {
+        h += '<div class="cfg-desc">' + (S.real && !S.layoutReady ? '正在读取设备…' : '还没有读到任何设备（先连上 Home Assistant）') + '</div>';
+      } else {
+        h += '<div class="ed-list">';
+        devs.forEach(function (d) {
+          var on = d.ents.filter(function (it) { return cardVisible(it.tile.entity); }).length;
+          h += '<button class="ed-dev' + (on === d.ents.length && on > 0 ? ' on' : '') + '" data-act="add-open:' + esc(d.key) + '">' +
             '<span class="ed-box">' + (on ? '✓' : '') + '</span>' +
-            '<span class="ed-name">' + esc(displayName(it.tile)) + '</span>' +
-            '<span class="ed-id">' + esc(it.tile.entity) + '</span></button>';
+            '<span class="ed-name">' + esc(d.name) + '</span>' +
+            '<span class="ed-id">' + on + ' / ' + d.ents.length + ' 个实体</span></button>';
         });
-      });
-      h += '</div>';
+        h += '</div>';
+      }
+      h += '<div class="cfg-actions">' +
+        '<button class="btn" data-act="add-room">加本房间全部</button>' +
+        '<button class="btn primary" data-act="add-done">完成</button>' +
+        '</div>';
+      return h;
     }
+    /* 二级：这台设备下的实体勾选 */
+    var d = null;
+    devs.forEach(function (x) { if (String(x.key) === cur) d = x; });
+    if (!d) { S.addDev = ''; return addSheetHtml(); }
+    var onCount = d.ents.filter(function (it) { return cardVisible(it.tile.entity); }).length;
+    h += '<div class="cfg-head">' + esc(d.name) + '</div>' +
+      '<div class="cfg-desc">' + d.ents.length + ' 个实体，已选 ' + onCount + ' 个。点一行加/去掉，加完点「完成」。</div>' +
+      '<div class="ed-list">';
+    d.ents.forEach(function (it) {
+      var on = cardVisible(it.tile.entity);
+      var meta = entTypeText(it.tile) + (it.tile.unit ? ' · ' + it.tile.unit : '');
+      h += '<button class="ed-row ed-sub' + (on ? ' on' : '') + '" data-act="add-toggle:' + esc(it.tile.entity) + '">' +
+        '<span class="ed-box">' + (on ? '✓' : '') + '</span>' +
+        '<span class="ed-name">' + esc(displayName(it.tile)) + '</span>' +
+        '<span class="ed-id">' + esc(meta) + '</span></button>';
+    });
+    h += '</div>';
     h += '<div class="cfg-actions">' +
-      '<button class="btn" data-act="add-room">加本房间全部</button>' +
+      '<button class="btn" data-act="add-back">返回设备</button>' +
+      '<button class="btn" data-act="add-device:' + esc(d.key) + '">' + (onCount === d.ents.length ? '本设备全部去掉' : '本设备全部加入') + '</button>' +
       '<button class="btn primary" data-act="add-done">完成</button>' +
       '</div>';
     return h;
@@ -1994,6 +2058,7 @@
 
   function openAddSheet() {
     S.sheetShow = 'add';
+    S.addDev = '';
     S.sheetItem = null;
     S.sheetEntity = null;
     el.sheetInner.innerHTML = addSheetHtml();
@@ -2010,6 +2075,11 @@
   function setCardVisible(entity, on) {
     var e = editState();
     if (on) {
+      /* 布局默认没选中的实体：先插进房间，再记住它，这样刷新设备列表也不会丢 */
+      if (!tileByEntity(entity) && S.allTiles && S.allTiles.length) {
+        if (!injectTile(entity)) { toast('这个实体不在候选列表里，先刷新设备列表'); return e; }
+        e.extra[entity] = 1;
+      }
       delete e.hidden[entity];
       e.added[entity] = 1;
       var ord = e.order ? e.order.slice() : [];
@@ -2017,6 +2087,7 @@
       e.order = ord;
     } else {
       delete e.added[entity];
+      delete e.extra[entity];
       e.hidden[entity] = 1;
     }
     writeEdit(e);
@@ -2028,7 +2099,7 @@
    *  scrollTop 归零——用户滚到列表下面点一台设备，列表「自己跳回顶部」，
    *  没法连着往下挑。打开新弹层才回顶部（open* 里显式 scrollTop=0），
    *  中途重画一律走这里。 */
-  function refreshSheet(html) {
+  function paintSheet(html) {
     if (!el.sheetInner) return;
     var innerTop = el.sheetInner.scrollTop;
     var lst = el.sheetInner.querySelector('.ed-list');
@@ -2054,7 +2125,10 @@
     }
     var devs = el.sheetInner.querySelectorAll('.ed-dev');
     for (var j = 0; j < devs.length; j++) {
-      var key = (devs[j].getAttribute('data-act') || '').slice(11);
+      var act0 = devs[j].getAttribute('data-act') || '';
+      /* 一级的每一行是一条进入设备的按钮（add-open:），统计的是「已选/总数」文字，重画整块更省事 */
+      if (act0.indexOf('add-open:') === 0) { paintSheet(addSheetHtml()); return; }
+      var key = act0.slice(11);
       var ents = deviceEntities(key);
       var allOn = ents.length > 0 && ents.every(cardVisible);
       devs[j].className = devs[j].className.replace(/\s*\bon\b/g, '') + (allOn ? ' on' : '');
@@ -2074,7 +2148,7 @@
 
   /** 某台设备（dev_id）下所有可显示实体的 id 列表；无设备的实体归「__none__」 */
   function deviceEntities(key) {
-    var list = allCards(), ents = [];
+    var list = pickerCards(), ents = [];
     list.forEach(function (it) {
       if ((it.tile.dev_id || '__none__') === key) ents.push(it.tile.entity);
     });
@@ -2164,7 +2238,7 @@
     writeEdit(e);
     actLog('edit reset');
     renderGrid(true);
-    if (S.sheetShow === 'edit') refreshSheet(editSheetHtml());
+    if (S.sheetShow === 'edit') paintSheet(editSheetHtml());
   }
 
   /** 编辑模式下的工具条（在网格上方，不占卡片位置） */
@@ -2215,7 +2289,7 @@
     writeEdit(e);
     actLog('edit tab on ' + r.id + ' +' + n);
     renderGrid(true);
-    if (S.sheetShow === 'edit') refreshSheet(editSheetHtml());
+    if (S.sheetShow === 'edit') paintSheet(editSheetHtml());
     toast('已添加「' + r.name + '」的 ' + n + ' 张卡');
   }
 
@@ -2233,7 +2307,7 @@
     writeEdit(e);
     actLog('edit tab off ' + r.id + ' -' + n);
     renderGrid(true);
-    if (S.sheetShow === 'edit') refreshSheet(editSheetHtml());
+    if (S.sheetShow === 'edit') paintSheet(editSheetHtml());
     toast('已移除「' + r.name + '」的 ' + n + ' 张卡');
   }
 
@@ -2771,11 +2845,40 @@
     toast((on ? '已启用 · ' : '已禁用 · ') + ((tile && displayName(tile)) || id));
   }
 
+  /* 按钮域：按一下执行（button.press / input_button.press） */
+  function pressButton(id, tile) {
+    var name = (tile && displayName(tile)) || id;
+    actLog('press ' + id);
+    callService(id.split('.')[0], 'press', { entity_id: id }).then(function () {
+      toast('已按下 · ' + name);
+    }, function () {
+      toast('按下失败 · ' + name);
+    });
+  }
+
+  /* 门锁：锁着就开、开着就锁 */
+  function lockToggle(id, tile) {
+    var st = stateOf(id);
+    if (isNa(st)) { toast('设备离线，无法操作'); return; }
+    var name = (tile && displayName(tile)) || id;
+    var unlock = st === 'locked';
+    actLog('lock ' + id + ' -> ' + (unlock ? 'unlock' : 'lock'));
+    patch(id, unlock ? 'unlocking' : 'locking', null);
+    callService('lock', unlock ? 'unlock' : 'lock', { entity_id: id }).then(function () {
+      toast((unlock ? '已开锁 · ' : '已上锁 · ') + name);
+    }, function () {
+      patch(id, st, null);
+      toast('操作失败 · ' + name);
+    });
+  }
+
   function primary(item) {
     var tile = item.tile;
     if (prefs().tap === 'sheet') return openSheet(item);
     if (isAuto(tile)) triggerAutomation(tile.entity, tile);
     else if (tile.type === 'light' || tile.type === 'switch') toggle(tile.entity, tile);
+    else if (tile.type === 'button') pressButton(tile.entity, tile);
+    else if (tile.type === 'lock') lockToggle(tile.entity, tile);
     else openSheet(item);
   }
 
@@ -3811,6 +3914,44 @@ function bindDim() {
     return ha;
   }
 
+  /* 自动布局重建之后，把用户手动加回的卡补回房间（不然每次刷新设备列表就被清掉） */
+  function applyExtraTiles() {
+    var ex = editState().extra || {};
+    for (var id in ex) {
+      if (!ex[id] || tileByEntity(id)) continue;
+      injectTile(id);
+    }
+  }
+
+  /* 这颗实体该放哪个房间：优先它所在区域对应的房间，没有就进「其他」 */
+  function roomForTile(t) {
+    var want = (t && t.areaName) || '';
+    var i, r;
+    for (i = 0; i < (cfg.rooms || []).length; i++) {
+      r = cfg.rooms[i];
+      if (want && r.name === want) return r;
+    }
+    for (i = 0; i < (cfg.rooms || []).length; i++) {
+      r = cfg.rooms[i];
+      if (r.id === 'other' || r.name === '其他') return r;
+    }
+    r = { id: 'other', name: '其他', icon: 'home', tiles: [] };
+    if (!cfg.rooms) cfg.rooms = [];
+    cfg.rooms.push(r);
+    return r;
+  }
+
+  /* 把全量候选里的某颗实体真正插进房间（它可能被布局规则默认筛掉了） */
+  function injectTile(entity) {
+    if (tileByEntity(entity)) return true;
+    var all = S.allTiles || [], t = null;
+    for (var i = 0; i < all.length; i++) { if (all[i].entity === entity) { t = all[i]; break; } }
+    if (!t) return false;
+    var room = roomForTile(t);
+    room.tiles.push({ type: t.type, entity: t.entity, name: t.name, dev: t.dev || '', dev_id: t.dev_id || '', unit: t.unit || '', dc: t.dc || '' });
+    return true;
+  }
+
   function applyAutoLayout(cb) {
     if (S.layoutBuilding) { if (cb) cb(false); return; }
     S.layoutBuilding = true;
@@ -3833,6 +3974,8 @@ function bindDim() {
       }
       if (built && built.rooms && built.rooms.length) {
         cfg.rooms = built.rooms;
+        S.allTiles = built.all || [];
+        applyExtraTiles();
         if (built.scenes && built.scenes.length) cfg.scenes = built.scenes;
         var keep = savedRoom();
         var exists = false;
@@ -4350,6 +4493,7 @@ function bindDim() {
       var actEl = closest(ev.target, null, 'data-act');
       if (!actEl) return;
       var act = actEl.getAttribute('data-act');
+      if (act.indexOf('add-open:') === 0) { S.addDev = act.slice(9); paintSheet(addSheetHtml()); return; }
       /* 二级菜单：换标签页只重建设置页（内容少，重建比逐行改省事），滚动回到顶 */
       if (act === 'settings-tab') {
         S.settingsTab = actEl.getAttribute('data-val');
@@ -4419,6 +4563,8 @@ function bindDim() {
       /* 添加卡片列表里点一行：这张卡加进去 / 拿掉（addToggle 自己重画并保住滚动，这里不再补一刀） */
       if (act.indexOf('add-toggle:') === 0) { addToggle(act.slice(11)); return; }
       if (act.indexOf('add-device:') === 0) { addDeviceToggle(act.slice(11)); return; }
+    if (act.indexOf('add-open:') === 0) { S.addDev = act.slice(9); paintSheet(addSheetHtml()); return; }
+    if (act === 'add-back') { S.addDev = ''; paintSheet(addSheetHtml()); return; }
       if (act === 'add-done') { closeSheet(); setTimeout(function () { toast('已保存'); }, 60); return; }
       if (act === 'add-room') {
         var rr = roomById(S.room);
@@ -5267,6 +5413,12 @@ function boot() {
 
   /* 供离线单测（tools\test-ui.js）取用的纯函数，不影响运行时 */
   window.__PANEL_TEST__ = {
+    pickerCards: pickerCards,
+    pickerDevices: pickerDevices,
+    addSheetHtml: addSheetHtml,
+    addSheetHtmlAt: function (key) { S.addDev = key || ''; return addSheetHtml(); },
+    injectTile: injectTile,
+    applyExtraTiles: applyExtraTiles,
     isNa: isNa, isAuto: isAuto, hasBrightness: hasBrightness, hasPosition: hasPosition,
     climateTempCaps: climateTempCaps, dualTarget: dualTarget,
     /* 动作函数也导出：tools/check-temp.js 要在真机上验「没有设定温度的空调点加减号」这条路径 */

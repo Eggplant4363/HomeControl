@@ -3,10 +3,10 @@
 (function () {
   'use strict';
 
-  var TYPE_ORDER = { camera: 0, light: 1, switch: 2, climate: 3, cover: 4, sensor: 9 };
+  var TYPE_ORDER = { camera: 0, light: 1, switch: 2, climate: 3, cover: 4, lock: 5, button: 6, number: 7, select: 8, text: 8, sensor: 9 };
   /* 每个房间每类最多放几张：真实家里 100+ 开关很常见，若只按总量截断，
      排在后面的灯/传感器会被整段切掉，墙上就只剩开关。 */
-  var TYPE_CAP = { camera: 4, light: 24, switch: 24, climate: 12, cover: 12, sensor: 12 };
+  var TYPE_CAP = { camera: 4, light: 24, switch: 24, climate: 12, cover: 12, sensor: 12, lock: 6, button: 8, number: 6, select: 6, text: 4 };
   /* 米家设备的“指示灯/屏幕亮度”这类实体不是给人操作的功能灯，墙上不该出现 */
   var NOISE_ID = /(_indicator_light|_indicator|_screen_brightness)$/;
   var NOISE_NAME = /指示灯|屏幕亮度|指示燈/;
@@ -36,6 +36,13 @@
     if (d === 'camera') return 'camera';
     if (d === 'sensor' || d === 'binary_sensor') return 'sensor';
     if (d === 'media_player') return 'media';
+    /* 以下这些以前整类被丢掉：真实的墙面上它们很常见（遥控器按钮、音量滑条、模式选择） */
+    if (d === 'button' || d === 'input_button') return 'button';
+    if (d === 'lock') return 'lock';
+    if (d === 'valve' || d === 'vacuum' || d === 'input_switch') return 'switch';
+    if (d === 'number' || d === 'input_number') return 'number';
+    if (d === 'select' || d === 'input_select') return 'select';
+    if (d === 'text' || d === 'input_text') return 'text';
     return null;
   }
 
@@ -126,6 +133,7 @@
     var rooms = {}, order = [];
     var scenes = [];
 
+    var allTiles = [];
     function pushTile(areaId, tile) {
       var key = areaId || '__none__';
       if (!rooms[key]) { rooms[key] = []; order.push(key); }
@@ -153,33 +161,42 @@
       if (!type) continue;
       if (type === 'media') continue;
 
-      if (type === 'sensor') {
-        var dc = attrs.device_class;
-        /* battery 不放进通用白名单：全屋几百个电池卡会把房间里的温湿度挤掉
-           （每个房间 sensor 上限 12）。但「中控屏自己」通过 MQTT 报回 HA 的
-           电量是想在墙上看的那一个，单独放行。 */
-        var selfBatt = selfBattId ? String(id) === selfBattId : SELF_BATT.test(String(id));
-        if (!selfBatt && (!dc || !SENSOR_CLASSES[dc])) continue;
-      }
-
-      if ((type === 'light' || type === 'switch') && (NOISE_ID.test(String(id)) || NOISE_NAME.test(shortName(id, st)))) continue;
+      var selfBatt = selfBattId ? String(id) === selfBattId : SELF_BATT.test(String(id));
 
       var rec = entById[id] || null;
-      if (isHidden(rec)) continue;
-
       var areaId = entArea[id] || null;
       var dev = (rec && rec.device_id && devName[rec.device_id]) || '';
       /* device_id 保留下来：添加卡片时按「设备」分组，而不是按房间 */
       var devId = (rec && rec.device_id) || '';
-      pushTile(areaId, {
+      var tile = {
         type: type,
         entity: id,
         name: cleanLabel(entName[id] || shortName(id, st)) || cleanLabel(shortName(id, st)),
         dev: dev,
         dev_id: devId,
+        unit: attrs.unit_of_measurement || '',
+        dc: attrs.device_class || '',
         _order: TYPE_ORDER[type] == null ? 5 : TYPE_ORDER[type],
         _sub: String(id)
+      };
+      /* 先记进全量候选（不过滤）：墙上要不要它，由「添加卡片」里的勾选决定 */
+      allTiles.push({
+        type: tile.type, entity: tile.entity, name: tile.name, dev: tile.dev || '', dev_id: tile.dev_id || '',
+        area: areaId || '', areaName: areaId ? (areaName[areaId] || '') : '其他',
+        unit: tile.unit || '', dc: tile.dc || '',
+        /* all 里只关心「本机自己那一颗电量」，其余电池/诊断实体不标 */
+        self: !!selfBatt && String(id) === String(selfBattId || '')
       });
+
+      /* —— 以下是「默认上墙」的筛选：默认卡片保持克制，免得几百个电池卡把温湿度挤掉 —— */
+      if (type === 'sensor') {
+        var dc = attrs.device_class;
+        if (!selfBatt && (!dc || !SENSOR_CLASSES[dc])) continue;
+      }
+      if ((type === 'light' || type === 'switch') && (NOISE_ID.test(String(id)) || NOISE_NAME.test(shortName(id, st)))) continue;
+      if (isHidden(rec)) continue;
+
+      pushTile(areaId, tile);
     }
 
     var out = [];
@@ -203,14 +220,14 @@
         id: key === '__none__' ? 'other' : key,
         name: name,
         icon: key === '__none__' ? 'home' : (areaIcon[key] || 'home'),
-        tiles: list.map(function (t) { return { type: t.type, entity: t.entity, name: t.name, dev: t.dev || '', dev_id: t.dev_id || '' }; })
+        tiles: list.map(function (t) { return { type: t.type, entity: t.entity, name: t.name, dev: t.dev || '', dev_id: t.dev_id || '', unit: t.unit || '', dc: t.dc || '' }; })
       });
     });
 
     // 设备多的房间排前面
     out.sort(function (a, b) { return b.tiles.length - a.tiles.length; });
 
-    return { rooms: out, scenes: scenes };
+    return { rooms: out, scenes: scenes, all: allTiles, selfBatt: selfBattId || '' };
   }
 
   window.Layout = { build: build, typeOf: typeOf, cleanLabel: cleanLabel, shortDev: shortDev };
