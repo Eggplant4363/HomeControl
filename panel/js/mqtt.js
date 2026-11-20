@@ -260,7 +260,7 @@
         setTimeout(function () { pushState(true); }, 6000);
       }
       lastStatus = json;
-      if (s.state === 'connected') toast('MQTT 已连接：HA 里会有「中控屏音乐」+ 播放/暂停/停止/上下曲/音量按钮 和「中控屏电量」');
+      if (s.state === 'connected') toast('MQTT 已连接');
       else if (s.state === 'connected-no-sub') toast('MQTT 已连接（订阅被 broker 拒：过滤器非法/ACL，HA 只能看状态）');
       else if (s.state === 'offline') toast('MQTT 连不上：' + (s.err || '重试中'));
     } catch (e) { }

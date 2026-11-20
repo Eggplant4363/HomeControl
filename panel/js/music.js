@@ -1344,7 +1344,7 @@
     S.crumb = '所有歌曲';
     paintCrumb();
     if (!S.lib.items.length) {
-      paintList('正在加载第一页…');
+      paintList();
       loadLibPage(0);
     } else paintList();
   }
@@ -1556,7 +1556,6 @@
     if (items.length < S.lib.total) {
       h += '<div class="m-lib-more" data-mact="lib-more">还有 ' + (S.lib.total - items.length) + ' 首没装进来 · 点这里再装 ' + LIB_PAGE + ' 首</div>';
     } else {
-      h += '<div class="m-lib-tip">全部 ' + S.lib.total + ' 首都已装好 · 开「随机」时不用装完，服务器直接给随机曲目</div>';
     }
     e.list.innerHTML = h;
     resetRowMark();
@@ -1567,7 +1566,7 @@
     var e = S.el;
     var list = S.tracks || [];
     if (!list.length) {
-      e.list.innerHTML = '<div class="m-empty">还没有喜欢的歌<br><span class="m-empty-d">在歌单或「所有歌曲」里点歌名右边的 ♥，收藏的歌会写进你账号的「喜欢」歌单（换平板也还在）</span></div>';
+      e.list.innerHTML = '<div class="m-empty">还没有喜欢的歌</div>';
       resetRowMark();
       return;
     }
@@ -1733,7 +1732,7 @@
       e.cover.className = 'm-cover empty';
       e.cover.innerHTML = '<span class="m-cover-ph">' + (window.ICONS ? svg('music') : '') + '</span>';
       e.song.textContent = '未在播放';
-      e.artist.textContent = '右侧点一首歌开始';
+      e.artist.textContent = '';
       e.album.textContent = '';
       e.dur.textContent = '0:00';
       e.pos.textContent = '0:00';
@@ -1835,7 +1834,6 @@
       var cls = 'm-lr' + (i === idx ? ' on' : (i === idx + 1 ? ' m-lr-soon' : ''));
       h += '<div class="' + cls + '">' + esc(L[i].text) + '</div>';
     }
-    if (!S.lyrics.synced) h += '<div class="m-lrc-tip">纯文本歌词（没有时间轴）</div>';
     e.innerHTML = h;
   }
 
@@ -1863,7 +1861,7 @@
   function paintQueue() {
     var e = S.el;
     if (libMode() && S.shuffle) {
-      if (!S.track) { e.list.innerHTML = '<div class="m-empty">还没有开始播放<br><span class="m-empty-d">开随机后点播放键，服务器会给你一批随机曲目</span></div>'; return; }
+      if (!S.track) { e.list.innerHTML = '<div class="m-empty">还没有开始播放</div>'; return; }
       var hq = '<button class="m-song on" data-mact="noop">' +
         '<span class="m-song-ico">' + svg(S.audio && !S.audio.paused ? 'wave' : 'play') + '</span>' +
         '<span class="m-song-main"><span class="m-song-t">' + esc(S.track.title || '未命名') + '</span>' +
@@ -1879,12 +1877,11 @@
           favHeart(rt.id) +
           '<span class="m-song-d">' + fmtTime(rt.duration) + '</span></button>';
       }
-      if (!shown) hq += '<div class="m-lib-tip">这批随机曲目快用完了，会自动再拿一批</div>';
       e.list.innerHTML = hq;
       return;
     }
     if (!S.order.length) {
-      e.list.innerHTML = '<div class="m-empty">还没有开始播放<br><span class="m-empty-d">回歌单里点一首，这里就会出现播放列表</span></div>';
+      e.list.innerHTML = '<div class="m-empty">还没有开始播放</div>';
       return;
     }
     var h = '';
@@ -1909,7 +1906,7 @@
     if (loadingText) { e.list.innerHTML = '<div class="m-empty">' + esc(loadingText) + '</div>'; return; }
     if (S.status === 'error' && !S.playlists.length) {
       e.list.innerHTML = '<div class="m-empty"><div class="m-empty-t">音乐服务没连上</div>' +
-        '<div class="m-empty-d">检查「音乐设置」里的服务器地址，再点重试</div>' +
+        '' +
         '<button class="btn" data-mact="retry">重试</button>' +
         '<button class="btn" data-mact="open-cfg">音乐设置</button></div>';
       return;
@@ -1936,7 +1933,7 @@
       return;
     }
     if (!S.playlists.length) {
-      e.list.innerHTML = '<div class="m-empty">还没有歌单<br><span class="m-empty-d">在音乐服务里建一个歌单，这里就会出现</span></div>';
+      e.list.innerHTML = '<div class="m-empty">还没有歌单</div>';
       return;
     }
     var out = '';

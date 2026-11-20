@@ -1711,14 +1711,14 @@
     if (!items.length) {
       var hint;
       if (!prefs().allCards && !editAddCount()) {
-        hint = '<div class="empty-main">还没有添加设备</div><div class="empty-sub">点右上角 ✎ 进入编辑，再点「＋ 添加卡片」从列表里挑设备</div>';
+        hint = '<div class="empty-main">还没有添加设备</div>';
       } else if (S.real && !S.layoutReady) {
-        hint = '<div class="empty-main">正在连接 Home Assistant…</div><div class="empty-sub">连不上时长按右上角状态胶囊，改地址与令牌；短按可重连</div>';
+        hint = '<div class="empty-main">正在连接 Home Assistant…</div>';
       } else {
         hint = '<div class="empty-main">这里还没有设备</div>';
       }
       /* 编辑模式：即使一张都没有，也要能进编辑去加 */
-      if (S.editing) hint = '<div class="empty-main">还没有卡片</div><div class="empty-sub">点下面的「＋ 添加卡片」，从列表里挑要放上去的设备；右上角 ✓ 完成</div>' +
+      if (S.editing) hint = '<div class="empty-main">还没有卡片</div>' +
         '<button class="btn primary empty-add" data-act="edit-add">＋ 添加卡片</button>';
       var eCols = num(prefs().cols, 4);
       if (eCols < 3 || eCols > 6) eCols = 4;
@@ -1933,7 +1933,7 @@
     if (!cur) {
       /* 一级：设备列表。点某台设备进二级，勾选它下面具体哪些实体上墙 */
       h += '<div class="cfg-head">添加卡片</div>' +
-        '<div class="cfg-desc">先选设备，再选这台设备上哪些实体要上墙。' + devs.length + ' 台设备。</div>';
+        '';
       if (!devs.length) {
         h += '<div class="cfg-desc">' + (S.real && !S.layoutReady ? '正在读取设备…' : '还没有读到任何设备（先连上 Home Assistant）') + '</div>';
       } else {
@@ -1959,7 +1959,7 @@
     if (!d) { S.addDev = ''; return addSheetHtml(); }
     var onCount = d.ents.filter(function (it) { return cardVisible(it.tile.entity); }).length;
     h += '<div class="cfg-head">' + esc(d.name) + '</div>' +
-      '<div class="cfg-desc">' + d.ents.length + ' 个实体，已选 ' + onCount + ' 个。点一行加/去掉，加完点「完成」。</div>' +
+      '' +
       '<div class="ed-list">';
     d.ents.forEach(function (it) {
       var on = cardVisible(it.tile.entity);
@@ -1982,8 +1982,7 @@
     var cols = num(prefs().cols, 4);
     var cur = cardSpan(item.tile.entity, 99);
     var h = '<div class="cfg-head">卡片宽度</div>' +
-      '<div class="cfg-desc">' + esc(displayName(item.tile)) + ' 现在占 ' + spanText(cur, cols) +
-      '；最多 ' + cols + ' 列（跟随「每行卡片」设置）。</div>' +
+      '' +
       '<div class="ed-list">';
     spanOptions(cols).forEach(function (o) {
       var on = o.v === cur;
@@ -2029,8 +2028,7 @@
     ];
     var curTxt = curC + '×' + (curR < 1 ? '½' : curR);
     var h = '<div class="cfg-head">卡片尺寸</div>' +
-      '<div class="cfg-desc">' + esc(displayName(item.tile)) + ' 现在是 ' + curTxt +
-      '。1×1 是正方形，1×½ 是半高的一条；尺寸只改这张卡。</div><div class="ed-list">';
+      '<div class="ed-list">';
     defs.forEach(function (d) {
       var on = explicit && d.c === curC && d.r === curR;
       var off = d.c > cols;
@@ -2251,7 +2249,7 @@
   function editSheetHtml() {
     var n = editAddCount();
     return '<div class="cfg-head">编辑卡片</div>' +
-      '<div class="cfg-desc">这块屏上现在有 ' + n + ' 张卡片。编辑模式下每张卡都变成可编辑的样子：</div>' +
+      '' +
       '<div class="ed-help">' +
       '<div class="ed-h"><b>◀ ▶</b><span>调顺序，和前一张 / 后一张交换</span></div>' +
       '<div class="ed-h"><b>1× / 2× / 整行</b><span>点一下改宽度，三种宽度循环</span></div>' +
@@ -2324,7 +2322,6 @@
     paintEditBtn();
     paintBulkBtn();
     el.grid.scrollTop = 0;
-    toast('编辑模式：按住卡片可拖到别处，点卡片加/删，右上角 ✓ 完成');
   }
 
   /** 编辑模式下选中一张卡（null = 取消）；选中时这张卡才显示自己的工具按钮 */
@@ -3483,13 +3480,12 @@
 
   function guideSheetHtml() {
     return '<div class="cfg-head">先把这块屏接到 Home Assistant</div>' +
-      '<div class="cfg-desc">三步就好，之后面板上所有设备都来自你自己的 HA。</div>' +
       '<div class="g-step"><b>1</b><div><span class="g-t">在 HA 里建一个长期访问令牌</span>' +
-      '<span class="g-d">HA 网页 → 左下角用户名 → 安全 → 长期访问令牌 → 创建</span></div></div>' +
+      '</div></div>' +
       '<div class="g-step"><b>2</b><div><span class="g-t">把地址和令牌填进这块屏</span>' +
-      '<span class="g-d">地址写 <code>192.168.1.10:8123</code> 这样就行，协议和路径会自动补</span></div></div>' +
+      '</div></div>' +
       '<div class="g-step"><b>3</b><div><span class="g-t">保存后会先探活再连接</span>' +
-      '<span class="g-d">令牌不对会直接提示，不用等到连上才发现</span></div></div>' +
+      '</div></div>' +
       '<div class="cfg-actions">' +
       '<button class="btn primary" data-act="guide-config">填地址和令牌</button>' +
       '<button class="btn" data-act="guide-demo">先看模拟数据</button>' +
@@ -3696,8 +3692,7 @@ function bindDim() {
     var tok = f.token ? String(f.token) : ((cfg.ha && cfg.ha.token) || '');
     var canSave = !!(window.AndroidBridge && window.AndroidBridge.writeText);
     return '<div class="cfg-head">连接设置</div>' +
-      '<div class="cfg-desc">填 Home Assistant 地址与长期访问令牌，保存后立即重连。' +
-      (canSave ? '' : '（当前页面不在壳 App 内，无法保存）') + '</div>' +
+      '' +
       '<div class="cfg-row"><div class="cfg-k">地址</div>' +
       '<input class="cfg-in" id="cfgUrl" type="text" onfocus="this.select()" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="http://192.168.1.10:8123" value="' + esc(url) + '"></div>' +
       '<div class="cfg-row"><div class="cfg-k">令牌</div>' +
@@ -4147,7 +4142,6 @@ function bindDim() {
 
   function diagSheetHtml() {
     return '<div class="cfg-head">设备与连接诊断</div>' +
-      '<div class="cfg-desc">上墙后出问题时，先看这里；这几行可以直接念出来。</div>' +
       '<div class="diag">' + diagRows() + '</div>' +
       '<div class="cfg-actions">' +
       '<button class="btn primary" data-act="diag-reload">重新加载</button>' +
@@ -4767,9 +4761,6 @@ function bindDim() {
       return '<button class="seg' + (kind === v ? ' on' : '') + '" data-act="music-kind" data-val="' + v + '">' + t + '</button>';
     }
     return '<div class="cfg-head">音乐 · 负一屏</div>' +
-      '<div class="cfg-desc">主屏往右滑进入。连道理鱼或任何 Subsonic 兼容服务（Navidrome / Gonic / AirSonic 都行），' +
-      '地址填到端口即可，例如 http://10.10.1.7:4533。演示音源不需要服务器。' +
-      '</div>' +
       '<div class="set-row"><div class="set-k">音源</div><div class="set-v">' +
       kindBtn('mock', '演示') + kindBtn('daoliyu', '道理鱼') + kindBtn('subsonic', 'Subsonic') + '</div></div>' +
       '<div class="cfg-row"><div class="cfg-k">服务器</div>' +
