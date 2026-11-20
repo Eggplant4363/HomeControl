@@ -1070,6 +1070,8 @@ ok(musicSrc.indexOf('__system_default_favorites__') >= 0, '按服务器的系统
 ok(musicSrc.indexOf('DaoliyuBackend.prototype.addFav') >= 0 && musicSrc.indexOf('DaoliyuBackend.prototype.removeFav') >= 0, '后端有加/移收藏两个方法');
 ok(musicSrc.indexOf("'POST'") >= 0 && musicSrc.indexOf("'/tracks/'") >= 0, '移出用 DELETE /api/playlists/<id>/tracks/<trackId>');
 ok(musicSrc.indexOf('function favHeart') >= 0 && musicSrc.indexOf("if (!favSupported()) return '';") >= 0, '不支持收藏的后端不画心形');
+ok(musicSrc.indexOf('fav: isFav') >= 0, '歌单列表把服务器的收藏歌单标成 fav（同一个标记规则）');
+ok(musicSrc.indexOf('if (p.fav) continue;') >= 0, '普通歌单列表跳过收藏歌单：界面上「我喜欢」只有一个，不出现两个喜欢的歌单');
 ok(idxHtml.indexOf('id="mFav"') >= 0 && idxHtml.indexOf('data-mact="fav-cur"') >= 0, '播放控制排有一颗「喜欢」按钮（index.html）');
 ok(musicSrc.indexOf("if (a === 'fav-cur')") >= 0, '派发处理 fav-cur（当前正在播的那首）');
 ok(musicSrc.indexOf("e.favBtn = $('mFav')") >= 0, '播放页心形按钮接上元素');

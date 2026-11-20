@@ -612,9 +612,16 @@
       var out = [];
       for (var i = 0; i < arr.length; i++) {
         var p = arr[i] || {};
+        /* 那个系统收藏歌单单独标出来：界面上它不再当普通歌单出现（「我喜欢」那一行就是它），
+           免得列表里出现两个「喜欢的歌单」。判定和 favPlaylist 用同一套规则。 */
+        var nm = String(p.name || '');
+        var isFav = String(p.description || '') === '__system_default_favorites__' ||
+          (self.favPlId && String(p.id) === self.favPlId) ||
+          (nm.indexOf('不喜欢') < 0 && nm.indexOf('喜欢') >= 0);
         out.push({
           id: String(p.id), name: p.name || '未命名歌单', count: num(p.trackCount, 0),
-          cover: '', coverReq: { coverArtUrl: p.coverArtUrl, coverArtPath: p.coverArtPath }
+          cover: '', coverReq: { coverArtUrl: p.coverArtUrl, coverArtPath: p.coverArtPath },
+          fav: isFav
         });
       }
       cb(null, out);
@@ -1947,6 +1954,8 @@
       '<span class="m-pl-go">' + svg('chev') + '</span></button>';
     for (var j = 0; j < S.playlists.length; j++) {
       var p = S.playlists[j];
+      /* 服务器的收藏歌单不在这里出现——上面那一行「我喜欢」就是它，只显示一个 */
+      if (p.fav) continue;
       out += '<button class="m-pl" data-mact="pl" data-id="' + esc(p.id) + '">' +
         '<span class="m-pl-cover">' + (p.cover ? '<img src="' + esc(p.cover) + '" alt="">' : svg('music')) + '</span>' +
         '<span class="m-pl-main"><span class="m-pl-n">' + esc(p.name || '未命名歌单') + '</span>' +
