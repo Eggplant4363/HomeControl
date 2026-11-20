@@ -4451,7 +4451,7 @@ function bindDim() {
     S.sheetOpenedAt = Date.now();
     freezeGrid(true);
     el.view.innerHTML = panelSheetHtml();
-    el.view.className = 'view show';
+    el.view.className = 'view show panes';
     el.view.scrollTop = 0;
     actLog('settings view open');
   }

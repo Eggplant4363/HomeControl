@@ -839,6 +839,13 @@ body::before { content: none; }
 .seg.on { background: var(--accent-soft); color: var(--acc-ink); }
 .set-row, .p-row, .set-sec, .cfg-actions { contain: layout style; }
 #view .sheet-title { margin-bottom: 10px; font-size: 17px; color: var(--text-4); }
+/* 设置页：左右两栏各滚各的（左栏不再跟着右栏一起走） */
+.view.panes { display: flex; flex-direction: column; overflow: hidden; }
+.view.panes .sheet-title, .view.panes .cfg-actions { flex: 0 0 auto; }
+.view.panes .set-shell { flex: 1 1 auto; min-height: 0; align-items: stretch; }
+.view.panes .set-side, .view.panes .set-main { min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; -ms-overflow-style: none; }
+.view.panes .set-title { position: sticky; top: 0; z-index: 2; padding: 4px 0 8px; margin: 0 0 8px; background: var(--bg-deep); }
+.view.panes .set-side::-webkit-scrollbar, .view.panes .set-main::-webkit-scrollbar { display: none; }
 .set-v-text { padding: 0; background: transparent; color: var(--text-4); font-size: 14px; }
 /* 连接页的输入行也走卡片风格，和上面那些设置行对齐 */
 #view .set-main .cfg-row { min-height: 54px; margin: 0 0 8px; padding: 0 16px; border-radius: 14px; background: rgba(var(--surf),.05); box-shadow: inset 0 0 0 1px rgba(var(--surf),.045); contain: layout style; }
@@ -849,6 +856,8 @@ body::before { content: none; }
 
 @media (max-width: 760px) {
   .set-shell { display: block; }
+  .view.panes { display: block; overflow-y: auto; }
+  .view.panes .set-side, .view.panes .set-main { overflow: visible; }
   .set-side { width: auto; display: flex; overflow-x: auto; margin-bottom: 6px; }
   .set-nav-i { margin: 0 6px 0 0; padding: 0 10px; white-space: nowrap; }
   .set-nav-i svg { display: none; }
