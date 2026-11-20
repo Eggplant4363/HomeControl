@@ -818,20 +818,41 @@ body::before { content: none; }
 /* Display 档：2×2 气候的温度是全面板唯一「主角读数」，这是唯一不走角色档的字号 */
 .tile.span-2.rows-2 .t-val { font-size: calc(var(--fsz) * .31); }
 
-/* 设置页 */
-/* 二级菜单：一级标签一行（可换行），当前标签用强调色描边 */
-.set-tabs { display: flex; flex-wrap: wrap; margin: 11px 0 -1px -6px; contain: layout style; }
-.set-tab { height: 34px; margin: 3px 0 3px 6px; padding: 0 14px; border-radius: 9px; border: 1px solid rgba(var(--surf),.12); background: rgba(var(--surf),.05); color: var(--text-3); font-size: 13px; contain: layout style; }
-.set-tab.on { background: rgba(var(--accent-rgb),.22); border-color: rgba(var(--accent-rgb),.55); color: var(--text-2); }
-.set-sec { margin: 20px 0 4px; font-size: 12px; letter-spacing: .5px; color: var(--text-4); contain: layout style paint; }
-.set-row { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid rgba(var(--surf),.06); contain: layout style paint; }
-/* 设置页滚动：行内元素一律隔离绘制，避免整行跟着背景重绘 */
+/* ---------- 设置页：左侧分类 + 右侧分组行（iPadOS / 安卓设置的观感） ---------- */
+.set-shell { display: flex; align-items: flex-start; contain: layout style; }
+.set-side { margin-right: 20px; }
+.set-side { flex: 0 0 208px; width: 208px; contain: layout style; }
+.set-nav-i { display: flex; align-items: center; width: 100%; height: 44px; padding: 0 12px; margin-bottom: 4px; border: 0; border-radius: 12px; background: transparent; color: var(--text-3); font-size: 14px; text-align: left; contain: layout style; }
+.set-nav-i svg { width: 18px; height: 18px; margin-right: 10px; opacity: .8; }
+.set-nav-i.on { background: rgba(var(--accent-rgb),.16); color: var(--text-1); }
+.set-nav-i.on svg { opacity: 1; color: var(--accent-soft); }
+.set-nav-i:active { background: rgba(var(--surf),.07); }
+.set-main { flex: 1 1 auto; min-width: 0; }
+.set-title { margin: 0 0 14px; font-size: 22px; font-weight: 600; color: var(--text-1); contain: layout style; }
+.set-sec { margin: 18px 2px 8px; font-size: 12px; letter-spacing: .6px; color: var(--text-4); contain: layout style; }
+.set-sec:first-child { margin-top: 0; }
+.set-row, .p-row { display: flex; align-items: center; justify-content: space-between; min-height: 54px; margin: 0 0 8px; padding: 0 16px; border-radius: 14px; background: rgba(var(--surf),.05); box-shadow: inset 0 0 0 1px rgba(var(--surf),.045); contain: layout style; }
+.set-k { font-size: 15px; color: var(--text-2); margin-right: 14px; }
+.set-v { display: flex; flex-wrap: wrap; justify-content: flex-end; padding: 3px; border-radius: 11px; background: rgba(var(--surf),.07); contain: layout style; }
+.seg { height: 30px; min-width: 44px; padding: 0 12px; border: 0; border-radius: 8px; background: transparent; color: var(--text-4); font-size: 13px; contain: layout style; }
+.seg + .seg { margin-left: 2px; }
+.seg.on { background: var(--accent-soft); color: var(--acc-ink); }
 .set-row, .p-row, .set-sec, .cfg-actions { contain: layout style; }
-.seg { contain: layout style; }
-.set-k { font-size: 15px; color: var(--text-2); }
-.set-v { display: flex; }
-.seg { height: 32px; padding: 0 12px; margin-left: 6px; border-radius: 8px; border: 1px solid rgba(var(--surf),.12); background: rgba(var(--surf),.05); color: var(--text-3); font-size: 13px; }
-.seg.on { background: rgba(var(--accent-rgb),.22); border-color: rgba(var(--accent-rgb),.55); color: var(--text-2); }
+#view .sheet-title { margin-bottom: 10px; font-size: 17px; color: var(--text-4); }
+.set-v-text { padding: 0; background: transparent; color: var(--text-4); font-size: 14px; }
+/* 连接页的输入行也走卡片风格，和上面那些设置行对齐 */
+#view .set-main .cfg-row { min-height: 54px; margin: 0 0 8px; padding: 0 16px; border-radius: 14px; background: rgba(var(--surf),.05); box-shadow: inset 0 0 0 1px rgba(var(--surf),.045); contain: layout style; }
+#view .set-main .cfg-k { width: 72px; flex: 0 0 72px; font-size: 15px; color: var(--text-2); }
+#view .set-main .cfg-in { flex: 1 1 auto; height: 40px; padding: 0 4px; border: 0; border-radius: 10px; background: transparent; font-size: 15px; }
+#view .set-main .cfg-in:focus { background: rgba(var(--accent-rgb),.08); }
+#view .set-main .sheet-desc { margin: 0 2px 12px; }
+
+@media (max-width: 760px) {
+  .set-shell { display: block; }
+  .set-side { width: auto; display: flex; overflow-x: auto; margin-bottom: 6px; }
+  .set-nav-i { margin: 0 6px 0 0; padding: 0 10px; white-space: nowrap; }
+  .set-nav-i svg { display: none; }
+}
 
 /* 设置页 · 升级（panel/js/update.js 渲染） */
 .upd-note { margin: 10px 0 2px; font-size: 13px; line-height: 1.55; color: var(--text-4); contain: layout style; }

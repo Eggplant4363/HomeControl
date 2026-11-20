@@ -4222,16 +4222,21 @@ function bindDim() {
   /* 设置页二级菜单：一级是这 8 个标签，点进去才是一组设置。
      以前 8 节全挤在一页里，找「电池保养」要在平板上滚两屏。 */
   var SETTINGS_TABS = [
-    { id: 'ui', t: '外观' },
-    { id: 'screen', t: '屏幕' },
-    { id: 'music', t: '音乐' },
-    { id: 'batt', t: '电池' },
-    { id: 'cards', t: '卡片' },
-    { id: 'conn', t: '连接' },
-    { id: 'upd', t: '升级' },
-    { id: 'store', t: '配置' },
-    { id: 'about', t: '关于' }
+    { id: 'ui', t: '外观', ico: 'sun' },
+    { id: 'screen', t: '屏幕', ico: 'moon' },
+    { id: 'music', t: '音乐', ico: 'music' },
+    { id: 'batt', t: '电池', ico: 'battery' },
+    { id: 'cards', t: '卡片', ico: 'list' },
+    { id: 'conn', t: '连接', ico: 'wifi' },
+    { id: 'upd', t: '升级', ico: 'refresh' },
+    { id: 'store', t: '配置', ico: 'dots' },
+    { id: 'about', t: '关于', ico: 'gear' }
   ];
+
+  function settingsTabMeta(id) {
+    for (var i = 0; i < SETTINGS_TABS.length; i++) if (SETTINGS_TABS[i].id === id) return SETTINGS_TABS[i];
+    return SETTINGS_TABS[0];
+  }
 
   function settingsTab() {
     var t = S.settingsTab;
@@ -4239,10 +4244,12 @@ function bindDim() {
     return 'ui';
   }
 
+  /* 左侧分类栏：图标 + 名字，当前项用强调色底（iPadOS 设置那种左栏） */
   function settingsTabsHtml() {
-    var cur = settingsTab(), h = '<div class="set-tabs">';
+    var cur = settingsTab(), h = '<div class="set-side">';
     SETTINGS_TABS.forEach(function (x) {
-      h += '<button class="set-tab' + (x.id === cur ? ' on' : '') + '" data-act="settings-tab" data-val="' + x.id + '">' + esc(x.t) + '</button>';
+      h += '<button class="set-nav-i' + (x.id === cur ? ' on' : '') + '" data-act="settings-tab" data-val="' + x.id + '">' +
+        svg(x.ico || 'list') + '<span>' + esc(x.t) + '</span></button>';
     });
     return h + '</div>';
   }
@@ -4355,16 +4362,37 @@ function bindDim() {
       if (window.HCUpdate) return window.HCUpdate.sectionHtml();
       return '<div class="set-sec">升级</div><div class="sheet-desc">这个版本没有升级模块。</div>';
     }
-    return '<div class="set-sec">关于</div>' +
-      '<div class="sheet-desc">这些设置只记在这台平板上，改完立刻生效。</div>' +
+    return '<div class="set-sec">这台平板</div>' + aboutRowsHtml() +
+      '<div class="set-sec">维护</div>' +
+      '<div class="sheet-desc">这些设置只记在这台平板上，改完立刻生效；要搬到别的屏用「配置」页导出。</div>' +
       /* 「完成」由 panelSheetHtml 的全局按钮提供，这里不再重复一个 */
       '<div class="cfg-actions"><button class="btn" data-act="pref-reset">恢复默认设置</button>' +
       '<button class="btn" data-act="panel-reload">重新加载面板</button></div>';
   }
 
+  /* 关于页：只读信息行（像 iPadOS「通用 → 关于本机」那样） */
+  function infoRow(k, v) {
+    return '<div class="set-row"><div class="set-k">' + esc(k) + '</div><div class="set-v set-v-text">' + esc(v) + '</div></div>';
+  }
+
+  function aboutRowsHtml() {
+    var ha = (cfg && cfg.ha) || {}, tiles = 0;
+    (cfg.rooms || []).forEach(function (r) { tiles += (r.tiles || []).length; });
+    var ua = navigator.userAgent || '', m = ua.match(/Chrome\/([0-9.]+)/);
+    return infoRow('版本', appVer()) +
+      infoRow('连接', S.real ? '真实 HA · ' + (haHttpBase(ha.url || '') || '未设置') : '模拟数据') +
+      infoRow('布局', (cfg.rooms || []).length + ' 个房间 · ' + tiles + ' 张卡') +
+      infoRow('实体', Object.keys(S.states || {}).length + ' 个') +
+      infoRow('视口', window.innerWidth + '×' + window.innerHeight + ' @' + (window.devicePixelRatio || 1) + 'x') +
+      infoRow('内核', (m ? m[1] : '未知') + ' · WebView');
+  }
+
   function panelSheetHtml() {
-    var html = '<div class="sheet-title">设置</div>' + settingsTabsHtml();
-    html += settingsSectionHtml(settingsTab());
+    var tab = settingsTab(), meta = settingsTabMeta(tab);
+    var html = '<div class="sheet-title">设置</div>';
+    html += '<div class="set-shell">' + settingsTabsHtml() +
+      '<div class="set-main"><div class="set-title">' + esc(meta.t) + '</div>' +
+      settingsSectionHtml(tab) + '</div></div>';
     html += '<div class="cfg-actions"><button class="btn primary" data-act="close">完成</button></div>';
     return html;
   }
