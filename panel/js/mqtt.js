@@ -208,10 +208,6 @@
   function sectionHtml() {
     var c = readCfg();
     var h = '<div class="set-sec">MQTT 节点</div>' +
-      '<div class="sheet-desc">接上 MQTT 后，HA 里会出现「中控屏音乐」传感器（状态 playing/paused/idle，歌名看属性）' +
-      '、播放/暂停/停止/上一曲/下一曲 按钮、音量滑块与 音量+/音量- 按钮，' +
-      '以及「中控屏电量」传感器（含是否充电属性）。' +
-      '需先在 HA 里添加 MQTT integration 指向下面的 broker。</div>' +
       '<div class="cfg-row"><div class="cfg-k">主机</div><input class="cfg-in" id="mqHost" value="' + esc(c.host) + '" placeholder="10.10.1.8"></div>' +
       '<div class="cfg-row"><div class="cfg-k">端口</div><input class="cfg-in" id="mqPort" value="' + esc(String(c.port)) + '" placeholder="1883"></div>' +
       '<div class="cfg-row"><div class="cfg-k">账号</div><input class="cfg-in" id="mqUser" value="' + esc(c.user) + '" placeholder="用户名，可留空"></div>' +

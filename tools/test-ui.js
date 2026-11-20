@@ -298,7 +298,8 @@ eq(api.visibleRooms(null, ['x']).length, 0, '房间为空时返回空数组而�
 
 /* 14. 面板设置页：每个房间一行开关 */
 var sheet = api.panelSheetHtml();
-eq(sheet.indexOf('<div class="sheet-title">设置</div>') >= 0, true, '设置页有标题');
+eq(sheet.indexOf('class="set-back"') >= 0, true, '设置页左上角有返回按钮');
+eq(sheet.indexOf('<div class="sheet-title">') < 0, true, '不再重复显示「设置」两个字');
 eq(sheet.indexOf('客厅') >= 0, true, '设置页列出房间名');
 eq(sheet.indexOf('data-act="room-toggle:') >= 0, true, '每行带 room-toggle 动作');
 eq(sheet.indexOf('显示中') >= 0, true, '默认状态是「显示中」');

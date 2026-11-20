@@ -112,7 +112,7 @@ const check = (ok, name, extra) => {
   if (await evalJs(`document.querySelector('.sheet.show')`)) { await click('[data-act="close"]'); await sleep(300); }
   await click('#gear');
   check(await waitFor(`!!document.querySelector('.set-row')`), '点齿轮打开设置页');
-  check((await text('.view.show .sheet-title')) === '设置', '标题是「设置」');
+  check((await text('.view.show .set-back')) === '返回', '左上角是「返回」');
   const rows = await evalJs(`document.querySelectorAll('.view.show .set-row').length`);
   check(rows >= 10, '设置项 >= 10（实际 ' + rows + '）');
 

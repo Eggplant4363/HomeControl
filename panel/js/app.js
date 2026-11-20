@@ -4271,17 +4271,13 @@ function bindDim() {
     if (!S2) return '<div class="set-sec">配置中枢没加载（store.js 缺失）</div>';
     var sm = S2.summary(), st = S2.status();
     var kb = Math.max(1, Math.round(sm.bytes / 102.4) / 10);
-    var h = '<div class="set-sec">这台面板的配置</div>' +
+    var h = '<div class="set-sec">配置</div>' +
       '<div class="cfg-desc">设置项 ' + sm.prefs + ' 项 · 追加卡 ' + sm.added + ' · 隐藏卡 ' + sm.hidden +
       ' · 手加卡 ' + sm.extra + ' · 改名 ' + sm.names + ' · 图标 ' + sm.icons +
       ' · 隐藏房间 ' + sm.hiddenRooms + ' · 约 ' + kb + ' KB</div>' +
-      '<div class="cfg-desc">包含：设置页里的所有选项 + 界面配置（卡片增删/顺序/尺寸/改名/图标/房间可见性）+ 音乐设置。</div>' +
       '<div class="p-row"><div class="p-name">保存成文件</div><button class="btn" data-act="store-file">存到平板</button></div>' +
-      '<div class="cfg-desc">写到 ' + esc(S2.FILE) + '，可以直接拷走或放进 HA 的 config 目录。</div>' +
       '<div class="p-row"><div class="p-name">从文件恢复</div><button class="btn" data-act="store-load">读取</button></div>' +
       '<div class="set-sec">HA 账户</div>' +
-      '<div class="cfg-desc">' + (st.available ? '已连上 HA，可以把这份配置存进你这个 HA 账户（键 ' + esc(S2.NS) + '）。'
-        : '没连上 HA，模拟数据模式下不能同步。') + '</div>' +
       '<div class="p-row"><div class="p-name">上传到 HA 账户</div><button class="btn" data-act="store-push">上传</button></div>' +
       '<div class="p-row"><div class="p-name">从 HA 账户恢复</div><button class="btn" data-act="store-pull">恢复</button></div>' +
       '<div class="p-row"><div class="p-name">改完自动同步</div><button class="p-sw' + (st.auto ? ' on' : '') + '" data-act="store-auto">' + (st.auto ? '开' : '关') + '</button></div>' +
@@ -4303,7 +4299,7 @@ function bindDim() {
         '<div class="set-sec">交互</div>' +
         segRow('点一下卡片', 'tap', [{ v: 'toggle', t: '直接开关' }, { v: 'sheet', t: '打开面板' }]) +
         segRow('误触撤销', 'undo', [{ v: 3, t: '3 秒' }, { v: 5, t: '5 秒' }, { v: 8, t: '8 秒' }]) +
-        '<div class="set-sec">房间（不显示就不进顶栏和「全部」）</div>' + roomRowsHtml() +
+        '<div class="set-sec">房间</div>' + roomRowsHtml() +
         '<div class="cfg-actions"><button class="btn" data-act="room-reset">恢复默认房间</button>' +
         '<button class="btn" data-act="names-reset">恢复默认名称</button></div>';
     }
@@ -4318,20 +4314,16 @@ function bindDim() {
         segRow('防烧屏位移', 'burn', [{ v: true, t: '开' }, { v: false, t: '关' }]);
     }
     if (tab === 'music') {
-      return '<div class="set-sec">负一屏（主屏往右滑）</div>' +
-        '<div class="sheet-desc">主屏往右滑就是音乐页。音源可以连道理鱼或任何 Subsonic 兼容服务。</div>' +
+      return '<div class="set-sec">负一屏音乐</div>' +
         '<div class="set-row"><div class="set-k">音乐</div><div class="set-v">' +
         '<button class="btn" data-act="music-cfg">' + esc(musicKindLabel(musicNow().kind)) + ' · 设置</button>' +
         '<button class="btn" data-act="music-open">打开</button></div></div>' +
         '<div class="set-sec">Home Assistant</div>' +
-        '<div class="sheet-desc">HA 里点「播放」而这台平板当前没在放歌时，先播这里选的歌单的第一首。' +
-        '选「不指定」就退回曲库第一首。</div>' +
         '<div class="set-row"><div class="set-k">HA 播放歌单</div><div class="set-v">' +
         '<button class="btn" data-act="ha-pl">' + esc(haPlLabel()) + '</button></div></div>';
     }
     if (tab === 'batt') {
       return '<div class="set-sec">电池保养</div>' +
-        '<div class="sheet-desc">常年插电会把电池顶在 100%，容易鼓包。开了以后每 30 秒查一次：电量低于「开始充电」就打开充电开关、高于「停止充电」就关掉。</div>' +
         segRow('自动保养', 'battGuard', [{ v: true, t: '开' }, { v: false, t: '关' }]) +
         '<div class="set-row"><div class="set-k">充电开关</div><div class="set-v">' +
         '<button class="btn" data-act="batt-switch">' + esc(battSwitchLabel()) + '</button></div></div>' +
@@ -4340,17 +4332,14 @@ function bindDim() {
     }
     if (tab === 'cards') {
       return '<div class="set-sec">卡片</div>' +
-        '<div class="sheet-desc">卡片最大宽度 = 每行卡片数（' + num(p.cols, 4) + ' 列）。编辑卡片时拖右下角的小箭头，就能像磁贴一样拉伸大小。</div>' +
         '<div class="cfg-actions"><button class="btn primary" data-act="edit-open">编辑卡片</button>' +
         '<button class="btn" data-act="edit-reset">清空所有卡片</button></div>';
     }
     if (tab === 'conn') {
       var h = '<div class="set-sec">Home Assistant</div>' +
-        '<div class="sheet-desc">地址和令牌存在 /sdcard/HomeControl/ha.json；连不上时开诊断页看这几行。</div>' +
         '<div class="cfg-actions"><button class="btn primary" data-act="open-cfg">HA 地址与令牌</button>' +
         '<button class="btn" data-act="diag-open">连接诊断</button></div>';
       h += '<div class="set-sec">设备列表</div>' +
-        '<div class="sheet-desc">HA 里新加的设备（或改了名字/房间）不会自动出现，点下面按钮重新拉一次就行，不用整页重载。</div>' +
         '<div class="cfg-actions"><button class="btn primary" data-act="ent-refresh">刷新设备列表</button></div>' +
         segRow('定时刷新', 'entRefresh', [{ v: 0, t: '关' }, { v: 5, t: '5 分钟' }, { v: 15, t: '15 分钟' }, { v: 30, t: '30 分钟' }]);
       /* MQTT 节点（panel/js/mqtt.js）：由它自己渲染一节 */
@@ -4364,7 +4353,6 @@ function bindDim() {
     }
     return '<div class="set-sec">这台平板</div>' + aboutRowsHtml() +
       '<div class="set-sec">维护</div>' +
-      '<div class="sheet-desc">这些设置只记在这台平板上，改完立刻生效；要搬到别的屏用「配置」页导出。</div>' +
       /* 「完成」由 panelSheetHtml 的全局按钮提供，这里不再重复一个 */
       '<div class="cfg-actions"><button class="btn" data-act="pref-reset">恢复默认设置</button>' +
       '<button class="btn" data-act="panel-reload">重新加载面板</button></div>';
@@ -4389,8 +4377,7 @@ function bindDim() {
 
   function panelSheetHtml() {
     var tab = settingsTab(), meta = settingsTabMeta(tab);
-    var html = '<div class="set-head"><button class="set-back" data-act="close">' + svg('back') + '<span>返回</span></button>' +
-      '<div class="sheet-title">设置</div></div>';
+    var html = '<div class="set-head"><button class="set-back" data-act="close">' + svg('back') + '<span>返回</span></button></div>';
     html += '<div class="set-shell">' + settingsTabsHtml() +
       '<div class="set-main"><div class="set-title">' + esc(meta.t) + '</div>' +
       settingsSectionHtml(tab) + '</div></div>';

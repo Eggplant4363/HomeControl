@@ -393,8 +393,6 @@
       '<b>' + esc(cur ? 'v' + cur : '（浏览器预览）') + '</b></div></div>';
 
     if (U.phase === 'idle') {
-      html += '<div class="upd-note">从 GitHub 的 Release 取最新版，直接在这台平板上装。' +
-        '设备要能连上 GitHub（国内网络可能需要给它一条出海通道）。</div>';
     } else if (U.phase === 'checking') {
       html += '<div class="upd-note">正在检查 GitHub 上的最新版本…</div>';
     } else if (U.phase === 'downloading') {
@@ -412,7 +410,7 @@
       return '<button class="btn' + (active ? ' primary' : '') + '" data-act="' + esc(act) + '">' + esc(label) + '</button>';
     };
     html += '<div class="set-sec">下载通道</div>' +
-      '<div class="sheet-desc">直连慢或连不上 GitHub 时换国内镜像（转发 API 和下载）或局域网 HTTP 代理；当前：' + esc(channelLabel(cfg)) + '</div>' +
+      '<div class="sheet-desc">当前：' + esc(channelLabel(cfg)) + '</div>' +
       '<div class="cfg-actions">' +
       opt('direct', '直连 GitHub', 'upd-ch:direct', isDirect) +
       opt('gh1', 'gh-proxy.com', 'upd-ch:mirror:https://gh-proxy.com/', cfg.channel === 'mirror' && cfg.mirror === 'https://gh-proxy.com/') +
