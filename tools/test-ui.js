@@ -126,6 +126,7 @@ function load(rel) {
 load('panel/js/config.js');
 load('panel/js/icons.js');
 load('panel/js/layout.js');
+load('panel/js/store.js');
 load('panel/js/update.js');
 load('panel/js/dimscreen.js');
 load('panel/js/mqtt.js');
@@ -407,7 +408,7 @@ eq(setHtml.indexOf('data-act="pref"') >= 0, true, '设置页按钮带 pref 动�
 /* ---------- 设置页重构：二级菜单（一级 8 个标签，内容按标签归位） ---------- */
 console.log('设置页二级菜单');
 var tabRow = api.settingsTabsHtml();
-eq((tabRow.match(/data-act="settings-tab"/g) || []).length, 8, '二级菜单有 8 个一级标签');
+eq((tabRow.match(/data-act="settings-tab"/g) || []).length, 9, '二级菜单有 9 个一级标签');
 eq(tabRow.indexOf('data-val="ui"') >= 0, true, '标签里有「外观」');
 eq(tabRow.indexOf('class="set-tab on"') >= 0, true, '当前标签高亮');
 eq(api.settingsTab(), 'ui', '默认标签是外观');
@@ -1170,6 +1171,39 @@ eq(documentStub.getElementById('dimLyric').className, 'dim-lyric', '暂停后歌
 ok(documentStub.getElementById('dim').className.indexOf('with-music') < 0, '暂停后 with-music 一起撤掉（时间回到正中）');
 ok(appJs.indexOf('window.DimScreen.show()') >= 0 && appJs.indexOf('window.DimScreen.hide()') >= 0, 'app.js 进出熄屏时通知待机页');
 ok(fs.readFileSync(path.join(root, 'tools', 'lint-es5.js'), 'utf8').indexOf('panel/js/dimscreen.js') >= 0, 'lint-es5 覆盖 dimscreen.js');
+﻿/* ---------- 配置中枢（store.js）：存文件 / 同步 HA 账户 ---------- */
+const HCStoreRef = windowStub.HCStore;
+ok(!!HCStoreRef, 'store.js 导出 window.HCStore');
+ok(HCStoreRef && HCStoreRef.FILE === '/sdcard/HomeControl/panel-config.json', '配置文件名在 /sdcard/HomeControl 下');
+ok(HCStoreRef && HCStoreRef.NS === 'homecontrol.panel_config', 'HA 账户键名固定');
+ok(HCStoreRef && ['prefs', 'edit', 'names', 'icons', 'hidden', 'music', 'musicVol', 'musicMode'].every(function (k) { return !!HCStoreRef.KEYS[k]; }), '配置键覆盖设置/界面/音乐');
+HCStoreRef.setJSON('prefs', { cols: 5, theme: 'light' });
+HCStoreRef.setJSON('edit', { added: { 'light.a': 1, 'light.b': 1 }, hidden: { 'switch.c': 1 }, extra: { 'button.d': 1 }, order: [], span: {}, rows: {} });
+HCStoreRef.setJSON('names', { 'light.a': '客厅主灯' });
+const cfgSnap = HCStoreRef.bundle();
+ok(cfgSnap.app === 'homecontrol' && cfgSnap.schema >= 1, '快照带 app/schema');
+eq(cfgSnap.data.prefs.cols, 5, '快照里带上设置项');
+eq(cfgSnap.data.names['light.a'], '客厅主灯', '快照里带上改名');
+eq(cfgSnap.data.edit.added['light.b'], 1, '快照里带上界面配置');
+const cfgSum = HCStoreRef.summary();
+eq(cfgSum.prefs, 2, '摘要数设置项');
+eq(cfgSum.added, 2, '摘要数追加卡');
+eq(cfgSum.extra, 1, '摘要数手加卡');
+HCStoreRef.applyBundle({ app: 'homecontrol', schema: 1, data: { prefs: { cols: 3 }, names: {} } }, { reload: false });
+eq(HCStoreRef.getJSON('prefs', {}).cols, 3, 'applyBundle 写回设置');
+eq(HCStoreRef.applyBundle({ app: 'other', schema: 1, data: {} }, { reload: false }), false, '拒绝别的 app 的配置');
+eq(HCStoreRef.applyBundle('not json', { reload: false }), false, '拒绝坏 JSON');
+const storeSec = api.settingsSectionHtml ? api.settingsSectionHtml('store') : '';
+ok(storeSec.indexOf('store-file') >= 0 && storeSec.indexOf('store-load') >= 0, '设置页「配置」有存文件/读文件');
+ok(storeSec.indexOf('store-push') >= 0 && storeSec.indexOf('store-pull') >= 0, '设置页「配置」有上传/恢复 HA 账户');
+ok(storeSec.indexOf('store-auto') >= 0, '设置页「配置」有自动同步开关');
+ok(appJs.indexOf('store-file') >= 0 && appJs.indexOf('HCStore.push') >= 0 && appJs.indexOf('HCStore.pull') >= 0, '动作路由接了 store-*');
+ok(appJs.indexOf('HCStore.bindTransport') >= 0, 'app.js 把 WS 通道交给 store.js');
+ok(appJs.indexOf('localStorage.setItem(PREFS_KEY') < 0 && appJs.indexOf('localStorage[NAMES_KEY]') < 0, 'app.js 不再自己写 localStorage（走 store）');
+ok(fs.readFileSync(path.join(root, 'panel', 'js', 'music.js'), 'utf8').indexOf('window.HCStore') >= 0, 'music.js 的音乐设置也走 store');
+ok(idxHtml.indexOf('js/store.js') >= 0 && idxHtml.indexOf('js/store.js') < idxHtml.indexOf('js/app.js'), 'index.html 先加载 store.js 再加载 app.js');
+ok(fs.readFileSync(path.join(root, 'tools', 'lint-es5.js'), 'utf8').indexOf('panel/js/store.js') >= 0, 'lint-es5 覆盖 store.js');
+
 
 console.log('');
 if (failed === 0) {

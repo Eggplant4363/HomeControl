@@ -960,6 +960,12 @@
     try { localStorage.setItem('hc.room', id); } catch (e) { }
   }
 
+  /* 所有「用户配置」的读写都收口到 store.js（window.HCStore）：
+     面板里改的东西要能一键存成文件、同步进 HA 账户，所以不再直接碰 localStorage */
+  function storeRaw(key) { try { return (window.HCStore ? window.HCStore.get(key) : '') || ''; } catch (e) { return ''; } }
+  function storeWrite(key, raw) { try { if (window.HCStore) window.HCStore.set(key, raw); } catch (e) { } }
+  function storeJSON(key, def) { try { return window.HCStore ? window.HCStore.getJSON(key, def) : def; } catch (e) { return def; } }
+
   /* ---- 房间可见性：墙上只看常用的几个房间，其余在设置里关掉 ---- */
   var HIDDEN_KEY = 'hc.hidden';
   /* 缓存：这两个函数在每次状态推送里会被调很多次，localStorage 读+JSON.parse 不必每次都做 */
@@ -967,7 +973,7 @@
 
   function hiddenRooms() {
     try {
-      var raw = localStorage.getItem(HIDDEN_KEY) || '';
+      var raw = storeRaw('hidden');
       if (raw === hiddenRaw && hiddenList) return hiddenList;
       var arr = raw ? JSON.parse(raw) : [];
       hiddenRaw = raw;
@@ -979,7 +985,7 @@
   function saveHidden(list) {
     hiddenRaw = null;
     hiddenList = null;
-    try { localStorage.setItem(HIDDEN_KEY, JSON.stringify(list || [])); } catch (e) { }
+    storeWrite('hidden', JSON.stringify(list || []));
   }
 
   /* ---------------- 面板设置（显示/交互/屏幕） ---------------- */
@@ -989,8 +995,7 @@
   var prefsRaw = null, prefsObj = null;
 
   function prefs() {
-    var raw = '';
-    try { raw = localStorage.getItem(PREFS_KEY) || ''; } catch (e) { }
+    var raw = storeRaw('prefs') || '';
     if (raw === prefsRaw && prefsObj) return prefsObj;
     var out = {}, k;
     for (k in PREF_DEF) out[k] = PREF_DEF[k];
@@ -1016,7 +1021,7 @@
     if (!(key in PREF_DEF)) return;
     var val = prefVal(raw), p = prefs();
     p[key] = val;
-    try { localStorage.setItem(PREFS_KEY, JSON.stringify(p)); } catch (e) { }
+    storeWrite('prefs', JSON.stringify(p));
     actLog('pref ' + key + '=' + val);
     applyPrefs();
     /* 皮肤换了就把 HA 那个夜间开关立刻同步出去，不用等 60 秒的定时上报 */
@@ -1024,7 +1029,7 @@
   }
 
   function resetPrefs() {
-    try { localStorage.removeItem(PREFS_KEY); } catch (e) { }
+    storeWrite('prefs', '');
     actLog('pref reset');
     applyPrefs();
   }
@@ -1383,7 +1388,7 @@
 
   function readEdit() {
     var o = null;
-    try { o = JSON.parse(localStorage.getItem(EDIT_KEY) || 'null'); } catch (e) { }
+    try { o = JSON.parse(storeRaw('edit') || 'null'); } catch (e) { }
     if (!o || typeof o !== 'object') o = {};
     return {
       added: (o.added && typeof o.added === 'object') ? o.added : {},
@@ -1399,7 +1404,7 @@
 
   function writeEdit(e) {
     S.edit = null;
-    try { localStorage.setItem(EDIT_KEY, JSON.stringify(e || {})); } catch (err) { }
+    storeWrite('edit', JSON.stringify(e || {}));
   }
 
   function editState() {
@@ -3797,15 +3802,12 @@ function bindDim() {
   var NAMES_KEY = 'hc.names';
 
   function readNameStore() {
-    try {
-      var raw = localStorage[NAMES_KEY];
-      var o = raw ? JSON.parse(raw) : null;
-      return o && typeof o === 'object' ? o : {};
-    } catch (e) { return {}; }
+    var o = storeJSON('names', null);
+    return o && typeof o === 'object' ? o : {};
   }
 
   function writeNameStore(o) {
-    try { localStorage[NAMES_KEY] = JSON.stringify(o || {}); } catch (e) { }
+    storeWrite('names', JSON.stringify(o || {}));
   }
 
   function namesFor(ha) {
@@ -3866,15 +3868,12 @@ function bindDim() {
   var ICONS_KEY = 'hc.icons';
 
   function readIconStore() {
-    try {
-      var raw = localStorage[ICONS_KEY];
-      var o = raw ? JSON.parse(raw) : null;
-      return o && typeof o === 'object' ? o : {};
-    } catch (e) { return {}; }
+    var o = storeJSON('icons', null);
+    return o && typeof o === 'object' ? o : {};
   }
 
   function writeIconStore(o) {
-    try { localStorage[ICONS_KEY] = JSON.stringify(o || {}); } catch (e) { }
+    storeWrite('icons', JSON.stringify(o || {}));
   }
 
   function iconsFor() {
@@ -4230,6 +4229,7 @@ function bindDim() {
     { id: 'cards', t: '卡片' },
     { id: 'conn', t: '连接' },
     { id: 'upd', t: '升级' },
+    { id: 'store', t: '配置' },
     { id: 'about', t: '关于' }
   ];
 
@@ -4258,9 +4258,34 @@ function bindDim() {
     return h;
   }
 
+  /** 「配置」页：把本地配置存成文件 / 同步进 HA 账户（具体收口在 store.js） */
+  function storeSectionHtml() {
+    var S2 = window.HCStore;
+    if (!S2) return '<div class="set-sec">配置中枢没加载（store.js 缺失）</div>';
+    var sm = S2.summary(), st = S2.status();
+    var kb = Math.max(1, Math.round(sm.bytes / 102.4) / 10);
+    var h = '<div class="set-sec">这台面板的配置</div>' +
+      '<div class="cfg-desc">设置项 ' + sm.prefs + ' 项 · 追加卡 ' + sm.added + ' · 隐藏卡 ' + sm.hidden +
+      ' · 手加卡 ' + sm.extra + ' · 改名 ' + sm.names + ' · 图标 ' + sm.icons +
+      ' · 隐藏房间 ' + sm.hiddenRooms + ' · 约 ' + kb + ' KB</div>' +
+      '<div class="cfg-desc">包含：设置页里的所有选项 + 界面配置（卡片增删/顺序/尺寸/改名/图标/房间可见性）+ 音乐设置。</div>' +
+      '<div class="p-row"><div class="p-name">保存成文件</div><button class="btn" data-act="store-file">存到平板</button></div>' +
+      '<div class="cfg-desc">写到 ' + esc(S2.FILE) + '，可以直接拷走或放进 HA 的 config 目录。</div>' +
+      '<div class="p-row"><div class="p-name">从文件恢复</div><button class="btn" data-act="store-load">读取</button></div>' +
+      '<div class="set-sec">HA 账户</div>' +
+      '<div class="cfg-desc">' + (st.available ? '已连上 HA，可以把这份配置存进你这个 HA 账户（键 ' + esc(S2.NS) + '）。'
+        : '没连上 HA，模拟数据模式下不能同步。') + '</div>' +
+      '<div class="p-row"><div class="p-name">上传到 HA 账户</div><button class="btn" data-act="store-push">上传</button></div>' +
+      '<div class="p-row"><div class="p-name">从 HA 账户恢复</div><button class="btn" data-act="store-pull">恢复</button></div>' +
+      '<div class="p-row"><div class="p-name">改完自动同步</div><button class="p-sw' + (st.auto ? ' on' : '') + '" data-act="store-auto">' + (st.auto ? '开' : '关') + '</button></div>' +
+      (st.msg ? '<div class="cfg-desc">上次：' + esc(st.msg) + '</div>' : '');
+    return h;
+  }
+
   /** 二级菜单：每个标签页自己的内容（segRow / 外部模块一节都照旧） */
   function settingsSectionHtml(tab) {
     var p = prefs();
+    if (tab === 'store') return storeSectionHtml();
     if (tab === 'ui') {
       return '<div class="set-sec">显示</div>' +
         segRow('每行卡片', 'cols', [{ v: 3, t: '3' }, { v: 4, t: '4' }, { v: 5, t: '5' }, { v: 6, t: '6' }]) +
@@ -4517,6 +4542,15 @@ function bindDim() {
       if (act === 'diag-mock') { clearConfig(); return; }
       if (act === 'guide-config') { dismissGuide(); openConfigSheet(); return; }
       if (act === 'guide-demo') { dismissGuide(); closeSheet(); toast('先看模拟数据；随时长按右上角填地址'); return; }
+      if (act.indexOf('store-') === 0) {
+        var repaintStore = function () { var sh = settingsHost(); if (sh) sh.innerHTML = panelSheetHtml(); };
+        var show = function (ok, msg) { toast(msg); repaintStore(); };
+        if (act === 'store-file') { window.HCStore.toFile(show); return; }
+        if (act === 'store-load') { window.HCStore.fromFile(show); return; }
+        if (act === 'store-push') { toast('正在上传到 HA 账户…'); window.HCStore.push(show); return; }
+        if (act === 'store-pull') { window.HCStore.pull(show); return; }
+        if (act === 'store-auto') { window.HCStore.setAuto(!window.HCStore.status().auto); repaintStore(); return; }
+      }
       if (act === 'cfg-save') { saveConfig(); return; }
       if (act === 'cfg-mock') { clearConfig(); return; }
       /* MQTT 节：保存/停用由 HCMqtt 自己写文件并重启客户端，这里只重画弹层刷状态行 */
@@ -5387,6 +5421,18 @@ function boot() {
     S.backend = S.real
       ? new window.HABackend({ url: ha.url, token: ha.token })
       : new window.MockBackend(cfg);
+    /* 配置同步的通道：真 HA 且 WS 在线时才认为「能推/能拉」 */
+    if (window.HCStore) {
+      window.HCStore.bindTransport({
+        available: function () {
+          return !!(S.real && S.backend && S.backend.ws && S.backend.ws.readyState === 1 && !S.backend.stopped);
+        },
+        request: function (msg, cb) {
+          if (!S.backend || !S.backend.request) return false;
+          return S.backend.request(msg, cb) !== false;
+        }
+      });
+    }
     S.backend.onStates(onStates);
     /* 真实 HA 走增量；MockBackend 没有 onEntity，仍然每 tick 全量 */
     if (S.backend.onEntity) S.backend.onEntity(onState);

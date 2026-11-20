@@ -1204,7 +1204,7 @@ public class MainActivity extends Activity {
                 Log.w(TAG, "writeText denied: " + path);
                 return false;
             }
-            if (content.length() > 8192) {
+            if (content.length() > 262144) {
                 Log.w(TAG, "writeText too large: " + content.length());
                 return false;
             }

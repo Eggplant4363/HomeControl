@@ -8,10 +8,13 @@
 (function () {
   'use strict';
 
-  var MUSIC_KEY = 'hc.music';        /* localStorage：面板里改过的音乐设置 */
+  /* 存取配置走中枢 store.js（window.HCStore）：音乐设置也要能存文件/同步到 HA 账户 */
+  function storeGet(k) { try { return window.HCStore ? window.HCStore.get(k) : localStorage.getItem('hc.' + k); } catch (e) { return null; } }
+  function storeGetJSON(k, def) { try { return window.HCStore ? window.HCStore.getJSON(k, def) : def; } catch (e) { return def; } }
+  function storeSet(k, v) { try { if (window.HCStore) window.HCStore.set(k, v); } catch (e) { } }
+  function storeSetJSON(k, o) { try { if (window.HCStore) window.HCStore.setJSON(k, o); } catch (e) { } }
+
   var MUSIC_FILE = '/sdcard/HomeControl/music.json';  /* 部署时写一次即可 */
-  var VOL_KEY = 'hc.music.vol';
-  var MODE_KEY = 'hc.music.mode';
   var LIB_PAGE = 120;      /* 所有歌曲一次装 120 行 */
   var LIB_MAX_ROWS = 1500; /* 列表最多渲染这么多行，再多就靠随机 */
   var RECENT_MAX = 240;    /* 随机去重窗口：最近播过的 id 不再从随机批次里出现 */
@@ -175,7 +178,7 @@
       } catch (e) { }
     }
     try {
-      var ls = localStorage.getItem(MUSIC_KEY);
+      var ls = storeGet('music');
       if (ls) {
         var o2 = JSON.parse(ls);
         if (o2 && typeof o2 === 'object') { mergeCfg(out, o2); got = true; }
@@ -201,7 +204,7 @@
     S.cfg = mergeCfg(defaultCfg(), o || {});
     /* 弹层里的密码框显示时打了码，留空表示「不改」，沿用已存的密码 */
     if (!o || o.pass === '' || o.pass === '***') S.cfg.pass = prevPass;
-    try { localStorage.setItem(MUSIC_KEY, JSON.stringify(S.cfg)); } catch (e) { }
+    storeSetJSON('music', S.cfg);
     var b = bridge();
     if (b && b.writeText) {
       try {
@@ -231,7 +234,7 @@
     var s = sysVol();
     if (s !== null) return s;
     try {
-      var v = localStorage.getItem(VOL_KEY);
+      var v = storeGet('musicVol');
       if (v !== null) return clamp(num(v, 0.7), 0, 1);
     } catch (e) { }
     var m = (window.PANEL_CONFIG && window.PANEL_CONFIG.music) || {};
@@ -240,7 +243,7 @@
 
   function readMode() {
     try {
-      var o = JSON.parse(localStorage.getItem(MODE_KEY) || '');
+      var o = storeGetJSON('musicMode', null) || {};
       if (o && typeof o === 'object') {
         var rep = o.repeat === 'all' ? 'all' : (o.repeat === 'one' ? 'one' : 'off');
         /* 旧版两个按钮时代可能存过「随机+循环」的组合；一键四态里随机时循环必为 off */
@@ -252,7 +255,7 @@
   }
 
   function saveMode() {
-    try { localStorage.setItem(MODE_KEY, JSON.stringify({ shuffle: S.shuffle, repeat: S.repeat })); } catch (e) { }
+    storeSetJSON('musicMode', { shuffle: S.shuffle, repeat: S.repeat });
   }
 
   /* ---------------- 封面（mock 用内联 SVG，不依赖网络） ---------------- */
@@ -1133,7 +1136,7 @@
   function setHaPlaylist(id, name) {
     S.cfg.haPlaylist = String(id || '');
     S.cfg.haPlaylistName = name ? String(name) : '';
-    try { localStorage.setItem(MUSIC_KEY, JSON.stringify(S.cfg)); } catch (e) { }
+    storeSetJSON('music', S.cfg);
     return true;
   }
 
@@ -1586,7 +1589,7 @@
     } else if (S.audio) {
       S.audio.volume = S.vol;
     }
-    try { localStorage.setItem(VOL_KEY, String(S.vol)); } catch (e2) { }
+    storeSet('musicVol', String(S.vol));
     paintVol();
   }
 
