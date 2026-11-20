@@ -111,6 +111,24 @@
     return n;
   }
 
+  /** 「这份配置有多少内容」：跨设备同步靠它判断谁该覆盖谁。
+      新平板开机写下的默认值内容很少，不会把另一台上传的完整配置盖掉。 */
+  function richness(o) {
+    var d = (o && o.data) || {}, n = 0;
+    if (d.prefs) n += Object.keys(d.prefs).length;
+    if (d.edit) {
+      n += d.edit.added ? Object.keys(d.edit.added).length : 0;
+      n += d.edit.hidden ? Object.keys(d.edit.hidden).length : 0;
+      n += d.edit.extra ? Object.keys(d.edit.extra).length : 0;
+      n += d.edit.rows ? Object.keys(d.edit.rows).length : 0;
+    }
+    if (d.names) n += Object.keys(d.names).length;
+    if (d.icons) n += Object.keys(d.icons).length;
+    if (d.hidden && d.hidden.length) n += d.hidden.length;
+    if (d.music) n += 1;
+    return n;
+  }
+
   function parseBundle(o) {
     if (typeof o === 'string') {
       try { o = JSON.parse(o); } catch (e) { return null; }
@@ -173,10 +191,21 @@
     cd(cb, true, '已从文件恢复配置');
   }
 
-  function cd(cb, ok, msg) { if (typeof cb === 'function') cb(ok, msg); }
+  function cd(cb, ok, msg, data) { if (typeof cb === 'function') cb(ok, msg, data); }
 
   /* ---------------- HA 用户账户 ---------------- */
   function bindTransport(t) { transport = t || null; }
+
+  /* 账户里那份配置的内容量与时间：决定谁覆盖谁。
+     新平板开机写下的默认值内容很少，不该把另一台上传的完整配置盖掉。 */
+  var remote = null;
+
+  function shortTime(iso) {
+    var d = new Date(iso);
+    if (!isFinite(d.getTime())) return '';
+    return (d.getMonth() + 1) + '月' + d.getDate() + '日 ' +
+      ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2);
+  }
 
   function available() {
     try { return !!(transport && transport.available && transport.available()); } catch (e) { return false; }
@@ -205,12 +234,22 @@
     }
   }
 
-  function push(cb) {
-    var b = bundle(), msg = { type: 'frontend/set_user_data', key: NS, value: b };
+  function push(cb, opts) {
+    var b = bundle(), local = richness(b);
+    if (!local) { lastPushOk = false; lastMsg = '这台平板还没有配置，不上传'; cd(cb, false, lastMsg); return; }
+    /* 账户里那份内容更多时，别用它自己的少量默认值把别人的配置顶掉（手动上传带 force 可以强行覆盖） */
+    if (!(opts && opts.force) && remote && remote.rich > local) {
+      lastPushOk = false;
+      lastMsg = '账户里的配置更多（' + remote.rich + ' 项）：先「恢复」再上传';
+      cd(cb, false, lastMsg);
+      return;
+    }
+    var msg = { type: 'frontend/set_user_data', key: NS, value: b };
     call(msg, function (ok, res) {
       if (ok) {
         lastPush = Date.now();
         lastPushOk = true;
+        remote = { rich: local, savedAt: b.savedAt };
         lastMsg = 'HA 账户已同步（' + Math.round(JSON.stringify(b).length / 102.4) / 10 + ' KB）';
         cd(cb, true, lastMsg);
       } else {
@@ -221,15 +260,56 @@
     });
   }
 
-  function pull(cb) {
+  /** 只读账户里那份配置，不动本地 */
+  function remoteGet(cb) {
     call({ type: 'frontend/get_user_data', key: NS }, function (ok, res) {
       if (!ok) { cd(cb, false, String(res || '读取失败')); return; }
       var v = res && res.value;
-      if (!v) { cd(cb, false, 'HA 账户里还没有存过配置'); return; }
+      if (!v) { cd(cb, true, '', null); return; }
       var b = parseBundle(v);
       if (!b) { cd(cb, false, 'HA 里的配置格式不认识'); return; }
+      cd(cb, true, '', b);
+    });
+  }
+
+  function pull(cb) {
+    remoteGet(function (ok, msg, b) {
+      if (!ok) { cd(cb, false, msg || '读取失败'); return; }
+      if (!b) { cd(cb, false, 'HA 账户里还没有存过配置'); return; }
+      remote = { rich: richness(b), savedAt: b.savedAt };
       applyBundle(b);
-      cd(cb, true, '已从 HA 账户恢复配置');
+      cd(cb, true, '已从 HA 账户恢复配置（' + remote.rich + ' 项，存于 ' + shortTime(b.savedAt) + '）');
+    });
+  }
+
+  /** 开机/手动「同步」：谁的内容多就用谁的——账户里那份更多就恢复下来，本机更多就上传上去。
+      tries>0 时没连上 HA 会每 3 秒再试一次（重启后 WiFi 常常比面板晚十几秒）。 */
+  function sync(cb, tries) {
+    var left = tries === undefined ? 4 : tries;
+    if (!available()) {
+      if (left > 0) { setTimeout(function () { sync(cb, left - 1); }, 3000); return; }
+      cd(cb, false, '还没连上 HA，配置没同步');
+      return;
+    }
+    remoteGet(function (ok, msg, b) {
+      if (!ok) { cd(cb, false, msg || '读取失败'); return; }
+      var local = richness(bundle());
+      if (!b) {
+        if (!local) { cd(cb, true, '这台平板还没有配置，也没账户存档'); return; }
+        push(function (pOk, pMsg) { cd(cb, pOk, pOk ? '已把本机配置存进 HA 账户（' + local + ' 项）' : pMsg); }, { force: true });
+        return;
+      }
+      remote = { rich: richness(b), savedAt: b.savedAt };
+      if (remote.rich > local) {
+        applyBundle(b);
+        cd(cb, true, '已从 HA 账户恢复配置（' + remote.rich + ' 项，存于 ' + shortTime(b.savedAt) + '）');
+        return;
+      }
+      if (local > remote.rich) {
+        push(function (pOk, pMsg) { cd(cb, pOk, pOk ? '已把本机配置上传到 HA 账户（' + local + ' 项）' : pMsg); }, { force: true });
+        return;
+      }
+      cd(cb, true, '本机与 HA 账户里的配置一致（' + local + ' 项）');
     });
   }
 
@@ -266,7 +346,9 @@
       lastOk: lastPushOk,
       msg: lastMsg,
       ns: NS,
-      file: FILE
+      file: FILE,
+      remoteRich: remote ? remote.rich : 0,
+      remoteAt: remote ? shortTime(remote.savedAt) : ''
     };
   }
 
@@ -299,6 +381,9 @@
     putUser: putUser,
     service: service,
     pull: pull,
+    remoteGet: remoteGet,
+    sync: sync,
+    richness: richness,
     setAuto: setAuto,
     status: status,
     reloadPanel: reloadPanel

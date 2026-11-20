@@ -4272,9 +4272,14 @@ function bindDim() {
       '<div class="p-row"><div class="p-name">保存成文件</div><button class="btn" data-act="store-file">存到平板</button></div>' +
       '<div class="p-row"><div class="p-name">从文件恢复</div><button class="btn" data-act="store-load">读取</button></div>' +
       '<div class="set-sec">HA 账户</div>' +
+      '<div class="cfg-desc">' + (st.remoteRich
+        ? '账户里存着 ' + st.remoteRich + ' 项（' + st.remoteAt + '）'
+        : '还没查过账户里的配置') + '</div>' +
+      '<div class="p-row"><div class="p-name">与账户同步（谁的内容多用谁的）</div><button class="btn" data-act="store-sync">同步</button></div>' +
       '<div class="p-row"><div class="p-name">上传到 HA 账户</div><button class="btn" data-act="store-push">上传</button></div>' +
       '<div class="p-row"><div class="p-name">从 HA 账户恢复</div><button class="btn" data-act="store-pull">恢复</button></div>' +
       '<div class="p-row"><div class="p-name">改完自动同步</div><button class="p-sw' + (st.auto ? ' on' : '') + '" data-act="store-auto">' + (st.auto ? '开' : '关') + '</button></div>' +
+      '<div class="cfg-desc">换到新平板：连上同一个 HA 账户后开机会自动把账户里的配置拉下来（新平板自己的默认值内容少，不会盖掉账户里那份）。</div>' +
       (st.msg ? '<div class="cfg-desc">上次：' + esc(st.msg) + '</div>' : '');
     return h;
   }
@@ -4305,7 +4310,8 @@ function bindDim() {
         screenAuthRow() +
         segRow('唤醒亮度', 'bright', [{ v: 40, t: '40%' }, { v: 70, t: '70%' }, { v: 100, t: '100%' }]) +
         segRow('夜间调暗', 'night', [{ v: true, t: '开' }, { v: false, t: '关' }]) +
-        segRow('防烧屏位移', 'burn', [{ v: true, t: '开' }, { v: false, t: '关' }]);
+        segRow('防烧屏位移', 'burn', [{ v: true, t: '开' }, { v: false, t: '关' }]) +
+        segRow('待机天气', 'wxOn', [{ v: true, t: '开' }, { v: false, t: '关' }]);
     }
     if (tab === 'music') {
       return '<div class="set-sec">负一屏音乐</div>' +
@@ -4595,6 +4601,7 @@ function bindDim() {
         if (act === 'store-file') { window.HCStore.toFile(show); return; }
         if (act === 'store-load') { window.HCStore.fromFile(show); return; }
         if (act === 'store-push') { toast('正在上传到 HA 账户…'); window.HCStore.push(show); return; }
+        if (act === 'store-sync') { toast('正在和 HA 账户比对…'); window.HCStore.sync(function (ok, msg) { toast(msg); repaintStore(); }); return; }
         if (act === 'store-pull') { window.HCStore.pull(show); return; }
         if (act === 'store-auto') { window.HCStore.setAuto(!window.HCStore.status().auto); repaintStore(); return; }
       }
@@ -5476,8 +5483,13 @@ function boot() {
           return S.backend.request(msg, cb) !== false;
         }
       });
+      /* 开机自动和 HA 账户比对一次：账户里的配置更多就拉下来（换设备时配置能自己回来），
+         本机更多就上传上去。没连上 HA 时每 3 秒再试，最多 4 次。 */
+      window.HCStore.sync(function (ok, msg) { if (ok && msg) toast(msg); }, 4);
     }
     if (window.HCDiag) window.HCDiag.install();
+    /* 待机页天气：把状态表交给它，它自己挑 weather.* 或人所在地的坐标 */
+    if (window.HCWeather) window.HCWeather.bindStates(function () { return S.states; });
     S.backend.onStates(onStates);
     /* 真实 HA 走增量；MockBackend 没有 onEntity，仍然每 tick 全量 */
     if (S.backend.onEntity) S.backend.onEntity(onState);
