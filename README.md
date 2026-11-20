@@ -68,7 +68,7 @@ powershell -ExecutionPolicy Bypass -File tools\deploy.ps1 -SkipApk   # 只改了
 
 它会依次做：adb 在线检查（离线时直接告诉你「长按电源键 10 秒」而不是抛异常）→ 装 APK → 推 `panel\` 到 `/sdcard/HomeControl/panel/` → 改写 `url.txt` → force-stop + 启动 → 校验 `page finished` / 无脚本错误 / 前台是壳 App，最后打印 DEPLOY OK。
 
-版本号随构建更新：`versionName 0.7.59` / `versionCode 96`（`build.ps1` 的默认值就是当前版本。**约定：每次改动后都发一次新版本，迭代尽可能小**——versionCode +1、versionName 只进补丁位，如 `-VersionCode 96 -VersionName "0.7.59"`，并同步改这一行，不用再写一次性升版本脚本——装到已装更高 versionCode 的设备上会 `INSTALL_FAILED_VERSION_DOWNGRADE`），诊断页第一行就能看到「版本 0.7.58 · MI PAD 2」。
+版本号随构建更新：`versionName 0.7.60` / `versionCode 97`（`build.ps1` 的默认值就是当前版本。**约定：每次改动后都发一次新版本，迭代尽可能小**——versionCode +1、versionName 只进补丁位，如 `-VersionCode 98 -VersionName "0.7.61"`，并同步改这一行，不用再写一次性升版本脚本——装到已装更高 versionCode 的设备上会 `INSTALL_FAILED_VERSION_DOWNGRADE`），诊断页第一行就能看到「版本 0.7.60 · MI PAD 2」。
 
 面板把自己也注册进 Home Assistant（0.7.9）：走 `POST /api/states/<entity_id>`（实测 201，不存在就新建，不需要 MQTT），每分钟报一次 `sensor.homecontrol_panel`（在线状态、型号、App 版本、IP/SSID、皮肤、电量、充电、`last_seen`）、`binary_sensor.homecontrol_panel_connected`、`sensor.homecontrol_panel_battery`、`binary_sensor.homecontrol_panel_charging`、`switch.homecontrol_panel_dark_mode`。那个开关是双向的：面板写自己的皮肤，HA 里把开关拨了，面板跟着换皮肤（`selfWritten` 用来区分「HA 那边改了」和「我们自己写的」，不会自己跟自己打架）。注意 HA 的 REST 建的是实体，不是设备注册表里的设备，所以在 HA 界面上它们归在「未分配设备」下。
 ## 构建与部署
@@ -77,7 +77,7 @@ powershell -ExecutionPolicy Bypass -File tools\deploy.ps1 -SkipApk   # 只改了
 # 构建（路径由 tools\env.ps1 解析：SDK / build-tools / android.jar / JDK / adb，可用 HC_ANDROID_SDK 等环境变量覆盖）
 powershell -ExecutionPolicy Bypass -File .\tools\build.ps1                                  # debug 变体，含假 HA + 调试开关
 powershell -ExecutionPolicy Bypass -File .\tools\build.ps1 -Variant release -OutName homecontrol-release.apk   # 正式包：不含 MockHaServer
-powershell -ExecutionPolicy Bypass -File .\tools\build.ps1 -VersionCode 97 -VersionName "0.7.60"   # 发新包：版本号 +1（默认值就是当前版本 96 / 0.7.59）
+powershell -ExecutionPolicy Bypass -File .\tools\build.ps1 -VersionCode 98 -VersionName "0.7.61"   # 发新包：版本号 +1（默认值就是当前版本 97 / 0.7.60）
 
 # 安装
 adb install -r .\dist\homecontrol.apk
@@ -411,7 +411,7 @@ WebSocket 帧统计）。注意这是模拟器数字，Chromium 57 真机还没�
 要让升级真正可用，还需要两件事：
 
 - **发一个 release**：tag 用 `v0.7.14` 这种格式，附件上传 APK（文件名任意，`.apk` 结尾即可）。
-  `tools/release.ps1` 就是干这个的（走 GitHub API，需要 `GITHUB_TOKEN` 环境变量——用 git 凭据管理器里那份即可：`$env:GITHUB_TOKEN` 从 `git credential fill` 取）。每次改动发新 APK 时都要跟着发一次 release：`.\tools\release.ps1 -Version 0.7.55 -Notes "…"`（release 已到 v0.7.58
+  `tools/release.ps1` 就是干这个的（走 GitHub API，需要 `GITHUB_TOKEN` 环境变量——用 git 凭据管理器里那份即可：`$env:GITHUB_TOKEN` 从 `git credential fill` 取）。每次改动发新 APK 时都要跟着发一次 release：`.\tools\release.ps1 -Version 0.7.60 -Notes "…"`（release 已到 v0.7.60
 
 ## MQTT 节点（0.7.23+，实测 10.10.1.8 的 EMQX）
 
@@ -429,6 +429,7 @@ WebSocket 帧统计）。注意这是模拟器数字，Chromium 57 真机还没�
 - **添加卡片改两级菜单 + 放开门类过滤**（0.7.58）：以前「＋ 添加卡片」直接把实体铺成一长列，而且 `button` / `number` / `select` / `text` / `lock` 这些域、以及没写 `device_class` 的传感器会被 `layout.js` 直接丢掉，HA 里明明有这台设备、面板上却永远搜不到（典型：MQTT 或 HASS.Agent 注册出来的按钮/数值实体）。现在 ①`typeOf()` 认全这些域（`valve`/`vacuum`/`input_switch` 归开关、`input_number` 归数值…），`TYPE_CAP` 给每类单独限额，默认房间不会再被上百个充电保护参数淹掉，但**没有任何实体被永久过滤掉**——`layout.build()` 额外返回 `all[]` 全量候选；②「＋ 添加卡片」变成两级：先按设备列（`17 / 21 个实体`、整台已加的带 ✓），点进某台设备再勾它下面的具体实体，底部「返回设备 / 本设备全部加入(去掉) / 完成」；一级底部仍是「加本房间全部 / 完成」。③被过滤掉的实体勾上后会真插进对应房间（`injectTile()` 按 `dev_id` 找到设备、按 `areaName` 找房间，落在「其他」），并记进 `hc.edit.extra`，布局重建后自动补回。新增类型也能点：`button` 按一下发 `press`、`lock` 一发 lock/unlock、`number`/`select`/`text` 显示当前值。顺手修掉一个老坑：`refreshSheet(html)` 被后定义的同名 `refreshSheet()`（实体弹层用）覆盖，导致所有「换一屏弹层」的调用都是空操作——改名为 `paintSheet(html)`。回归：`tools/test-ui.js`（581 checks）、`tools/e2e-settings.js` 两级菜单 4 项；真机截图 `docs/screens/panel-add-devices.png`、`docs/screens/panel-add-entities.png`。
 - **中控屏自己的电量卡**（0.7.56）：面板通过 MQTT 注册进 HA 后，`sensor.homecontrol_panel_<slug>_battery` 以前被 `layout.js` 的「传感器必须 device_class∈白名单」挡掉（battery 不在白名单，因为全屋几百个电池卡会挤掉房间里的温湿度）。现在对「中控屏自己」这一个电量单独放行，其它设备的电池仍然不收。回归 `tools/test-ui.js` 的「布局：中控屏自己的电量收进卡片」等 8 条；截图 `docs/screens/panel-own-battery.png`。- **设备列表刷新**（0.7.54）：HA 里新加的设备（或改了名字/房间）以前要整页重载才出现。现在设置 →「连接」→「设备列表」有 **刷新设备列表** 按钮，点一下重拉一次 `get_states` + 三个 registry 再重建布局，面板其它状态（房间选择、滚动位置）都留着；下面还有 **定时刷新** 可选 关 / 5 / 15 / 30 分钟（默认 15）。定时器在熄屏/后台、编辑卡片、弹层打开时会自己跳过，不打断人也不白耗电。实现：`backend.js` 新增 `HABackend.prototype.reloadStates(cb)`（WS 在线走 `get_states`，不在线退回 REST），`app.js` 的 `refreshEntities()` 复用 `applyAutoLayout()`。回归 `node tools/e2e-settings.js` 第 7 节、`tools/test-ui.js`；截图 `docs/screens/panel-conn-refresh.png`。
 - **歌单页「我喜欢」**（0.7.55，0.7.57 起随最新包发布）：歌单和「所有歌曲」每行右边多一个 ♥，点一下收藏、再点取消；顶部多一个「我喜欢」歌单。**收藏写进登录账号在道理鱼服务器上的「喜欢」歌单**——服务端用 `description=__system_default_favorites__` 标记那个歌单，客户端按标记找、不按名字（「不喜欢」也含「喜欢」二字会认错）；加入 `POST /api/playlists/<id>/tracks {"trackId":…}`（201）、移出 `DELETE /api/playlists/<id>/tracks/<trackId>`（204）；成员用 `GET /api/playlists/<id>/tracks?skip=&take=200` 分页读（`items[].track`）。换平板登录同一账号就是同一份收藏；服务器没有那个歌单时 ♥ 不显示。截图 `shots/v0.7.55-2026-11-19/pad5-fav-view.png`。
+- **播放页控制排的「喜欢」**（0.7.60）：正在播放页底部控制排（上一首/播放/下一首/循环/队列）右边多一颗 ♥，和音乐播放器一样直接收藏**当前这首**；已收藏时是实心并高亮，再点一下取消。没有在播放的歌时点它提示「没有在播放的歌」。收藏就绪后当前曲的心会自动点亮（`loadFav` 回填后重绘控制排）。
 - **歌单页返回按钮**（0.7.53）：进歌单后顶部那颗「返回」改成暗色幽灵胶囊（面板表面色做底、淡描边、图标 18px 与文字齐平），不再走浏览器默认的亮灰底黑字按钮——暗色界面上那颗灰胶囊格外扎眼，按下有轻微缩小反馈。截图 `shots/v0.7.53-2026-11-19/pad5-back-pill.png`。
 - **待机页歌词**（0.7.52）：放歌时，时间与底部「正在播放」之间显示三行歌词（上一行 / 当前行 / 下一行，当前行更亮更大），每行跟着播放进度自动翻。`music.js` 只多导出两个只读方法 `lyrics()`（`{lines:[{t,text}], synced}`）与 `lyricLine()`（当前行号，纯文本歌词按进度比例估），`dimscreen.js` 每秒钟读一次决定画哪一行，不碰音频、不另外拉歌词（音乐页本来就在拉）。歌词块走文档流（`flex:1` 居中），所以**不会压到日期行或播放条**；没歌词时不占位、上下留白由 flex 自己分。截图 `docs/screens/panel-dim-music.png`；回归 `node tools/e2e-dim.js`（26 项，含歌词三行与行号推进）。
 - **空闲待机页：只有时间，放歌时才多一些**（0.7.50）：熄屏后整屏纯黑，中间是 220px 粗体时间 + 一行日期副行（`11月18日 · 周三`），**「轻触屏幕唤醒」那行提示已删掉**——全黑画面上只有时间本身就在说「碰一下」，多一行小字反而脏；触摸仍然照旧唤醒，那一下也不会误触卡片。音乐在放时，底部浮出「封面 + 曲名 + 艺术家 + 进度条 + 已播/总时长」；暂停或换成未播放状态后 1 秒内自动收起。实现全在新的 `panel/js/dimscreen.js`（`DimScreen.show/hide/paint/dateText/isOn`，每秒刷新用 `setInterval` 只活在熄屏期间）：音乐信息**只读公开接口** `MusicUI.isPlaying()` / `MusicUI.playing()`，进度直接镜像音乐页已有的 `#mFill` / `#mPos` / `#mDur`，不碰 `music.js` 内部状态也不改播放逻辑；封面只在 src 变化时重设、加载失败退回占位音符。`enterDim()` / `exitDim()` 里各加一行 `DimScreen.show()` / `.hide()`（没有 `DimScreen` 时自动跳过）。时钟默认在整屏正中（没放歌时屏上只有它）；一旦底部出现「正在播放」，`#dim` 加 `with-music`，时间抬到上方（`padding-top:9vh`）把底部让出来，暂停后再回到正中——抬不抬由 `DimScreen` 只切一个类名，位置完全由 CSS 决定。顺手修掉 `.set-tabs` 用 flex `gap` 在 Chromium 57 上无效的老问题（改 margin）。回归：`node tools/e2e-dim.js`（24 项）+ `node tools/check-dim.js <序列>`；截图 `docs/screens/panel-dim-clock.png`、`docs/screens/panel-dim-music.png`。

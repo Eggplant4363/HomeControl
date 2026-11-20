@@ -410,7 +410,7 @@ console.log('设置页二级菜单');
 var tabRow = api.settingsTabsHtml();
 eq((tabRow.match(/data-act="settings-tab"/g) || []).length, 9, '二级菜单有 9 个一级标签');
 eq(tabRow.indexOf('data-val="ui"') >= 0, true, '标签里有「外观」');
-eq(tabRow.indexOf('class="set-tab on"') >= 0, true, '当前标签高亮');
+eq(tabRow.indexOf('class="set-nav-i on"') >= 0, true, '当前标签高亮（左栏）');
 eq(api.settingsTab(), 'ui', '默认标签是外观');
 eq(api.settingsSectionHtml('ui').indexOf('每行卡片') >= 0, true, '外观：每行卡片在这里');
 eq(api.settingsSectionHtml('ui').indexOf('防烧屏位移') < 0, true, '外观：屏幕项不在这一页');
@@ -447,8 +447,8 @@ eq(tabSrc.indexOf('SETTINGS_TABS') >= 0, true, '一级标签表存在');
 eq(tabSrc.indexOf("'ent-refresh'") >= 0, true, 'app.js 处理 ent-refresh 动作');
 eq(tabSrc.indexOf('scheduleEntityRefresh();') >= 0, true, 'app.js 启动时会排定时刷新');
 var tabCss = fs.readFileSync(path.join(root, 'panel', 'css', 'app.css'), 'utf8');
-eq(tabCss.indexOf('.set-tab') >= 0, true, '标签页有样式');
-eq(tabCss.indexOf('.set-tab.on') >= 0, true, '当前标签样式');
+eq(tabCss.indexOf('.set-nav-i') >= 0, true, '左栏分类有样式');
+eq(tabCss.indexOf('.set-nav-i.on') >= 0, true, '当前标签样式');
 
 /* ---------- 歌单页「返回」按钮：暗色幽灵胶囊，不用浏览器默认灰底按钮 ---------- */
 eq(tabCss.indexOf('.m-crumb .m-back') >= 0, true, '返回按钮有专属样式（不能靠 Chromium 默认 button）');
@@ -1070,6 +1070,10 @@ ok(musicSrc.indexOf('__system_default_favorites__') >= 0, '按服务器的系统
 ok(musicSrc.indexOf('DaoliyuBackend.prototype.addFav') >= 0 && musicSrc.indexOf('DaoliyuBackend.prototype.removeFav') >= 0, '后端有加/移收藏两个方法');
 ok(musicSrc.indexOf("'POST'") >= 0 && musicSrc.indexOf("'/tracks/'") >= 0, '移出用 DELETE /api/playlists/<id>/tracks/<trackId>');
 ok(musicSrc.indexOf('function favHeart') >= 0 && musicSrc.indexOf("if (!favSupported()) return '';") >= 0, '不支持收藏的后端不画心形');
+ok(idxHtml.indexOf('id="mFav"') >= 0 && idxHtml.indexOf('data-mact="fav-cur"') >= 0, '播放控制排有一颗「喜欢」按钮（index.html）');
+ok(musicSrc.indexOf("if (a === 'fav-cur')") >= 0, '派发处理 fav-cur（当前正在播的那首）');
+ok(musicSrc.indexOf("e.favBtn = $('mFav')") >= 0, '播放页心形按钮接上元素');
+ok(musicSrc.indexOf("favOn ? 'heartFill' : 'heart'") >= 0, '播放页心形按收藏状态换实心/描边');
 
 /* 行为：桩后端——第一次点=发到服务器，第二次点=从服务器移回；不支持的后端不画心形 */
 var muFav = windowStub.MusicUI;

@@ -1421,6 +1421,7 @@
         if (err) { toast('取「喜欢」歌单失败：' + err); if (cb) cb(err); return; }
         favSet = set;
         favList = list || [];
+        paintTransport();   /* 收藏就绪后点亮当前正在播的那首的心 */
         if (cb) cb(null);
       });
     });
@@ -1760,6 +1761,18 @@
       e.modeBtn.className = 'm-btn m-mini' + (onMode ? ' on' : '');
       e.modeBtn.innerHTML = svg(S.shuffle ? 'shuffle' : (S.repeat === 'one' ? 'repeatOne' : 'repeat'));
       e.modeBtn.setAttribute('aria-label', modeLabel());
+    }
+    /* 播放页上的「喜欢」：和音乐播放器一样放在控制排里，管的是当前这首（列表里的 ♥ 管每行） */
+    if (e.favBtn) {
+      if (!favSupported()) {
+        e.favBtn.className = 'm-btn m-mini hide';
+        e.favBtn.innerHTML = '';
+      } else {
+        var favOn = S.track ? isFav(S.track.id) : false;
+        e.favBtn.className = 'm-btn m-mini' + (favOn ? ' on' : '');
+        e.favBtn.innerHTML = svg(favOn ? 'heartFill' : 'heart');
+        e.favBtn.setAttribute('aria-label', favOn ? '移出「喜欢」' : '喜欢这首歌');
+      }
     }
   }
 
@@ -2127,6 +2140,16 @@
       return;
     }
     if (a === 'fav-open') { openFavView(); return; }
+    if (a === 'fav-cur') {
+      if (!S.track) { toast('没有在播放的歌'); return; }
+      toggleFav(S.track, function (err, ok) {
+        if (err) return;
+        paintTransport();
+        if (S.view === 'queue') paintQueue();
+        act('music fav ' + (ok ? 'on' : 'off') + ' cur');
+      });
+      return;
+    }
     if (a === 'fav') {
       var fid = btn.getAttribute('data-id');
       toggleFav(trackById(fid) || { id: fid }, function (err, ok) {
@@ -2276,7 +2299,7 @@
     e.pos = $('mPos'); e.dur = $('mDur');
     e.play = $('mPlay');
     e.prev = $('mPrev'); e.next = $('mNext');
-    e.queueBtn = $('mQueue'); e.modeBtn = $('mMode');
+    e.queueBtn = $('mQueue'); e.modeBtn = $('mMode'); e.favBtn = $('mFav');
     e.lyrics = $('mLyrics');
     e.vol = $('mVol'); e.volFill = $('mVolFill'); e.volKnob = $('mVolKnob'); e.volPct = $('mVolPct');
     e.crumb = $('mCrumb'); e.list = $('mList');
