@@ -17,6 +17,7 @@ const ROOT = path.resolve(__dirname, '..');
 const DEFAULT_FILES = ['panel/js/config.js', 'panel/js/icons.js', 'panel/js/layout.js',
   'panel/js/backend.js', 'panel/js/music.js', 'panel/js/store.js',
   'panel/js/diaglog.js',
+  'panel/js/weather.js',
   'panel/js/update.js', 'panel/js/dimscreen.js', 'panel/js/app.js'];
 const FILES = process.argv.slice(2).length ? process.argv.slice(2) : DEFAULT_FILES;
 

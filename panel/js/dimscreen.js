@@ -160,6 +160,8 @@
     paintPlaceholder();
     paintMusic();
     paintLyric();
+    /* 天气（panel/js/weather.js）：没数据时它会自己去取一次，回来再画 */
+    if (window.HCWeather) window.HCWeather.paint();
   }
 
   function show() {

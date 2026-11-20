@@ -521,6 +521,10 @@ body::before { content: none; }
   line-height: 1.02; font-variant-numeric: tabular-nums;
 }
 .dim-date { margin-top: 6px; font-size: 22px; font-weight: 600; letter-spacing: 1px; color: rgba(255,255,255,.42); }
+.dim-wx { display: flex; align-items: center; justify-content: center; margin-top: 10px; font-size: 20px; letter-spacing: .5px; color: rgba(255,255,255,.5); }
+.dim-wx.off { display: none; }
+.dim-wx-ico { display: inline-flex; margin-right: 8px; }
+.dim-wx-ico svg { width: 22px; height: 22px; stroke: currentColor; fill: none; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
 /* 正在播放：贴在底部一条，宽度限住，长名字省略号 */
 /* 歌词：介于时间与底部「正在播放」之间的一块，绝对定位所以完全不影响时间的居中/抬升 */
 /* 歌词块走文档流：夹在时间与底部「正在播放」之间，由 flex 自己分配空间，不写死百分比
