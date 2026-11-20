@@ -838,9 +838,16 @@ body::before { content: none; }
 .seg + .seg { margin-left: 2px; }
 .seg.on { background: var(--accent-soft); color: var(--acc-ink); }
 .set-row, .p-row, .set-sec, .cfg-actions { contain: layout style; }
+/* 设置页头部：返回胶囊 + 小标题（和音乐页的 .m-back 同一套幽灵胶囊样式） */
+.set-head { display: flex; align-items: center; flex: 0 0 auto; margin-bottom: 8px; }
+.set-back { display: inline-flex; align-items: center; height: 30px; padding: 0 12px 0 9px; margin-right: 12px; border-radius: 15px; font-size: 13px; background: rgba(var(--surf),.06); border: 1px solid rgba(var(--surf),.14); color: var(--text-2); contain: layout style; }
+.set-back svg { width: 18px; height: 18px; margin-right: 7px; flex: 0 0 auto; }
+.set-back:active { transform: scale(.95); background: rgba(var(--surf),.13); }
+.set-head .sheet-title { margin-bottom: 0; }
 #view .sheet-title { margin-bottom: 10px; font-size: 17px; color: var(--text-4); }
 /* 设置页：左右两栏各滚各的（左栏不再跟着右栏一起走） */
 .view.panes { display: flex; flex-direction: column; overflow: hidden; }
+/* 头部与内容分离：滚动的只有 .set-shell 那一层 */
 .view.panes .sheet-title, .view.panes .cfg-actions { flex: 0 0 auto; }
 .view.panes .set-shell { flex: 1 1 auto; min-height: 0; align-items: stretch; }
 .view.panes .set-side, .view.panes .set-main { min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; -ms-overflow-style: none; }

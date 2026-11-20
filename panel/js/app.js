@@ -4389,11 +4389,11 @@ function bindDim() {
 
   function panelSheetHtml() {
     var tab = settingsTab(), meta = settingsTabMeta(tab);
-    var html = '<div class="sheet-title">设置</div>';
+    var html = '<div class="set-head"><button class="set-back" data-act="close">' + svg('back') + '<span>返回</span></button>' +
+      '<div class="sheet-title">设置</div></div>';
     html += '<div class="set-shell">' + settingsTabsHtml() +
       '<div class="set-main"><div class="set-title">' + esc(meta.t) + '</div>' +
       settingsSectionHtml(tab) + '</div></div>';
-    html += '<div class="cfg-actions"><button class="btn primary" data-act="close">完成</button></div>';
     return html;
   }
 
