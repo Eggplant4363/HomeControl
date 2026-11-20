@@ -210,9 +210,26 @@ public class MainActivity extends Activity {
     private final java.util.concurrent.ExecutorService netPool =
             java.util.concurrent.Executors.newFixedThreadPool(2);
 
+    /** 版本号：Bridge 里那两个是内部类方法，onCreate 用不了，这里各留一个 Activity 级的小工具 */
+    private String pkgVersion() {
+        try {
+            return getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
+        } catch (Throwable t) { return "?"; }
+    }
+
+    private long pkgVersionCode() {
+        try {
+            return getPackageManager().getPackageInfo(getPackageName(), 0).versionCode;
+        } catch (Throwable t) { return 0L; }
+    }
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        PanelLog.init(this);
+        PanelLog.write("boot", "start model=" + Build.MODEL + " device=" + Build.DEVICE
+                + " sdk=" + Build.VERSION.SDK_INT + " ver=" + pkgVersion() + "/" + pkgVersionCode()
+                + " heap=" + (Runtime.getRuntime().maxMemory() / 1024L) + "K");
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         // wall panel: come up over the keyguard and wake the screen ourselves
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED
@@ -315,6 +332,9 @@ public class MainActivity extends Activity {
             @Override
             public boolean onConsoleMessage(ConsoleMessage cm) {
                 Log.d(TAG, "JS " + cm.message() + " @" + cm.sourceId() + ":" + cm.lineNumber());
+                if (cm.messageLevel() == ConsoleMessage.MessageLevel.ERROR) {
+                    PanelLog.write("js.err", cm.message() + " @" + cm.sourceId() + ":" + cm.lineNumber());
+                }
                 return true;
             }
         });
@@ -345,6 +365,7 @@ public class MainActivity extends Activity {
             @Override
             public void onReceivedError(WebView view, int errorCode, String description, String failingUrl) {
                 Log.w(TAG, "page error " + errorCode + " " + description + " " + failingUrl);
+                PanelLog.write("page", "error " + errorCode + " " + description + " " + failingUrl);
                 scheduleRetry(description);
             }
 
@@ -653,6 +674,7 @@ public class MainActivity extends Activity {
         syncPanelFromAssets();
         String url = resolveUrl();
         Log.i(TAG, "loadPanel " + url);
+        PanelLog.write("nav", "load " + url);
         long now = System.currentTimeMillis();
         lastBeat = now;
         loadedAt = now;
@@ -721,6 +743,7 @@ public class MainActivity extends Activity {
                         // 这一页还没给过心跳：首帧可能很慢（实测 first states 可 35s），门槛放宽
                         if (loadedAt > 0 && now - loadedAt > FIRST_BEAT_MS) {
                             Log.w(TAG, "watchdog: no heartbeat since load, reloading");
+                            PanelLog.write("watchdog", "首帧超时 " + (now - loadedAt) / 1000 + "s，重载页面");
                             retryCount = 0;
                             loadedAt = now;
                             web.reload();
@@ -729,6 +752,7 @@ public class MainActivity extends Activity {
                     }
                     if (now - lastBeat > BEAT_STALL_MS) {
                         Log.w(TAG, "watchdog: no heartbeat for " + BEAT_STALL_MS / 1000 + "s, reloading");
+                        PanelLog.write("watchdog", "心跳停了 " + BEAT_STALL_MS / 1000 + "s，重载页面");
                         retryCount = 0;
                         lastBeat = now;
                         web.reload();
@@ -914,6 +938,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
+        PanelLog.write("life", "onResume");
         goImmersive();
         lastBeat = System.currentTimeMillis();
         if (web != null) web.onResume();
@@ -921,8 +946,26 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onPause() {
+        PanelLog.write("life", "onPause");
+        PanelLog.dumpMemory("pause");
         if (web != null) web.onPause();
         super.onPause();
+    }
+
+    @Override
+    public void onLowMemory() {
+        PanelLog.write("mem", "onLowMemory");
+        PanelLog.dumpMemory("low");
+        super.onLowMemory();
+    }
+
+    @Override
+    public void onTrimMemory(int level) {
+        if (level >= TRIM_MEMORY_RUNNING_LOW) {
+            PanelLog.write("mem", "onTrimMemory level=" + level);
+            PanelLog.dumpMemory("trim");
+        }
+        super.onTrimMemory(level);
     }
 
     private long lastBack = 0L;
@@ -955,6 +998,7 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        PanelLog.write("exit", "onDestroy (clean)");
         ui.removeCallbacksAndMessages(null);        /* 看门狗/重试/横幅的 pending 回调全部作废 */
         try { netPool.shutdownNow(); } catch (Throwable t) { }
         try {
@@ -995,6 +1039,42 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public void log(String msg) {
             Log.d(TAG, "JSB " + msg);
+            PanelLog.write("jsb", msg);
+        }
+
+        /** 面板自己的日志（JS 报错 / 关键动作 / 心跳摘要） */
+        @JavascriptInterface
+        public void logJs(String msg) {
+            PanelLog.write("js", msg);
+        }
+
+        /** 日志摘要：目录、大小、有没有还没上传的崩溃 */
+        @JavascriptInterface
+        public String logInfo() {
+            return PanelLog.snapshotJson();
+        }
+
+        /** 日志正文（尾部 maxBytes 字节），上传到 HA 用 */
+        @JavascriptInterface
+        public String logTail(int maxBytes) {
+            int n = maxBytes <= 0 ? 65536 : (maxBytes > 262144 ? 262144 : maxBytes);
+            return PanelLog.tail(n);
+        }
+
+        @JavascriptInterface
+        public void logClear() {
+            PanelLog.clear();
+        }
+
+        /** 上次是不是异常退出（还没上传过） */
+        @JavascriptInterface
+        public boolean logPending() {
+            return PanelLog.crashPending();
+        }
+
+        @JavascriptInterface
+        public void logMarkSent() {
+            PanelLog.markCrashSent();
         }
 
         @JavascriptInterface

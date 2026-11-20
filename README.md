@@ -77,7 +77,7 @@ powershell -ExecutionPolicy Bypass -File tools\deploy.ps1 -SkipApk   # 只改了
 # 构建（路径由 tools\env.ps1 解析：SDK / build-tools / android.jar / JDK / adb，可用 HC_ANDROID_SDK 等环境变量覆盖）
 powershell -ExecutionPolicy Bypass -File .\tools\build.ps1                                  # debug 变体，含假 HA + 调试开关
 powershell -ExecutionPolicy Bypass -File .\tools\build.ps1 -Variant release -OutName homecontrol-release.apk   # 正式包：不含 MockHaServer
-powershell -ExecutionPolicy Bypass -File .\tools\build.ps1 -VersionCode 105 -VersionName "0.7.68"   # 发新包：版本号 +1（默认值就是当前版本 103 / 0.7.66）
+powershell -ExecutionPolicy Bypass -File .\tools\build.ps1 -VersionCode 106 -VersionName "0.7.69"   # 发新包：版本号 +1（默认值就是当前版本 103 / 0.7.66）
 
 # 安装
 adb install -r .\dist\homecontrol.apk
@@ -820,6 +820,32 @@ JSB ACT first states 333ms · 实体 37
 结论：**没有 DOM 泄漏**，剩下的是 WebView / ART 堆的自然增长（GC 松弛量），不是每帧新建节点。另外每天凌晨 4 点的静默重载本身会重置一次页面。
 
 保险起见加了个自检：节点数超过「基线 × 1.6 + 80」就自动重载并提示；打开诊断页时会打一条 `JSB ACT mem <当前>/<基线> limit <上限>`，现场可以直接看数字。
+## 闪退排查：日志与一键上传（0.7.68+）
+
+老平板（MI PAD 2 / Android 5.1）偶尔「自动闪退」，logcat 一重启就没了、没 root 也读不到 dropbox，所以面板自己记一份：
+
+| 位置 | 内容 |
+| --- | --- |
+| `/sdcard/HomeControl/logs/panel.log` | 单行 256 KB 上限、超出轮转到 `panel.1.log` / `panel.2.log` |
+| `/sdcard/HomeControl/logs/crash.log` | 未捕获异常的完整栈（同时写一行摘要进 panel.log） |
+
+记什么：每次启动一条 `[boot] start model=… sdk=… ver=…`、每次导航 `[nav] load …`、前后台 `[life] onResume/onPause`、正常退出 `[exit] onDestroy (clean)`、WebView 控制台 ERROR 与页面加载失败、看门狗因心跳停掉而重载、`onLowMemory` / `onTrimMemory` 与内存水位（`java used/max native threads`）、面板 JS 侧的 `window.onerror` 与 60 秒一次的心跳摘要（`hb tiles=… entities=… editing=…`）。
+
+**怎么判断上次是不是异常退出**：最后一条是 `[exit]` 说明正常关闭；只有 `[boot]` 没有 `[exit]`（或者有 `crash.log`）就是被系统杀掉 / 原生崩溃。这种情况下面板下次启动会**自动把现场传一次**，不用等人来点。
+
+手动上传：面板「设置 → 关于 → 诊断日志」，三个按钮：
+
+- **上传到 HA**：完整 JSON 存进当前 HA 用户账户（`frontend/set_user_data`，key `homecontrol.panel_log`），同时发一条 `persistent_notification`（标题「中控屏日志（型号）」）把关键行摘出来——HA 右上角铃铛里直接能看。
+- **存成文件**：另存 `/sdcard/HomeControl/logs/panel-log-<时间戳>.json`，插 USB 或 `adb pull` 就能拷走。
+- **清空**：删掉所有 `*.log`。
+
+在电脑上取：
+
+```powershell
+adb pull /sdcard/HomeControl/logs/panel.log .
+adb pull /sdcard/HomeControl/logs/crash.log .
+```
+
 ## 面板模拟器（不需要平板）
 
 平板不在手边（或者干脆还没上墙）时，用电脑浏览器就能跑**同一份面板代码**，数据来自真实 HA：

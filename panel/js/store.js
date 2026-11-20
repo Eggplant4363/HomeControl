@@ -233,6 +233,22 @@
     });
   }
 
+  /** 通用出口：别的模块（诊断日志）要发 WS 请求时用它，不用自己摸 transport */
+  function wsCall(msg, cb) { call(msg, cb); }
+
+  /** 存一份任意 key 的用户数据（frontend/set_user_data） */
+  function putUser(key, value, cb) {
+    call({ type: 'frontend/set_user_data', key: String(key), value: value }, function (ok, res) {
+      cd(cb, ok, ok ? 'ok' : String(res || '写入失败'));
+    });
+  }
+
+  /** 调一个 HA 服务（给「发一条通知」这种用） */
+  function service(domain, name, data, cb) {
+    call({ type: 'call_service', domain: String(domain), service: String(name), service_data: data || {} },
+      function (ok, res) { cd(cb, ok, ok ? 'ok' : String(res || '调用失败')); });
+  }
+
   function schedulePush() {
     if (!auto || applying || !available()) return;
     if (pushTimer) clearTimeout(pushTimer);
@@ -279,6 +295,9 @@
     bindTransport: bindTransport,
     available: available,
     push: push,
+    wsCall: wsCall,
+    putUser: putUser,
+    service: service,
     pull: pull,
     setAuto: setAuto,
     status: status,

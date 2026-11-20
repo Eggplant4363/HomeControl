@@ -126,7 +126,8 @@ function load(rel) {
 load('panel/js/config.js');
 load('panel/js/icons.js');
 load('panel/js/layout.js');
-load('panel/js/store.js');
+load('panel/js/store.js');
+load('panel/js/diaglog.js');
 load('panel/js/update.js');
 load('panel/js/dimscreen.js');
 load('panel/js/mqtt.js');
@@ -1210,7 +1211,30 @@ ok(appJs.indexOf('HCStore.bindTransport') >= 0, 'app.js 把 WS 通道交给 stor
 ok(appJs.indexOf('localStorage.setItem(PREFS_KEY') < 0 && appJs.indexOf('localStorage[NAMES_KEY]') < 0, 'app.js 不再自己写 localStorage（走 store）');
 ok(fs.readFileSync(path.join(root, 'panel', 'js', 'music.js'), 'utf8').indexOf('window.HCStore') >= 0, 'music.js 的音乐设置也走 store');
 ok(idxHtml.indexOf('js/store.js') >= 0 && idxHtml.indexOf('js/store.js') < idxHtml.indexOf('js/app.js'), 'index.html 先加载 store.js 再加载 app.js');
-ok(fs.readFileSync(path.join(root, 'tools', 'lint-es5.js'), 'utf8').indexOf('panel/js/store.js') >= 0, 'lint-es5 覆盖 store.js');
+ok(fs.readFileSync(path.join(root, 'tools', 'lint-es5.js'), 'utf8').indexOf('panel/js/store.js') >= 0, 'lint-es5 覆盖 store.js');
+
+/* 诊断日志（panel/js/diaglog.js + Java PanelLog） */
+const diag = windowStub.HCDiag;
+ok(!!diag, 'HCDiag 已加载');
+ok(!!(diag && diag.upload && diag.exportFile && diag.clear && diag.install && diag.status && diag.note), 'HCDiag 有 install/note/upload/exportFile/clear/status');
+const diagSrc = fs.readFileSync(path.join(root, 'panel', 'js', 'diaglog.js'), 'utf8');
+ok(diagSrc.indexOf('homecontrol.panel_log') >= 0, '日志存进 HA 用户账户的固定 key');
+ok(diagSrc.indexOf('persistent_notification') >= 0, '上传后发一条 HA 通知');
+ok(diagSrc.indexOf('window.onerror') >= 0 || diagSrc.indexOf('w.onerror') >= 0, '装了 window.onerror');
+ok(diagSrc.indexOf('logJs') >= 0 && diagSrc.indexOf('logTail') >= 0, '走原生桥写日志/读日志');
+ok(diagSrc.indexOf("why: 'crash'") >= 0, '上次异常退出会自动补传');
+const aboutSec = api.settingsSectionHtml ? api.settingsSectionHtml('about') : '';
+ok(aboutSec.indexOf('data-act="log-upload"') >= 0, '关于页有「上传到 HA」按钮');
+ok(aboutSec.indexOf('data-act="log-export"') >= 0 && aboutSec.indexOf('data-act="log-clear"') >= 0, '关于页有存文件/清空');
+ok(appJs.indexOf("diagAction(act)") >= 0 && appJs.indexOf('log-upload') >= 0, 'app.js 路由接了 log-*');
+ok(appJs.indexOf('window.HCDiag.install()') >= 0, 'boot 里装上诊断日志');
+ok(idxHtml.indexOf('js/diaglog.js') >= 0 && idxHtml.indexOf('js/diaglog.js') < idxHtml.indexOf('js/app.js'), 'index.html 先加载 diaglog.js 再加载 app.js');
+const storeSrc2 = fs.readFileSync(path.join(root, 'panel', 'js', 'store.js'), 'utf8');
+ok(storeSrc2.indexOf('putUser') >= 0 && storeSrc2.indexOf('service:') >= 0, 'store.js 提供 putUser/service 出口');
+const javaLog = fs.readFileSync(path.join(root, 'app', 'src', 'com', 'homecontrol', 'panel', 'PanelLog.java'), 'utf8');
+ok(javaLog.indexOf('setDefaultUncaughtExceptionHandler') >= 0, 'Java 装了未捕获异常钩子');
+ok(javaLog.indexOf('panel.log') >= 0 && javaLog.indexOf('crash.log') >= 0, 'Java 写 panel.log / crash.log');
+
 
 
 console.log('');

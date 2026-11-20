@@ -4349,7 +4349,44 @@ function bindDim() {
       '<div class="set-sec">维护</div>' +
       /* 「完成」由 panelSheetHtml 的全局按钮提供，这里不再重复一个 */
       '<div class="cfg-actions"><button class="btn" data-act="pref-reset">恢复默认设置</button>' +
-      '<button class="btn" data-act="panel-reload">重新加载面板</button></div>';
+      '<button class="btn" data-act="panel-reload">重新加载面板</button></div>' +
+      diagLogHtml();
+  }
+
+  /** 诊断日志：文件位置 + 大小 + 上传/另存/清空（实际干活在 panel/js/diaglog.js） */
+  function diagLogHtml() {
+    var d = window.HCDiag;
+    var h = '<div class="set-sec">诊断日志</div>';
+    if (!d) return h + '<div class="cfg-desc">这个版本没有诊断日志模块。</div>';
+    var st = d.status();
+    h += infoRow('日志文件', st.file);
+    h += infoRow('大小', (Math.round(st.size / 102.4) / 10) + ' KB' +
+      (st.pending ? ' · 上次异常退出，还没上传' : ''));
+    h += '<div class="cfg-actions">' +
+      '<button class="btn primary" data-act="log-upload">上传到 HA</button>' +
+      '<button class="btn" data-act="log-export">存成文件</button>' +
+      '<button class="btn" data-act="log-clear">清空</button></div>';
+    if (st.msg) h += '<div class="cfg-desc">上次：' + esc(st.msg) + '</div>';
+    return h;
+  }
+
+  /** 诊断日志的三个动作 */
+  function diagAction(act) {
+    var d = window.HCDiag;
+    if (!d) { toast('这个版本没有诊断日志'); return; }
+    if (act === 'log-upload') {
+      toast('正在上传日志…');
+      d.upload(function (ok, msg) { toast(msg); setTimeout(openSettingsView, 120); });
+      return;
+    }
+    if (act === 'log-export') {
+      d.exportFile(function (ok, msg) { toast(msg); setTimeout(openSettingsView, 120); });
+      return;
+    }
+    if (act === 'log-clear') {
+      d.clear(function (ok, msg) { toast(msg); setTimeout(openSettingsView, 120); });
+      return;
+    }
   }
 
   /* 关于页：只读信息行（像 iPadOS「通用 → 关于本机」那样） */
@@ -4539,6 +4576,7 @@ function bindDim() {
         return;
       }
       if (act === 'ent-refresh') { refreshEntities(false); return; }
+      if (act.indexOf('log-') === 0) { diagAction(act); return; }
       if (act === 'diag-open') { if (S.sheetShow === 'panel') closeSettingsView(); else closeSheet(); setTimeout(openDiagSheet, 60); return; }
       if (act === 'diag-probe') { toast('正在测试连接…'); setTimeout(refreshDiagProbe, 60); return; }
       if (act === 'diag-reload') { reloadSoon('正在重新加载…'); return; }
@@ -5439,6 +5477,7 @@ function boot() {
         }
       });
     }
+    if (window.HCDiag) window.HCDiag.install();
     S.backend.onStates(onStates);
     /* 真实 HA 走增量；MockBackend 没有 onEntity，仍然每 tick 全量 */
     if (S.backend.onEntity) S.backend.onEntity(onState);
