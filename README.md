@@ -849,6 +849,8 @@ adb pull /sdcard/HomeControl/logs/panel.log .
 adb pull /sdcard/HomeControl/logs/crash.log .
 ```
 
+**平板2 的实测结论（0.7.71）**：上传的那份日志里**没有崩溃记录、也没有 `[life] onPaused`**，心跳在后台直接断掉 → 不是闪退，是 **MIUI 把后台进程清理了**。修法（0.7.71）：壳 App 起一个前台服务 `KeepAliveService.java`（常驻通知「中控屏运行中」，`FLAG_NO_CLEAR` 划不掉，`START_STICKY` 被杀后系统会重启它），Android 5.1 走旧通知 API、8.0+ 走通知渠道（`keepalive`，最低优先级不弹横幅）。另外在 MIUI「安全中心 → 自启动管理」里放行「中控屏」效果最好。模拟器实测 `dumpsys activity services com.homecontrol.panel` → `isForeground=true foregroundId=4101`。
+
 ## 面板模拟器（不需要平板）
 
 平板不在手边（或者干脆还没上墙）时，用电脑浏览器就能跑**同一份面板代码**，数据来自真实 HA：
