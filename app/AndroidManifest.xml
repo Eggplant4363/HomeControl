@@ -41,6 +41,11 @@
             </intent-filter>
         </activity>
 
+        <!-- 保活：面板进程不被系统后台回收（平板2 的日志显示进程是被杀的，不是崩溃） -->
+        <service
+            android:name=".KeepAliveService"
+            android:exported="false" />
+
         <receiver
             android:name=".BootReceiver"
             android:enabled="true"

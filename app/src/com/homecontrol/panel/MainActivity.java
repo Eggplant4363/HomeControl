@@ -261,6 +261,18 @@ public class MainActivity extends Activity {
         maybeStartMockHa();
         loadPanel();
         startWatchdog();
+        startKeepAlive();
+    }
+
+    /** 保活：前台服务通知让进程不被后台回收（平板2 被系统杀的问题）。失败只记日志，不影响面板。 */
+    private void startKeepAlive() {
+        try {
+            Intent i = new Intent(this, KeepAliveService.class);
+            if (android.os.Build.VERSION.SDK_INT >= 26) startForegroundService(i);
+            else startService(i);
+        } catch (Throwable t) {
+            Log.w(TAG, "keep-alive start failed: " + t.getMessage());
+        }
     }
 
     /** 开发/联调开关：debug.flag 存在才放开调试能力（CDP、url.txt、假 HA） */

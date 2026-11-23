@@ -68,7 +68,7 @@ powershell -ExecutionPolicy Bypass -File tools\deploy.ps1 -SkipApk   # 只改了
 
 它会依次做：adb 在线检查（离线时直接告诉你「长按电源键 10 秒」而不是抛异常）→ 装 APK → 推 `panel\` 到 `/sdcard/HomeControl/panel/` → 改写 `url.txt` → force-stop + 启动 → 校验 `page finished` / 无脚本错误 / 前台是壳 App，最后打印 DEPLOY OK。
 
-版本号随构建更新：`versionName 0.7.70` / `versionCode 107`（`build.ps1` 的默认值就是当前版本。**约定：每次改动后都发一次新版本，迭代尽可能小**——versionCode +1、versionName 只进补丁位，如 `-VersionCode 107 -VersionName "0.7.70"`，并同步改这一行，不用再写一次性升版本脚本——装到已装更高 versionCode 的设备上会 `INSTALL_FAILED_VERSION_DOWNGRADE`），诊断页第一行就能看到「版本 0.7.69 · MI PAD 2」。
+版本号随构建更新：`versionName 0.7.71` / `versionCode 108`（`build.ps1` 的默认值就是当前版本。**约定：每次改动后都发一次新版本，迭代尽可能小**——versionCode +1、versionName 只进补丁位，如 `-VersionCode 107 -VersionName "0.7.70"`，并同步改这一行，不用再写一次性升版本脚本——装到已装更高 versionCode 的设备上会 `INSTALL_FAILED_VERSION_DOWNGRADE`），诊断页第一行就能看到「版本 0.7.69 · MI PAD 2」。
 
 面板把自己也注册进 Home Assistant（0.7.9）：走 `POST /api/states/<entity_id>`（实测 201，不存在就新建，不需要 MQTT），每分钟报一次 `sensor.homecontrol_panel`（在线状态、型号、App 版本、IP/SSID、皮肤、电量、充电、`last_seen`）、`binary_sensor.homecontrol_panel_connected`、`sensor.homecontrol_panel_battery`、`binary_sensor.homecontrol_panel_charging`、`switch.homecontrol_panel_dark_mode`。那个开关是双向的：面板写自己的皮肤，HA 里把开关拨了，面板跟着换皮肤（`selfWritten` 用来区分「HA 那边改了」和「我们自己写的」，不会自己跟自己打架）。注意 HA 的 REST 建的是实体，不是设备注册表里的设备，所以在 HA 界面上它们归在「未分配设备」下。
 ## 构建与部署
@@ -77,7 +77,7 @@ powershell -ExecutionPolicy Bypass -File tools\deploy.ps1 -SkipApk   # 只改了
 # 构建（路径由 tools\env.ps1 解析：SDK / build-tools / android.jar / JDK / adb，可用 HC_ANDROID_SDK 等环境变量覆盖）
 powershell -ExecutionPolicy Bypass -File .\tools\build.ps1                                  # debug 变体，含假 HA + 调试开关
 powershell -ExecutionPolicy Bypass -File .\tools\build.ps1 -Variant release -OutName homecontrol-release.apk   # 正式包：不含 MockHaServer
-powershell -ExecutionPolicy Bypass -File .\tools\build.ps1 -VersionCode 107 -VersionName "0.7.70"   # 发新包：版本号 +1（默认值就是当前版本 106 / 0.7.69）
+powershell -ExecutionPolicy Bypass -File .\tools\build.ps1 -VersionCode 109 -VersionName "0.7.72"   # 发新包：版本号 +1（默认值就是当前版本 108 / 0.7.71）
 
 # 安装
 adb install -r .\dist\homecontrol.apk
@@ -102,6 +102,7 @@ powershell -ExecutionPolicy Bypass -File .\tools\push.ps1 -Prod     # 生产形�
 - **性能**：docs/PERFORMANCE.md（Chromium 57 上没有 CPU profile，改用函数级计时 + MutationObserver + logcat + meminfo；基线数字、批次 A/B/C 每条改了什么、改后数字、有意不动的既有优化、下一轮候选）
 - **工具链**：docs/TOOLING.md（每个脚本跑什么、需要什么前提、失败了怎么办；含 env.ps1 变量表与端口表）
 - **全屏常亮**：`FLAG_KEEP_SCREEN_ON`，并带 `SHOW_WHEN_LOCKED / DISMISS_KEYGUARD`，锁屏时也能盖上来
+- **保活（不被系统回收）**：壳 App 起一个前台服务（`app/src/com/homecontrol/panel/KeepAliveService.java`，常驻通知「中控屏运行中」，`FLAG_NO_CLEAR` 划不掉，`START_STICKY` 被杀后系统会重启它）。小米平板2 的日志证据：退出时**没有任何崩溃记录**、也没有 `onStop`，心跳直接断在后台 → 是 MIUI 省电把后台进程杀了。装了这版后还建议在 MIUI「安全中心 → 自启动管理」里放行「中控屏」
 - **断线自愈**：JS 心跳 4s；看门狗只在**屏幕亮着**时判卡死（熄屏 + Doze 会冻结 WebView 定时器，老版本因此在熄屏后每 45s 重载一次，整夜不停），首帧前给 180s 宽限（慢网络下 `first states` 实测可到 35s，原来 45s 阈值会把启动中的页面打断）；页面加载失败按 3s / 10s 重试，最多 10 次后停在「已停止自动重试」而不是无限重试
 - **逃生口**：1.5 秒内连按两次返回键 → 打开系统设置（恢复原桌面：设置 → 主屏幕 → 系统桌面）
 - **配置读取**：`/sdcard/HomeControl/url.txt` 指定页面地址（`file://` 或 `http(s)://`）；`/sdcard/HomeControl/ha.json` 提供 HA 地址与令牌

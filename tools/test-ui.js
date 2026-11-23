@@ -1238,6 +1238,16 @@ ok(storeSrc2.indexOf('if (!local)') >= 0 && storeSrc2.indexOf('这台平板还�
 ok(storeSrc2.indexOf('remoteRich') >= 0, 'status() 报账户里存了多少项');
 ok(appJs.indexOf('store-sync') >= 0, '设置页「配置」有「与账户同步」按钮');
 ok(appJs.indexOf('HCStore.sync(') >= 0, '开机自动和 HA 账户比对一次');
+
+/* 保活：平板2 的进程是被系统杀的（日志里没有 exit/崩溃），要靠前台服务通知常驻 */
+const keepJava = fs.readFileSync(path.join(root, 'app', 'src', 'com', 'homecontrol', 'panel', 'KeepAliveService.java'), 'utf8');
+ok(keepJava.indexOf('startForeground(NOTIF_ID, n)') >= 0, '保活服务真的 startForeground');
+ok(keepJava.indexOf('START_STICKY') >= 0, '被杀后系统会重启服务');
+ok(keepJava.indexOf('FLAG_NO_CLEAR') >= 0, '通知不能被手滑划掉');
+const keepManifest = fs.readFileSync(path.join(root, 'app', 'AndroidManifest.xml'), 'utf8');
+ok(keepManifest.indexOf('.KeepAliveService') >= 0, 'AndroidManifest 声明了保活服务');
+const keepMain = fs.readFileSync(path.join(root, 'app', 'src', 'com', 'homecontrol', 'panel', 'MainActivity.java'), 'utf8');
+ok(keepMain.indexOf('startKeepAlive()') >= 0 && keepMain.indexOf('new Intent(this, KeepAliveService.class)') >= 0, 'onCreate 启动保活服务');
 ok(storeSec.indexOf('换到新平板') >= 0, '设置页写清楚换设备时配置会自动回来');
 const javaLog = fs.readFileSync(path.join(root, 'app', 'src', 'com', 'homecontrol', 'panel', 'PanelLog.java'), 'utf8');
 ok(javaLog.indexOf('setDefaultUncaughtExceptionHandler') >= 0, 'Java 装了未捕获异常钩子');
