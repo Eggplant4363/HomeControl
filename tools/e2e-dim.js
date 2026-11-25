@@ -146,9 +146,9 @@ const httpGet = url => new Promise((resolve, reject) => {
   check(clockTop2 < clockTop - 120, '放歌后时间被抬到上方（让出底部）', 'before ' + Math.round(clockTop) + ' after ' + Math.round(clockTop2));
   check(await evalJs("document.getElementById('dimLyric').className === 'dim-lyric on'"), '歌词块显示');
   check(await evalJs("document.getElementById('dimLrNow').textContent === '暖光照进来'"), '当前行进歌词块');
-  check(await evalJs("document.getElementById('dimLrPrev').textContent === '第一句歌词' && document.getElementById('dimLrNext').textContent === '第三句歌词'"), '上下行也显示（次要）');
+  check(await evalJs("document.getElementById('dimLrNext').textContent === '第三句歌词'"), '下一行也显示（次要）');
   const lyrPos = await evalJs(`(function(){
-    var l = document.getElementById('dimLrPrev').getBoundingClientRect();
+    var l = document.getElementById('dimLrNow').getBoundingClientRect();
     var l2 = document.getElementById('dimLrNext').getBoundingClientRect();
     var t = document.getElementById('dimDate').getBoundingClientRect();
     var n = document.getElementById('dimNow').getBoundingClientRect();

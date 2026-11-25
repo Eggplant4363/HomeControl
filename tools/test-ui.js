@@ -1165,7 +1165,6 @@ windowStub.MusicUI.lyricLine = function () { return 1; };
 DS.paint();
 eq(documentStub.getElementById('dimLyric').className, 'dim-lyric on', '有歌词时歌词块显示');
 eq(documentStub.getElementById('dimLrNow').textContent, '第二行', '当前行进歌词块');
-eq(documentStub.getElementById('dimLrPrev').textContent, '第一行', '上一行也显示（次要）');
 eq(documentStub.getElementById('dimLrNext').textContent, '第三行', '下一行也显示（次要）');
 windowStub.MusicUI.lyricLine = function () { return 2; };
 DS.paint();

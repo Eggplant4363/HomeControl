@@ -130,7 +130,7 @@
   }
 
   /* 歌词：时间与底部「正在播放」之间那块。只读 MusicUI.lyrics() / lyricLine()，
-   * 当前行加下一行（上一行也有就给），文字没变就不动 DOM。 */
+   * 只保留当前行 + 下一行两行，文字没变就不动 DOM。 */
   function paintLyric() {
     var box = $('dimLyric');
     if (!box) return;
@@ -145,12 +145,9 @@
     if (idx < 0) idx = 0;
     if (idx >= lines.length) idx = lines.length - 1;
     var cur = $('dimLrNow');
-    var prev = $('dimLrPrev');
     var next = $('dimLrNext');
     if (cur && cur.textContent !== lines[idx].text) cur.textContent = lines[idx].text;
-    var ptxt = idx > 0 ? lines[idx - 1].text : '';
     var ntxt = idx + 1 < lines.length ? lines[idx + 1].text : '';
-    if (prev && prev.textContent !== ptxt) prev.textContent = ptxt;
     if (next && next.textContent !== ntxt) next.textContent = ntxt;
     if (box.className !== 'dim-lyric on') box.className = 'dim-lyric on';
   }
