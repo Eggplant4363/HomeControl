@@ -536,11 +536,12 @@ body::before { content: none; }
 /* 歌词块走文档流：夹在时间与底部「正在播放」之间，由 flex 自己分配空间，不写死百分比
  * （小窗口上绝对定位会和日期行/播放条撞在一起） */
 .dim-lyric {
-  display: none; flex: 1 1 auto; flex-direction: column; justify-content: center; align-items: center;
+  display: none; flex: 1 1 auto; flex-direction: column; justify-content: flex-end; align-items: center;
   width: 76%; max-width: 1000px; text-align: center; overflow: hidden;
+  padding-bottom: 3vh;
 }
 .dim-lyric.on { display: flex; }
-.dim-lr { font-size: 36px; font-weight: 600; line-height: 1.4; color: rgba(255,255,255,.92); transition: color .3s; }
+.dim-lr { font-size: 36px; font-weight: 600; line-height: 1.4; margin: 26px 0; color: rgba(255,255,255,.92); transition: color .3s; }
 .dim-lr-soon { font-size: 20px; line-height: 1.5; color: rgba(255,255,255,.3); }
 .dim-lr-soon:empty { display: none; }
 .dim-now { display: none; position: absolute; left: 50%; bottom: 12vh; width: 62%; max-width: 900px; transform: translateX(-50%); align-items: center; }
