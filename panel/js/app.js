@@ -4404,8 +4404,13 @@ function bindDim() {
     var ha = (cfg && cfg.ha) || {}, tiles = 0;
     (cfg.rooms || []).forEach(function (r) { tiles += (r.tiles || []).length; });
     var ua = navigator.userAgent || '', m = ua.match(/Chrome\/([0-9.]+)/);
+    /* 电量：苹果风「百分比 + 是否充电」，拿不到就写「未知」 */
+    var si = selfInfo(), batt;
+    if (si.battery < 0) batt = '未知';
+    else batt = si.battery + '%' + (si.charging ? ' · 充电中' : '');
     return infoRow('版本', appVer()) +
       infoRow('连接', S.real ? '真实 HA · ' + (haHttpBase(ha.url || '') || '未设置') : '模拟数据') +
+      infoRow('电量', batt) +
       infoRow('布局', (cfg.rooms || []).length + ' 个房间 · ' + tiles + ' 张卡') +
       infoRow('实体', Object.keys(S.states || {}).length + ' 个') +
       infoRow('视口', window.innerWidth + '×' + window.innerHeight + ' @' + (window.devicePixelRatio || 1) + 'x') +

@@ -155,9 +155,48 @@
     if (box.className !== 'dim-lyric on') box.className = 'dim-lyric on';
   }
 
+  /* 电量：苹果风——圆角电池壳 + 按百分比填充，充电时壳内画闪电（白色待机页保持单色） */
+  function battInfo() {
+    var b = window.AndroidBridge;
+    if (!b || !b.battery) return null;
+    try { var o = JSON.parse(b.battery()); return { pct: o.level, charging: !!o.charging }; } catch (e) { return null; }
+  }
+
+  function battSvg(pct, charging) {
+    var s = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" ' +
+      'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+      '<rect x="3.4" y="8.6" width="15.2" height="6.8" rx="2"/>' +
+      '<path d="M20.6 11v2.4"/>';
+    if (charging) {
+      /* 壳内闪电，不画填充条：单色下闪电比「白底白闪」更清楚 */
+      s += '<path d="M11.6 9.4 9 13.1h2.2l-1.1 2.1 3.7-3.9h-2.2z" fill="currentColor" stroke="none"/>';
+    } else {
+      var fw = (12.6 * Math.max(0, Math.min(100, pct)) / 100).toFixed(1);
+      if (parseFloat(fw) > 0.2) {
+        s += '<rect x="4.7" y="9.9" width="' + fw + '" height="4.2" rx="0.9" fill="currentColor" stroke="none"/>';
+      }
+    }
+    return s + '</svg>';
+  }
+
+  var battLast = '';
+  function paintBatt() {
+    var box = $('dimBatt');
+    if (!box) return;
+    var b = battInfo();
+    if (!b || b.pct < 0) { box.className = 'dim-batt off'; box.innerHTML = ''; battLast = ''; return; }
+    var pct = Math.max(0, Math.min(100, Math.round(b.pct)));
+    var key = pct + '|' + (b.charging ? 1 : 0);
+    if (key === battLast && box.className === 'dim-batt') return;
+    battLast = key;
+    box.innerHTML = battSvg(pct, b.charging) + '<span>' + pct + '%</span>';
+    box.className = 'dim-batt';
+  }
+
   function paint() {
     paintDate();
     paintPlaceholder();
+    paintBatt();
     paintMusic();
     paintLyric();
     /* 天气（panel/js/weather.js）：没数据时它会自己去取一次，回来再画 */
@@ -169,6 +208,7 @@
     if (timer !== null) return;
     timer = setInterval(function () {
       paintDate();
+      paintBatt();
       paintMusic();
       paintLyric();
     }, 1000);

@@ -525,6 +525,12 @@ body::before { content: none; }
 .dim-wx.off { display: none; }
 .dim-wx-ico { display: inline-flex; margin-right: 8px; }
 .dim-wx-ico svg { width: 22px; height: 22px; stroke: currentColor; fill: none; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+/* 待机页电量：苹果风——圆角电池壳 + 按百分比填充 + 充电闪电 */
+.dim-batt { display: flex; align-items: center; justify-content: center; margin-top: 10px; font-size: 20px; letter-spacing: .5px; color: rgba(255,255,255,.5); font-variant-numeric: tabular-nums; }
+.dim-batt.off { display: none; }
+.dim-batt svg { width: 26px; height: 18px; margin-right: 9px; }
+.dim-batt .dim-batt-bolt { margin-left: 7px; }
+.dim-batt .dim-batt-bolt svg { width: 16px; height: 16px; margin-right: 0; }
 /* 正在播放：贴在底部一条，宽度限住，长名字省略号 */
 /* 歌词：介于时间与底部「正在播放」之间的一块，绝对定位所以完全不影响时间的居中/抬升 */
 /* 歌词块走文档流：夹在时间与底部「正在播放」之间，由 flex 自己分配空间，不写死百分比
