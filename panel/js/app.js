@@ -1047,7 +1047,8 @@
       if (app) app.style.transform = '';
     }
     if (p.autoDim) { if (!S.dimOn) scheduleDim(); } else { clearTimeout(S.dimTimer); }
-    setBacklight(p.bright >= 100 ? -1 : num(p.bright, 100) / 100);
+    /* 100% 就是窗口亮度 1.0（真最亮）；给 -1 等于交回系统亮度，MIUI 上系统只到五成，看着「调不满」 */
+    setBacklight(num(p.bright, 100) / 100);
     applyTheme(p.theme);
     applyScreenPolicy();      /* 关掉了「离家熄屏」就立刻恢复常亮 */
   }
@@ -3678,7 +3679,7 @@
   function exitDim() {
     if (S.dimOn) actLog('dim exit');
     var pb = num(prefs().bright, 100);
-    setBacklight(pb >= 100 ? -1 : pb / 100);
+    setBacklight(pb / 100);
     if (!S.dimOn) return;
     S.dimOn = false;
     if (window.DimScreen) window.DimScreen.hide();
@@ -4266,7 +4267,7 @@ function bindDim() {
      persist=false 只给临时压暗用（不污染偏好）。 */
   function setBrightPct(pct, persist) {
     var v = Math.max(1, Math.min(100, Math.round(num(pct, 100))));
-    setBacklight(v >= 100 ? -1 : v / 100);
+    setBacklight(v / 100);
     if (persist !== false) {
       setPref('bright', v);
       repaintSegRow('bright');
