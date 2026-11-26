@@ -4299,27 +4299,28 @@ function bindDim() {
     return h;
   }
 
-  /** 「配置」页：把本地配置存成文件 / 同步进 HA 账户（具体收口在 store.js） */
+  /** 「配置」页：把本地配置存成文件 / 备份进 HA 账户（具体收口在 store.js）
+      账户里的备份按设备分开（键名带设备标识），只手动备份、手动恢复，开机不自动拉。 */
   function storeSectionHtml() {
     var S2 = window.HCStore;
     if (!S2) return '<div class="set-sec">配置中枢没加载（store.js 缺失）</div>';
     var sm = S2.summary(), st = S2.status();
     var kb = Math.max(1, Math.round(sm.bytes / 102.4) / 10);
+    var dev = S2.deviceTag ? S2.deviceTag() : '';
     var h = '<div class="set-sec">配置</div>' +
       '<div class="cfg-desc">设置项 ' + sm.prefs + ' 项 · 追加卡 ' + sm.added + ' · 隐藏卡 ' + sm.hidden +
       ' · 手加卡 ' + sm.extra + ' · 改名 ' + sm.names + ' · 图标 ' + sm.icons +
       ' · 隐藏房间 ' + sm.hiddenRooms + ' · 约 ' + kb + ' KB</div>' +
       '<div class="p-row"><div class="p-name">保存成文件</div><button class="btn" data-act="store-file">存到平板</button></div>' +
       '<div class="p-row"><div class="p-name">从文件恢复</div><button class="btn" data-act="store-load">读取</button></div>' +
-      '<div class="set-sec">HA 账户</div>' +
+      '<div class="set-sec">HA 账户（按设备分开备份）</div>' +
+      '<div class="cfg-desc">本设备备份键：<span class="mono">' + esc(st.ns) + '</span>' + (dev ? '' : '') + '</div>' +
       '<div class="cfg-desc">' + (st.remoteRich
-        ? '账户里存着 ' + st.remoteRich + ' 项（' + st.remoteAt + '）'
-        : '还没查过账户里的配置') + '</div>' +
-      '<div class="p-row"><div class="p-name">与账户同步（谁的内容多用谁的）</div><button class="btn" data-act="store-sync">同步</button></div>' +
-      '<div class="p-row"><div class="p-name">上传到 HA 账户</div><button class="btn" data-act="store-push">上传</button></div>' +
-      '<div class="p-row"><div class="p-name">从 HA 账户恢复</div><button class="btn" data-act="store-pull">恢复</button></div>' +
-      '<div class="p-row"><div class="p-name">改完自动同步</div><button class="p-sw' + (st.auto ? ' on' : '') + '" data-act="store-auto">' + (st.auto ? '开' : '关') + '</button></div>' +
-      '<div class="cfg-desc">换到新平板：连上同一个 HA 账户后开机会自动把账户里的配置拉下来（新平板自己的默认值内容少，不会盖掉账户里那份）。</div>' +
+        ? '本设备已备份 ' + st.remoteRich + ' 项（' + st.remoteAt + '）'
+        : '本设备还没备份过（别的设备的备份不会动）') + '</div>' +
+      '<div class="p-row"><div class="p-name">备份到 HA 账户</div><button class="btn" data-act="store-push">备份</button></div>' +
+      '<div class="p-row"><div class="p-name">从本设备备份恢复</div><button class="btn" data-act="store-pull">恢复</button></div>' +
+      '<div class="cfg-desc">只在你点按钮时读写；开机、改设置都不会自动上传或自动恢复。</div>' +
       (st.msg ? '<div class="cfg-desc">上次：' + esc(st.msg) + '</div>' : '');
     return h;
   }
@@ -4649,10 +4650,8 @@ function bindDim() {
         var show = function (ok, msg) { toast(msg); repaintStore(); };
         if (act === 'store-file') { window.HCStore.toFile(show); return; }
         if (act === 'store-load') { window.HCStore.fromFile(show); return; }
-        if (act === 'store-push') { toast('正在上传到 HA 账户…'); window.HCStore.push(show); return; }
-        if (act === 'store-sync') { toast('正在和 HA 账户比对…'); window.HCStore.sync(function (ok, msg) { toast(msg); repaintStore(); }); return; }
+        if (act === 'store-push') { toast('正在备份本设备配置到 HA…'); window.HCStore.push(show); return; }
         if (act === 'store-pull') { window.HCStore.pull(show); return; }
-        if (act === 'store-auto') { window.HCStore.setAuto(!window.HCStore.status().auto); repaintStore(); return; }
       }
       if (act === 'cfg-save') { saveConfig(); return; }
       if (act === 'cfg-mock') { clearConfig(); return; }
@@ -5532,9 +5531,8 @@ function boot() {
           return S.backend.request(msg, cb) !== false;
         }
       });
-      /* 开机自动和 HA 账户比对一次：账户里的配置更多就拉下来（换设备时配置能自己回来），
-         本机更多就上传上去。没连上 HA 时每 3 秒再试，最多 4 次。 */
-      window.HCStore.sync(function (ok, msg) { if (ok && msg) toast(msg); }, 4);
+      /* 只读一次「本设备在账户里的备份情况」，给设置页显示；不自动恢复、不自动上传 */
+      window.HCStore.refreshRemote(function () { });
     }
     if (window.HCDiag) window.HCDiag.install();
     /* 待机页天气：把状态表交给它，它自己挑 weather.* 或人所在地的坐标 */

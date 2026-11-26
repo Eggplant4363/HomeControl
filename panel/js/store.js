@@ -2,15 +2,18 @@
    - 键名集中声明：设置（hc.prefs）、界面编辑（hc.edit / hc.names / hc.icons / hc.hidden）、音乐（hc.music*）
    - snapshot()/applyBundle() 负责一进一出，带 schema 版本号
    - toFile()/fromFile() 走 Android 桥的 writeText/readText → /sdcard/HomeControl/panel-config.json
-   - pull()/push() 走 Home Assistant 的 frontend/get_user_data / set_user_data
-     （存在 HA 里那个登录账户自己的 user data 下，键名 homecontrol.panel_config）
+   - push()/pull() 走 Home Assistant 的 frontend/get_user_data / set_user_data
+     （存在 HA 里那个登录账户自己的 user data 下，键名 homecontrol.panel_config.<设备>，
+     每台屏各存各的：各设备显示的内容不一样，不能互相覆盖）
+   - 只手动备份、手动恢复：开机不比对、改完不自动上传（用户明确要求）
    - 临时状态（当前房间、重载标记、引导看过没有…）不算配置，见 TRANSIENT */
 (function () {
   'use strict';
 
   var SCHEMA = 1;
   var APP = 'homecontrol';
-  var NS = 'homecontrol.panel_config';
+  /* 账户键的前缀；真正的键名按设备分开（见 ns()） */
+  var NS_BASE = 'homecontrol.panel_config';
   var FILE = '/sdcard/HomeControl/panel-config.json';
 
   /* 真正会被导出/同步的配置键（HCStore 对外的短名 → localStorage 键） */
@@ -29,11 +32,42 @@
   /* 不算配置的本地状态：不导出、不同步、随便清 */
   var TRANSIENT = ['hc.room', 'hc.reload', 'hc.guide.v1', 'hc.hint.v1', 'hc.selftest.done'];
 
+  /* ---------------- 设备身份：HA 里每台屏一份配置 ---------------- */
+  /* 型号 slug（和 app.js 的 selfSlug 同算法：实体的设备后缀） */
+  function modelSlug() {
+    var m = '';
+    try { var i = JSON.parse(window.AndroidBridge.info()); m = String(i.model || ''); } catch (e) { }
+    m = m.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+    return m || 'panel';
+  }
+
+  /* 安卓设备 id 的后 8 位；拿不到就退回一个本地随机串（首次生成后固定） */
+  function deviceAid() {
+    var aid = '';
+    try { var i = JSON.parse(window.AndroidBridge.info()); aid = String(i.aid || ''); } catch (e) { }
+    if (!aid) {
+      try { aid = localStorage.getItem('hc.devid') || ''; } catch (e) { aid = ''; }
+      if (!aid) {
+        aid = '';
+        for (var k = 0; k < 12; k++) aid += Math.floor(Math.random() * 16).toString(16);
+        try { localStorage.setItem('hc.devid', aid); } catch (e) { }
+      }
+    }
+    return aid.replace(/[^a-z0-9]/gi, '').toLowerCase();
+  }
+
+  /* 设备标识：型号 + 设备 id 尾段（两台同型号的 MI PAD 2 不会互相覆盖） */
+  function deviceTag() {
+    var aid = deviceAid();
+    return modelSlug() + (aid ? '-' + aid.slice(-8) : '');
+  }
+
+  /* 这台设备在 HA 账户里的配置键 */
+  function ns() { return NS_BASE + '.' + deviceTag(); }
+
   var transport = null;
   var listeners = [];
-  var auto = true;
   var applying = false;
-  var pushTimer = null;
   var lastPush = 0;
   var lastPushOk = false;
   var lastMsg = '';
@@ -70,7 +104,6 @@
     for (var i = 0; i < listeners.length; i++) {
       try { listeners[i](key, applying); } catch (e) { }
     }
-    if (!applying) schedulePush();
   }
 
   function nowIso() {
@@ -234,35 +267,32 @@
     }
   }
 
-  function push(cb, opts) {
+  /** 手动「备份到 HA」：把本机这份配置写进本设备的账户键（覆盖上一次备份）。
+      不做内容量比较——用户点了备份就是要用现在这份覆盖。 */
+  function push(cb) {
     var b = bundle(), local = richness(b);
     if (!local) { lastPushOk = false; lastMsg = '这台平板还没有配置，不上传'; cd(cb, false, lastMsg); return; }
-    /* 账户里那份内容更多时，别用它自己的少量默认值把别人的配置顶掉（手动上传带 force 可以强行覆盖） */
-    if (!(opts && opts.force) && remote && remote.rich > local) {
-      lastPushOk = false;
-      lastMsg = '账户里的配置更多（' + remote.rich + ' 项）：先「恢复」再上传';
-      cd(cb, false, lastMsg);
-      return;
-    }
-    var msg = { type: 'frontend/set_user_data', key: NS, value: b };
+    var key = ns();
+    var msg = { type: 'frontend/set_user_data', key: key, value: b };
     call(msg, function (ok, res) {
       if (ok) {
         lastPush = Date.now();
         lastPushOk = true;
         remote = { rich: local, savedAt: b.savedAt };
-        lastMsg = 'HA 账户已同步（' + Math.round(JSON.stringify(b).length / 102.4) / 10 + ' KB）';
+        lastMsg = '本设备配置已备份到 HA（' + local + ' 项，' +
+          Math.round(JSON.stringify(b).length / 102.4) / 10 + ' KB）';
         cd(cb, true, lastMsg);
       } else {
         lastPushOk = false;
-        lastMsg = String(res || '同步失败');
+        lastMsg = String(res || '备份失败');
         cd(cb, false, lastMsg);
       }
     });
   }
 
-  /** 只读账户里那份配置，不动本地 */
+  /** 只读本设备的账户存档，不动本地 */
   function remoteGet(cb) {
-    call({ type: 'frontend/get_user_data', key: NS }, function (ok, res) {
+    call({ type: 'frontend/get_user_data', key: ns() }, function (ok, res) {
       if (!ok) { cd(cb, false, String(res || '读取失败')); return; }
       var v = res && res.value;
       if (!v) { cd(cb, true, '', null); return; }
@@ -272,44 +302,22 @@
     });
   }
 
+  /** 手动「从本设备备份恢复」：只读本设备的键，别的设备的存档不碰 */
   function pull(cb) {
     remoteGet(function (ok, msg, b) {
       if (!ok) { cd(cb, false, msg || '读取失败'); return; }
-      if (!b) { cd(cb, false, 'HA 账户里还没有存过配置'); return; }
+      if (!b) { cd(cb, false, '这台设备在 HA 里还没有备份'); return; }
       remote = { rich: richness(b), savedAt: b.savedAt };
       applyBundle(b);
-      cd(cb, true, '已从 HA 账户恢复配置（' + remote.rich + ' 项，存于 ' + shortTime(b.savedAt) + '）');
+      cd(cb, true, '已从本设备备份恢复（' + remote.rich + ' 项，存于 ' + shortTime(b.savedAt) + '）');
     });
   }
 
-  /** 开机/手动「同步」：谁的内容多就用谁的——账户里那份更多就恢复下来，本机更多就上传上去。
-      tries>0 时没连上 HA 会每 3 秒再试一次（重启后 WiFi 常常比面板晚十几秒）。 */
-  function sync(cb, tries) {
-    var left = tries === undefined ? 4 : tries;
-    if (!available()) {
-      if (left > 0) { setTimeout(function () { sync(cb, left - 1); }, 3000); return; }
-      cd(cb, false, '还没连上 HA，配置没同步');
-      return;
-    }
+  /** 查一下本设备在账户里的备份情况（只读，给设置页显示） */
+  function refreshRemote(cb) {
     remoteGet(function (ok, msg, b) {
-      if (!ok) { cd(cb, false, msg || '读取失败'); return; }
-      var local = richness(bundle());
-      if (!b) {
-        if (!local) { cd(cb, true, '这台平板还没有配置，也没账户存档'); return; }
-        push(function (pOk, pMsg) { cd(cb, pOk, pOk ? '已把本机配置存进 HA 账户（' + local + ' 项）' : pMsg); }, { force: true });
-        return;
-      }
-      remote = { rich: richness(b), savedAt: b.savedAt };
-      if (remote.rich > local) {
-        applyBundle(b);
-        cd(cb, true, '已从 HA 账户恢复配置（' + remote.rich + ' 项，存于 ' + shortTime(b.savedAt) + '）');
-        return;
-      }
-      if (local > remote.rich) {
-        push(function (pOk, pMsg) { cd(cb, pOk, pOk ? '已把本机配置上传到 HA 账户（' + local + ' 项）' : pMsg); }, { force: true });
-        return;
-      }
-      cd(cb, true, '本机与 HA 账户里的配置一致（' + local + ' 项）');
+      if (ok) remote = b ? { rich: richness(b), savedAt: b.savedAt } : null;
+      cd(cb, ok, ok ? '' : (msg || '读取失败'), remote);
     });
   }
 
@@ -329,38 +337,22 @@
       function (ok, res) { cd(cb, ok, ok ? 'ok' : String(res || '调用失败')); });
   }
 
-  function schedulePush() {
-    if (!auto || applying || !available()) return;
-    if (pushTimer) clearTimeout(pushTimer);
-    pushTimer = setTimeout(function () {
-      pushTimer = null;
-      push(function () { });
-    }, 2500);
-  }
-
   function status() {
     return {
-      auto: auto,
       available: available(),
       lastPush: lastPush,
       lastOk: lastPushOk,
       msg: lastMsg,
-      ns: NS,
+      ns: ns(),
       file: FILE,
       remoteRich: remote ? remote.rich : 0,
       remoteAt: remote ? shortTime(remote.savedAt) : ''
     };
   }
 
-  function setAuto(on) {
-    auto = !!on;
-    if (auto) schedulePush();
-    return auto;
-  }
-
   window.HCStore = {
     SCHEMA: SCHEMA,
-    NS: NS,
+    NS: NS_BASE,
     FILE: FILE,
     KEYS: K,
     TRANSIENT: TRANSIENT,
@@ -382,9 +374,10 @@
     service: service,
     pull: pull,
     remoteGet: remoteGet,
-    sync: sync,
+    refreshRemote: refreshRemote,
+    ns: ns,
+    deviceTag: deviceTag,
     richness: richness,
-    setAuto: setAuto,
     status: status,
     reloadPanel: reloadPanel
   };

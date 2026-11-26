@@ -1240,7 +1240,10 @@ ok(fs.readFileSync(path.join(root, 'tools', 'lint-es5.js'), 'utf8').indexOf('pan
 const HCStoreRef = windowStub.HCStore;
 ok(!!HCStoreRef, 'store.js 导出 window.HCStore');
 ok(HCStoreRef && HCStoreRef.FILE === '/sdcard/HomeControl/panel-config.json', '配置文件名在 /sdcard/HomeControl 下');
-ok(HCStoreRef && HCStoreRef.NS === 'homecontrol.panel_config', 'HA 账户键名固定');
+ok(HCStoreRef && HCStoreRef.NS === 'homecontrol.panel_config', 'HA 账户键名前缀固定');
+ok(HCStoreRef && typeof HCStoreRef.ns === 'function' && HCStoreRef.ns().indexOf('homecontrol.panel_config.') === 0,
+  '账户键按设备分开（前缀 + 设备标识）');
+ok(HCStoreRef && typeof HCStoreRef.deviceTag === 'function' && HCStoreRef.deviceTag().length > 0, '设备标识非空（型号或本地随机串兜底）');
 ok(HCStoreRef && ['prefs', 'edit', 'names', 'icons', 'hidden', 'music', 'musicVol', 'musicMode'].every(function (k) { return !!HCStoreRef.KEYS[k]; }), '配置键覆盖设置/界面/音乐');
 HCStoreRef.setJSON('prefs', { cols: 5, theme: 'light' });
 HCStoreRef.setJSON('edit', { added: { 'light.a': 1, 'light.b': 1 }, hidden: { 'switch.c': 1 }, extra: { 'button.d': 1 }, order: [], span: {}, rows: {} });
@@ -1260,8 +1263,9 @@ eq(HCStoreRef.applyBundle({ app: 'other', schema: 1, data: {} }, { reload: false
 eq(HCStoreRef.applyBundle('not json', { reload: false }), false, '拒绝坏 JSON');
 const storeSec = api.settingsSectionHtml ? api.settingsSectionHtml('store') : '';
 ok(storeSec.indexOf('store-file') >= 0 && storeSec.indexOf('store-load') >= 0, '设置页「配置」有存文件/读文件');
-ok(storeSec.indexOf('store-push') >= 0 && storeSec.indexOf('store-pull') >= 0, '设置页「配置」有上传/恢复 HA 账户');
-ok(storeSec.indexOf('store-auto') >= 0, '设置页「配置」有自动同步开关');
+ok(storeSec.indexOf('store-push') >= 0 && storeSec.indexOf('store-pull') >= 0, '设置页「配置」有「备份到 HA」/「从本设备备份恢复」');
+ok(storeSec.indexOf('store-sync') < 0 && storeSec.indexOf('store-auto') < 0, '设置页去掉了自动同步与自动同步开关（只手动备份/恢复）');
+ok(storeSec.indexOf('本设备备份键') >= 0, '设置页显示本设备的备份键');
 ok(appJs.indexOf('store-file') >= 0 && appJs.indexOf('HCStore.push') >= 0 && appJs.indexOf('HCStore.pull') >= 0, '动作路由接了 store-*');
 ok(appJs.indexOf('HCStore.bindTransport') >= 0, 'app.js 把 WS 通道交给 store.js');
 ok(appJs.indexOf('localStorage.setItem(PREFS_KEY') < 0 && appJs.indexOf('localStorage[NAMES_KEY]') < 0, 'app.js 不再自己写 localStorage（走 store）');
@@ -1287,12 +1291,13 @@ ok(appJs.indexOf('window.HCDiag.install()') >= 0, 'boot 里装上诊断日志');
 ok(idxHtml.indexOf('js/diaglog.js') >= 0 && idxHtml.indexOf('js/diaglog.js') < idxHtml.indexOf('js/app.js'), 'index.html 先加载 diaglog.js 再加载 app.js');
 const storeSrc2 = fs.readFileSync(path.join(root, 'panel', 'js', 'store.js'), 'utf8');
 ok(storeSrc2.indexOf('putUser') >= 0 && storeSrc2.indexOf('service:') >= 0, 'store.js 提供 putUser/service 出口');
-ok(storeSrc2.indexOf('function richness') >= 0 && storeSrc2.indexOf('function sync') >= 0, 'store.js 有 richness/sync（跨设备谁的内容多用谁的）');
-ok(storeSrc2.indexOf('remoteGet') >= 0 && storeSrc2.indexOf('remote.rich > local') >= 0, 'push 前会比对账户里的内容量，别让新平板的默认值盖掉别人的配置');
+ok(storeSrc2.indexOf('function richness') >= 0 && storeSrc2.indexOf('function ns') >= 0, 'store.js 有 richness/ns（按设备分键）');
+ok(storeSrc2.indexOf('schedulePush') < 0 && storeSrc2.indexOf('setAuto') < 0, 'store.js 不再自动上传（去掉 schedulePush/setAuto）');
+ok(storeSrc2.indexOf('function sync') < 0, 'store.js 不再有开机自动比对/恢复（sync 已移除）');
 ok(storeSrc2.indexOf('if (!local)') >= 0 && storeSrc2.indexOf('这台平板还没有配置') >= 0, '空配置不上传（免得把账户里的清空）');
-ok(storeSrc2.indexOf('remoteRich') >= 0, 'status() 报账户里存了多少项');
-ok(appJs.indexOf('store-sync') >= 0, '设置页「配置」有「与账户同步」按钮');
-ok(appJs.indexOf('HCStore.sync(') >= 0, '开机自动和 HA 账户比对一次');
+ok(storeSrc2.indexOf('remoteRich') >= 0, 'status() 报本设备备份了多少项');
+ok(appJs.indexOf('store-sync') < 0 && appJs.indexOf('HCStore.sync(') < 0, '设置页与开机流程都不再自动同步');
+ok(appJs.indexOf('HCStore.refreshRemote(') >= 0, '开机只读一次本设备备份状态（不恢复）');
 
 /* 保活：平板2 的进程是被系统杀的（日志里没有 exit/崩溃），要靠前台服务通知常驻 */
 const keepJava = fs.readFileSync(path.join(root, 'app', 'src', 'com', 'homecontrol', 'panel', 'KeepAliveService.java'), 'utf8');
@@ -1303,7 +1308,7 @@ const keepManifest = fs.readFileSync(path.join(root, 'app', 'AndroidManifest.xml
 ok(keepManifest.indexOf('.KeepAliveService') >= 0, 'AndroidManifest 声明了保活服务');
 const keepMain = fs.readFileSync(path.join(root, 'app', 'src', 'com', 'homecontrol', 'panel', 'MainActivity.java'), 'utf8');
 ok(keepMain.indexOf('startKeepAlive()') >= 0 && keepMain.indexOf('new Intent(this, KeepAliveService.class)') >= 0, 'onCreate 启动保活服务');
-ok(storeSec.indexOf('换到新平板') >= 0, '设置页写清楚换设备时配置会自动回来');
+ok(storeSec.indexOf('不会自动上传或自动恢复') >= 0, '设置页写清楚只手动备份/恢复，不会自己动');
 const javaLog = fs.readFileSync(path.join(root, 'app', 'src', 'com', 'homecontrol', 'panel', 'PanelLog.java'), 'utf8');
 ok(javaLog.indexOf('setDefaultUncaughtExceptionHandler') >= 0, 'Java 装了未捕获异常钩子');
 ok(javaLog.indexOf('panel.log') >= 0 && javaLog.indexOf('crash.log') >= 0, 'Java 写 panel.log / crash.log');
