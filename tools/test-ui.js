@@ -696,15 +696,21 @@ eq(colsOpts, 8, '每行卡片可选 3~10');
   /* 字号升序：读数 > 名字 > 辅助，同屏只有一个这套阶梯（2×2 Display 除外） */
   ok(parseInt(tok['--fsz-v'], 10) > parseInt(tok['--fsz-n'], 10) && parseInt(tok['--fsz-n'], 10) > parseInt(tok['--fsz-s'], 10),
      '角色档：数值 > 名字 > 辅助 阶梯成立');
-  /* 7 列以上：格子窄到不能再套 6 列的下限，几何跟着真实格子缩（否则内容顶出卡片） */
+  /* 7 列以上：格子窄，几何按真实格子算，但**字要有下限**（按比例推只有 8~9px，读不了） */
   windowStub.localStorage.setItem('hc.prefs', JSON.stringify({ cols: 7, size: 'md', allCards: false }));
   api.setColumns(node, 7);
   eq(tok['--cellw'], '129px', '7 列：--cellw 用真实列宽 129');
-  eq(tok['--fsz'], '111px', '7 列：几何档按真实格子算（不再硬撑 174）');
+  eq(tok['--fsz'], '120px', '7 列：几何档 120（图标/进度条跟着放大）');
+  eq(tok['--fsz-n'], '14px', '7 列：名字 14px（不再掉到 8px）');
+  eq(tok['--fsz-v'], '30px', '7 列：数值 30px（不再掉到 21px）');
+  eq(tok['--fsz-s'], '10px', '7 列：辅助 10px');
   windowStub.localStorage.setItem('hc.prefs', JSON.stringify({ cols: 10, size: 'md', allCards: false }));
   api.setColumns(node, 10);
   eq(tok['--cellw'], '86px', '10 列：--cellw 用真实列宽 86（不再被钳到 140）');
-  eq(tok['--fsz'], '96px', '10 列：几何档落 96 下限');
+  eq(tok['--fsz'], '120px', '10 列：几何档 120');
+  eq(tok['--fsz-n'], '14px', '10 列：名字 14px（和 7 列同一档，同屏同角色一个字号）');
+  eq(tok['--fsz-v'], '30px', '10 列：数值 30px');
+  eq(tok['--fsz-s'], '10px', '10 列：辅助 10px');
   ok(parseInt(tok['--fsz-n'], 10) > 0 && parseInt(tok['--fsz-v'], 10) > parseInt(tok['--fsz-n'], 10),
      '10 列：字号仍保持 数值 > 名字');
   /* 列数取值：3~10 合法，越界回落 4 */

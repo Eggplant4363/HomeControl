@@ -1270,6 +1270,27 @@ body::before { content: none; }
 .grid.cols-6 .tile.half { --cw: calc(var(--cellw) - 20px); --ch: calc(var(--unit) - 20px); }
 .grid.cols-7 .tile.half { padding: 0 9px; --cw: calc(var(--cellw) - 18px); --ch: calc(var(--unit) - 18px); }
 .grid.cols-8 .tile.half, .grid.cols-9 .tile.half, .grid.cols-10 .tile.half { padding: 0 8px; --cw: calc(var(--cellw) - 16px); --ch: calc(var(--unit) - 16px); }
+/* 7 列以上的半高条太窄：小圆钮和间距各收一档，把宽度让给名字。
+   名字已经有 12/13px 的下限（字号不许再小），所以只能从图标这边省。 */
+.grid.cols-7 .t-mini, .grid.cols-8 .t-mini, .grid.cols-9 .t-mini, .grid.cols-10 .t-mini {
+  width: calc(var(--fsz-t) * .34); height: calc(var(--fsz-t) * .34);
+}
+.grid.cols-7 .t-mini svg, .grid.cols-8 .t-mini svg, .grid.cols-9 .t-mini svg, .grid.cols-10 .t-mini svg {
+  width: calc(var(--fsz-t) * .2); height: calc(var(--fsz-t) * .2);
+}
+.grid.cols-7 .t-hname, .grid.cols-8 .t-hname, .grid.cols-9 .t-hname, .grid.cols-10 .t-hname { margin-left: 7px; }
+.grid.cols-7 .t-hval, .grid.cols-8 .t-hval, .grid.cols-9 .t-hval, .grid.cols-10 .t-hval { margin-left: 5px; }
+/* 7 列以上的 1×1 卡：格子矮，圆钮/读数这一块按比例太高会把名字挤出去 ——
+   收一档（.72 → .6），把省下的高度让给名字（名字已有 14px 的下限）。 */
+.grid.cols-7 .t-core, .grid.cols-8 .t-core, .grid.cols-9 .t-core, .grid.cols-10 .t-core {
+  height: calc(var(--fsz-t) * .6);
+}
+.grid.cols-7 .t-round, .grid.cols-8 .t-round, .grid.cols-9 .t-round, .grid.cols-10 .t-round {
+  width: calc(var(--fsz-t) * .6); height: calc(var(--fsz-t) * .6);
+}
+/* 1×1 卡在这个列数下只有 ~86px 宽，内边距再收一点，把宽度让给名字（少截几个字） */
+.grid.cols-7 .tile.tiny, .grid.cols-8 .tile.tiny { padding: 8px; }
+.grid.cols-9 .tile.tiny, .grid.cols-10 .tile.tiny { padding: 6px; }
 .t-grip {
   position: absolute; right: 2px; bottom: 2px; width: 64px; height: 64px; z-index: 30;
   pointer-events: auto; background: rgba(var(--accent-rgb),0.002);

@@ -1651,12 +1651,12 @@
     var fszV = Math.round(fszT * .38);
     var fszS = Math.round(fsz * .068);
     if (manyCols) {
-      /* 7 列以上的格子按比例推出来只有 8~9px，读不了；三个角色档各给一个下限，
-         9/10 列最窄给 12/26/9，7/8 列还有富余就 13/28/10（和 6 列 15/34/12 同一个阶梯往下走）。 */
-      var tight = cols >= 9;
-      fszN = Math.max(fszN, tight ? 12 : 13);
-      fszV = Math.max(fszV, tight ? 26 : 28);
-      fszS = Math.max(fszS, tight ? 9 : 10);
+      /* 7 列以上的格子按比例推出来只有 8~9px，读不了；三个角色档各给一个下限。
+         同一屏同一个角色只能有一个字号（type scale 的规矩），所以 7~10 列统一 14/30/10，
+         正好接在 6 列 15/34/12 下面一档。 */
+      fszN = Math.max(fszN, 14);
+      fszV = Math.max(fszV, 30);
+      fszS = Math.max(fszS, 10);
     }
     node.style.setProperty('--fsz-n', fszN + 'px');
     node.style.setProperty('--fsz-v', fszV + 'px');
