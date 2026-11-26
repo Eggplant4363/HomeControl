@@ -45,8 +45,8 @@
   function cfgName() {
     var b = bridge();
     var raw = (b && b.readText) ? b.readText(CFG_FILE) : '';
-    if (!raw) return '';
-    try { var o = JSON.parse(raw); return (o && o.name) ? String(o.name).trim() : ''; } catch (e) { return ''; }
+    var o = parseCfgText(raw);
+    return (o && o.name) ? String(o.name).trim() : '';
   }
 
   function slug() {
@@ -80,15 +80,26 @@
       ],
       /* 音量走 HA 的 number 平台（mqtt 装载了它）：滑块下发纯数字，回读 state 里的 value_json.volume；
          另配两个按钮做 5% 步进，墙上点按比拖滑块方便 */
-      discVolume: 'homeassistant/number/homecontrol_panel_' + sl + '_music_volume/config'
+      discVolume: 'homeassistant/number/homecontrol_panel_' + sl + '_music_volume/config',
+      /* 屏幕亮度：sensor 报当前值，number 是滑块（下发带 brightness: 前缀，和音量的纯数字区分开） */
+      discBright: 'homeassistant/sensor/homecontrol_panel_' + sl + '_brightness/config',
+      discBrightNum: 'homeassistant/number/homecontrol_panel_' + sl + '_brightness/config',
+      discBattery: 'homeassistant/sensor/homecontrol_panel_' + sl + '_battery/config'
     };
+  }
+
+  /* 读 /sdcard 上的 json：Windows 记事本/Set-Content 写出来常带 UTF-8 BOM，
+     JSON.parse 遇到 BOM 直接抛错 → 配置被当成「未启用」，面板只连不报状态。先剥掉 BOM。 */
+  function parseCfgText(raw) {
+    if (!raw) return null;
+    var t = String(raw).replace(/^\uFEFF/, '').replace(/^\s+/, '');
+    try { return JSON.parse(t); } catch (e) { return null; }
   }
 
   function readCfg() {
     var b = bridge();
     var raw = b ? b.readText(CFG_FILE) : '';
-    var o = null;
-    if (raw) { try { o = JSON.parse(raw); } catch (e) { o = null; } }
+    var o = parseCfgText(raw);
     return {
       enabled: !!(o && o.enabled), host: (o && o.host) || '', port: (o && o.port) || 1883,
       tls: !!(o && o.tls), user: (o && o.user) || '', pass: (o && o.pass) || '', name: (o && o.name) || slug()
@@ -106,6 +117,10 @@
     /* 音量 +/- 按钮：步长 5%，夹在 0..100（runCmd 里用当前音量算新值） */
     if (p === 'volume_up' || p === 'volup') return 'volup';
     if (p === 'volume_down' || p === 'voldown') return 'voldown';
+    /* 亮度滑块：Java 侧的 command_template 会拼成 brightness:65，先认它再认纯数字 */
+    if (/^brightness:[0-9]{1,3}(\.[0-9]+)?$/.test(p)) {
+      return 'brightness:' + Math.max(1, Math.min(100, Math.round(parseFloat(p.slice(11))))); 
+    }
     /* HA 的 number 滑块发的是纯数字（"37" 或 "37.0"），按音量百分比理解 */
     if (/^[0-9]{1,3}(\.[0-9]+)?$/.test(p)) {
       var v = Math.max(0, Math.min(100, Math.round(parseFloat(p))));
@@ -118,6 +133,12 @@
     var m = mapCmd(payload);
     if (!m) return;
     var mu = window.MusicUI;
+    /* 亮度不依赖音乐模块：面板没加载音乐时也要能调 */
+    if (m.indexOf('brightness:') === 0) {
+      setBright(parseInt(m.slice(11), 10));
+      pushState();
+      return;
+    }
     if (!mu) return;
     var playing = !!(mu.isPlaying && mu.isPlaying());
     if (m === 'play') {
@@ -155,6 +176,21 @@
     } catch (e) { return { level: null, charging: false }; }
   }
 
+  /* 当前屏幕亮度（1..100）：优先问 app.js 的实时读数，退化到原生桥 */
+  function brightPct() {
+    if (window.__hcBrightness) { try { return parseInt(window.__hcBrightness(), 10) || null; } catch (e) { } }
+    var b = bridge();
+    if (!b || !b.brightnessPct) return null;
+    try { return parseInt(b.brightnessPct(), 10) || null; } catch (e) { return null; }
+  }
+
+  function setBright(pct) {
+    var v = Math.max(1, Math.min(100, Math.round(pct)));
+    if (window.__hcSetBrightness) { try { window.__hcSetBrightness(v); return; } catch (e) { } }
+    var b = bridge();
+    if (b && b.setBrightness) { try { b.setBrightness(v / 100); } catch (e) { } }
+  }
+
   function statePayload() {
     var mu = window.MusicUI;
     var track = (mu && mu.playing) ? mu.playing() : null;
@@ -162,7 +198,7 @@
     var vol = (mu && mu.volume) ? mu.volume() : null;
     var bt = batteryInfo();
     return JSON.stringify({ status: status, title: (track && track.title) || '', volume: vol,
-      battery: bt.level, charging: bt.charging });
+      battery: bt.level, charging: bt.charging, brightness: brightPct() });
   }
 
   /* 主动发一次状态（命令执行完立即回报；轮询也走这里） */

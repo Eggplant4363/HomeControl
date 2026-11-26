@@ -93,7 +93,10 @@ public class MqttClient {
       "homeassistant/button/homecontrol_panel_" + slug + "_music_volume_up/config",
       "homeassistant/button/homecontrol_panel_" + slug + "_music_volume_down/config",
       "homeassistant/number/homecontrol_panel_" + slug + "_music_volume/config",
-      "homeassistant/sensor/homecontrol_panel_" + slug + "_battery/config"
+      "homeassistant/sensor/homecontrol_panel_" + slug + "_battery/config",
+      /* 屏幕亮度：sensor 报当前值，number 当滑块用（command_template 加前缀，避免和音量的纯数字撞车） */
+      "homeassistant/sensor/homecontrol_panel_" + slug + "_brightness/config",
+      "homeassistant/number/homecontrol_panel_" + slug + "_brightness/config"
     };
   }
 
@@ -383,8 +386,41 @@ public class MqttClient {
     return sb.toString();
   }
 
-  private String[] discoveryJson() {
-    return new String[] {
+  /** 屏幕亮度 sensor：state 里的 value_json.brightness（面板每轮轮询上报当前背光百分比） */
+  private String brightnessJson() {
+    StringBuilder sb = new StringBuilder("{\"name\":\"中控屏亮度\"");
+    sb.append(",\"default_entity_id\":\"sensor.homecontrol_panel_").append(slug).append("_brightness\"");
+    sb.append(",\"unique_id\":\"homecontrol_panel_").append(slug).append("_brightness\"");
+    sb.append(",\"state_topic\":").append(jsonString(stateTopic()));
+    sb.append(",\"value_template\":\"{{ value_json.brightness }}\"");
+    sb.append(",\"unit_of_measurement\":\"%\"");
+    sb.append(",\"icon\":\"mdi:brightness-6\"");
+    sb.append(",\"state_class\":\"measurement\"");
+    sb.append(availJson());
+    sb.append(",\"device\":").append(deviceJson()).append("}");
+    return sb.toString();
+  }
+
+  /**
+   * 屏幕亮度滑块（HA number）。下发用 command_template 拼成 brightness:65 ——
+   * 音量滑块发的是纯数字，面板靠前缀区分亮度与音量，别让拖亮度改成调音量。
+   */
+  private String brightnessNumberJson() {
+    StringBuilder sb = new StringBuilder("{\"name\":\"中控屏亮度调节\"");
+    sb.append(",\"default_entity_id\":\"number.homecontrol_panel_").append(slug).append("_brightness\"");
+    sb.append(",\"unique_id\":\"homecontrol_panel_").append(slug).append("_brightness_set\"");
+    sb.append(",\"command_topic\":").append(jsonString(cmdTopic()));
+    sb.append(",\"command_template\":\"brightness:{{ value }}\"");
+    sb.append(",\"state_topic\":").append(jsonString(stateTopic()));
+    sb.append(",\"value_template\":\"{{ value_json.brightness }}\"");
+    sb.append(",\"min\":5,\"max\":100,\"step\":1,\"mode\":\"slider\"");
+    sb.append(",\"unit_of_measurement\":\"%\",\"icon\":\"mdi:brightness-percent\"");
+    sb.append(availJson());
+    sb.append(",\"device\":").append(deviceJson()).append("}");
+    return sb.toString();
+  }
+
+  private String[] discoveryJson() {    return new String[] {
       sensorJson(),
       buttonJson("播放", "play", "mdi:play"),
       buttonJson("暂停", "pause", "mdi:pause"),
@@ -394,7 +430,9 @@ public class MqttClient {
       buttonJson("音量 +", "volume_up", "mdi:volume-plus"),
       buttonJson("音量 -", "volume_down", "mdi:volume-minus"),
       numberJson(),
-      batteryJson()
+      batteryJson(),
+      brightnessJson(),
+      brightnessNumberJson()
     };
   }
 

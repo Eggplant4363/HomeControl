@@ -442,6 +442,10 @@ body::before { content: none; }
   background: var(--knob); box-shadow: 0 1px 6px rgba(0,0,0,.34);
 }
 
+/* 设置页「当前亮度」滑块：和上面的行留一点间距，滑块本身占满宽度 */
+.bri-slider { padding: 0 16px 6px; margin: -2px 0 10px; }
+.bri-slider .slider { height: 34px; }
+
 .opts { display: flex; flex: 1; }
 .opt {
   height: 44px; padding: 0 18px; margin-right: 8px; border-radius: 10px;

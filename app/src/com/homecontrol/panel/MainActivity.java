@@ -89,6 +89,10 @@ public class MainActivity extends Activity {
     private volatile boolean screenHome = true;
     private android.os.PowerManager.WakeLock wakeLock;
     private volatile boolean blackout = false;
+    /** 最近一次面板设定的背光百分比（1..100）；-1 = 没设过，按系统亮度换算 */
+    private volatile int lastBriPct = -1;
+    /** 面板自己想要的亮度（JS setBrightness 设的），回家亮屏时按它恢复，而不是 -1 */
+    private volatile int wantBriPct = -1;
     /** MQTT 节点（HA 控制本机音乐）：配置在 /sdcard/HomeControl/mqtt.json，页面就绪后自动起 */
     private volatile MqttClient mqtt = null;
 
@@ -106,7 +110,9 @@ public class MainActivity extends Activity {
         } catch (Throwable t) {
             Log.w(TAG, "blackout js failed: " + t);
         }
-        setScreenBrightness(on ? 0.02f : -1f);
+        /* 回家亮屏要回到「面板自己想要的亮度」，不能一律恢复 -1（系统亮度）：
+           以前写 -1，HA 拖过亮度或面板设过唤醒亮度后，下一次离家/回家策略跑完就被系统亮度顶掉。 */
+        setScreenBrightness(on ? 0.02f : (wantBriPct > 0 ? wantBriPct / 100f : -1f));
         Log.i(TAG, "blackout: " + (on ? "on" : "off"));
     }
 
@@ -116,8 +122,31 @@ public class MainActivity extends Activity {
             WindowManager.LayoutParams lp = getWindow().getAttributes();
             lp.screenBrightness = v < 0 ? -1f : (v < 0.02f ? 0.02f : (v > 1f ? 1f : v));
             getWindow().setAttributes(lp);
+            lastBriPct = lp.screenBrightness < 0 ? -1 : Math.round(lp.screenBrightness * 100);
         } catch (Throwable t) {
             Log.w(TAG, "setScreenBrightness failed: " + t);
+        }
+    }
+
+    /**
+     * 当前屏幕亮度（百分比 1..100）。
+     * 面板自己调过就是那个值（熄屏兜底时会到 2%）；没调过（screenBrightness = -1）就按系统亮度换算，
+     * 这样 HA 里的「中控屏亮度」传感器在没人动过亮度时也有真实读数，而不是 unknown。
+     */
+    private int currentBrightnessPct() {
+        try {
+            WindowManager.LayoutParams lp = getWindow().getAttributes();
+            if (lp.screenBrightness >= 0) return Math.max(1, Math.min(100, Math.round(lp.screenBrightness * 100)));
+        } catch (Throwable t) {
+            Log.w(TAG, "read brightness failed: " + t.getMessage());
+        }
+        if (lastBriPct > 0) return lastBriPct;
+        try {
+            int sys = android.provider.Settings.System.getInt(getContentResolver(),
+                    android.provider.Settings.System.SCREEN_BRIGHTNESS, 128);
+            return Math.max(1, Math.min(100, Math.round(sys * 100f / 255f)));
+        } catch (Throwable t) {
+            return 100;
         }
     }
 
@@ -1361,6 +1390,8 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public void setBrightness(float v) {
             final float val = v;
+            lastBriPct = val < 0 ? -1 : Math.max(1, Math.min(100, Math.round(val * 100)));
+            wantBriPct = lastBriPct;
             ui.post(new Runnable() {
                 @Override
                 public void run() {
@@ -1374,6 +1405,12 @@ public class MainActivity extends Activity {
                     }
                 }
             });
+        }
+
+        /** 当前亮度百分比（HA 的「中控屏亮度」传感器与设置页滑块都读它） */
+        @JavascriptInterface
+        public int brightnessPct() {
+            return currentBrightnessPct();
         }
         /** 离家熄屏 / 在家亮屏：面板按 HA 的 person.* 决定，offMs 是没人碰屏幕多久后熄灭 */
         @JavascriptInterface

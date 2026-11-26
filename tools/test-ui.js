@@ -1150,6 +1150,13 @@ ok(musicJs.indexOf('function haPlaylist()') >= 0 && musicJs.indexOf('function se
 ok(musicJs.indexOf('haPlaylist: haPlaylist, setHaPlaylist: setHaPlaylist, pickPlaylists: pickPlaylists') >= 0, 'MusicUI 导出 HA 播放歌单三件套');
 ok(musicJs.indexOf('var want = haPlaylist();') >= 0 && musicJs.indexOf('function playPlaylistFirst(') >= 0, 'playDefault 优先播设置里的歌单');
 ok(musicJs.indexOf('haPlaylist: m.haPlaylist') >= 0, 'defaultCfg 带 haPlaylist 字段（否则 mergeCfg 会把它丢掉）');
+ok(mqttJava.indexOf('_brightness/config') >= 0 && mqttJava.indexOf('brightnessJson()') >= 0, '亮度 sensor 的 discovery 由 MQTT 发');
+ok(mqttJava.indexOf('brightnessNumberJson()') >= 0 && mqttJava.indexOf('command_template') >= 0, '亮度走 HA number 滑块，命令带 brightness: 前缀');
+ok(mqttJs.indexOf('brightness: brightPct()') >= 0, 'state 载荷带 brightness（亮度实体取值来源）');
+ok(mqttJs.indexOf("m.indexOf('brightness:') === 0") >= 0 && mqttJs.indexOf('function setBright(') >= 0, 'HA 的亮度命令按前缀分派，不和音量纯数字撞车');
+ok(appJs.indexOf('data-act="bri-live"') >= 0 && appJs.indexOf('function setBrightPct(') >= 0, '设置页有亮度滑块（进度条）并即时生效');
+ok(mainCode.indexOf('public int brightnessPct()') >= 0 && mainCode.indexOf('lastBriPct') >= 0, 'Java 桥暴露 brightnessPct（真实窗口亮度，含熄屏兜底）');
+ok(mqttJs.indexOf('function parseCfgText(') >= 0 && mqttJs.indexOf('var o = parseCfgText(raw);') >= 0, '读 mqtt.json 先剥 UTF-8 BOM（带 BOM 时 JSON.parse 抛错，面板只连不报状态）');
 ok(appJs.indexOf('data-act="ha-pl"') >= 0 && appJs.indexOf('ha-pl-set:') >= 0, '设置页「音乐」里有 HA 播放歌单入口与选择处理');
 
 /* ---------- 「我喜欢」（收藏）：行内心形 + 服务器账号里的收藏歌单 + 独立视图 ---------- */

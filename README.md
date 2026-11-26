@@ -68,7 +68,7 @@ powershell -ExecutionPolicy Bypass -File tools\deploy.ps1 -SkipApk   # 只改了
 
 它会依次做：adb 在线检查（离线时直接告诉你「长按电源键 10 秒」而不是抛异常）→ 装 APK → 推 `panel\` 到 `/sdcard/HomeControl/panel/` → 改写 `url.txt` → force-stop + 启动 → 校验 `page finished` / 无脚本错误 / 前台是壳 App，最后打印 DEPLOY OK。
 
-版本号随构建更新：`versionName 0.7.78` / `versionCode 115`（`build.ps1` 的默认值就是当前版本。**约定：每次改动后都发一次新版本，迭代尽可能小**——versionCode +1、versionName 只进补丁位，如 `-VersionCode 107 -VersionName "0.7.70"`，并同步改这一行，不用再写一次性升版本脚本——装到已装更高 versionCode 的设备上会 `INSTALL_FAILED_VERSION_DOWNGRADE`），诊断页第一行就能看到「版本 0.7.78 · MI PAD 2」。
+版本号随构建更新：`versionName 0.7.79` / `versionCode 116`（`build.ps1` 的默认值就是当前版本。**约定：每次改动后都发一次新版本，迭代尽可能小**——versionCode +1、versionName 只进补丁位，如 `-VersionCode 107 -VersionName "0.7.70"`，并同步改这一行，不用再写一次性升版本脚本——装到已装更高 versionCode 的设备上会 `INSTALL_FAILED_VERSION_DOWNGRADE`），诊断页第一行就能看到「版本 0.7.78 · MI PAD 2」。
 
 面板把自己也注册进 Home Assistant（0.7.9）：走 `POST /api/states/<entity_id>`（实测 201，不存在就新建，不需要 MQTT），每分钟报一次 `sensor.homecontrol_panel`（在线状态、型号、App 版本、IP/SSID、皮肤、电量、充电、`last_seen`）、`binary_sensor.homecontrol_panel_connected`、`sensor.homecontrol_panel_battery`、`binary_sensor.homecontrol_panel_charging`、`switch.homecontrol_panel_dark_mode`。那个开关是双向的：面板写自己的皮肤，HA 里把开关拨了，面板跟着换皮肤（`selfWritten` 用来区分「HA 那边改了」和「我们自己写的」，不会自己跟自己打架）。注意 HA 的 REST 建的是实体，不是设备注册表里的设备，所以在 HA 界面上它们归在「未分配设备」下。
 ## 构建与部署
@@ -77,7 +77,7 @@ powershell -ExecutionPolicy Bypass -File tools\deploy.ps1 -SkipApk   # 只改了
 # 构建（路径由 tools\env.ps1 解析：SDK / build-tools / android.jar / JDK / adb，可用 HC_ANDROID_SDK 等环境变量覆盖）
 powershell -ExecutionPolicy Bypass -File .\tools\build.ps1                                  # debug 变体，含假 HA + 调试开关
 powershell -ExecutionPolicy Bypass -File .\tools\build.ps1 -Variant release -OutName homecontrol-release.apk   # 正式包：不含 MockHaServer
-powershell -ExecutionPolicy Bypass -File .\tools\build.ps1 -VersionCode 115 -VersionName "0.7.78"   # 发新包：版本号 +1（默认值就是当前版本 115 / 0.7.78）
+powershell -ExecutionPolicy Bypass -File .\tools\build.ps1 -VersionCode 117 -VersionName "0.7.80"   # 发新包：版本号 +1（默认值就是当前版本 116 / 0.7.79）
 
 # 安装
 adb install -r .\dist\homecontrol.apk
@@ -427,6 +427,18 @@ WebSocket 帧统计）。注意这是模拟器数字，Chromium 57 真机还没�
 - **先发 discovery，再发 availability**（0.7.34）：实体是在 HA 处理 discovery 的那一刻才创建的，之前发的 `online` 会被丢掉，实体一直停在 `unavailable`（实测）。面板现在 connectOnce 里是 `publishDiscovery(); publish(availTopic(), "online", false);`，重连时 JS 侧还会清 `lastSent` 把当前状态补发一次。
 - **HA 按钮直通音乐页**（0.7.37 起）：`tools/ha-press.js button.<…>_music_play / _pause / _stop` 三个键实测直达面板（logcat `HomeMqtt: cmd … <- play`）。「播放」早年走 `MusicUI.togglePlay()`，冷启动没选歌时只弹一句「先去右侧歌单里点一首」，所以 HA 按下去没声音——现在走新增的 `MusicUI.playDefault()`（有歌就续播、无歌就打开音乐页拉全库第一页并播第一首；注意 `loadLibPage()` 在登录完成前会因 `S.backend` 为空静默返回，所以 playDefault 的轮询里每 300ms 重喊一次 `openLibView()`）。「停止」也从「暂停」改成 `MusicUI.stopPlay()`：停音频、清 `S.track`、回到「未在播放」，sensor 变 `idle`（暂停仍是 `paused`）。
 - **电量 / 音量按钮 / slug 必须与 Java 一致**（0.7.45）：新增 `sensor.homecontrol_panel_<slug>_battery`（`value_template: {{ value_json.battery }}`、`device_class: battery`、单位 %；**电量实体只由 MQTT 发**，`app.js` 的 REST `selfPost` 不再写同一个 entity_id——两个来源抢一个 id 会被 HA 静默拒掉后到的那个，实体名字/属性会来回跳）与 `button.…_music_volume_up` / `button.…_music_volume_down`（`payload_press: volume_up/volume_down`，步长 5%，钳在 0–100）。实测 `volume_up` 93→98（系统 `STREAM_MUSIC` 14→15/150）、`volume_down` 回 93，HA 的 number 同步。**同时修掉一个致命的不一致**：`panel/js/mqtt.js` 的 `slug()` 原来只按设备型号取（`sdk_gphone_x86_64`），而 Java `MqttClient.slug` 取的是 `mqtt.json` 的 `name`——两者不一致时 discovery/availability 发到 A 主题、state 发到 B 主题，HA 实体永远 `unknown`（电量/音量都读不出来）。现在 JS 也先读 `mqtt.json` 的 `name`（`cfgName()`），与 Java 同源。
+- **屏幕亮度：sensor + 可拖的 number + 设置页滑块**（0.7.79）：HA 里多两件套——
+`sensor.homecontrol_panel_<slug>_brightness`（`value_template: {{ value_json.brightness }}`、%、`state_class: measurement`、`icon mdi:brightness-6`）
+和 `number.homecontrol_panel_<slug>_brightness`（`min 5 / max 100 / step 1 / mode slider`，`command_template: "brightness:{{ value }}"`）。
+**number 必须带前缀**：音量那个 number 下发的是纯数字，亮度要是也发纯数字，HA 里拖亮度会改成音量；
+`panel/js/mqtt.js` 的 `mapCmd()` 先认 `brightness:` + 1..100 再落到数字分支，`runCmd()` 也把亮度放在 `if (!mu) return;` 之前（亮度不依赖音乐模块）。
+读数来自新桥 `brightnessPct()`（`MainActivity.currentBrightnessPct()`：先窗口 `lp.screenBrightness`，再上次设的值，最后读系统 `Settings.System.SCREEN_BRIGHTNESS` × 100 / 255）；
+设置 →「屏幕」第一行是「当前亮度 N%」+ 原生 `input[type=range]`（`data-act="bri-live"`，不占弹层），拖动即 `setBacklight()` 并存进 `prefs().bright`。
+踩到的三个坑：① **`mqtt.json` 存成带 UTF-8 BOM 时 `JSON.parse` 抛错** → `readCfg().enabled=false`，表现为「availability 上了、state 一条不发、HA 实体永远 unknown」；
+现在 `panel/js/mqtt.js` 有 `parseCfgText()`，先去掉串首的 BOM 空白再解析。② **「离家熄屏·回家亮屏」会把 HA 设的亮度顶回系统亮度**：
+`setBlackout(false)` 原来恢复 `-1f`（= 系统亮度），现在按新字段 `wantBriPct`（JS `setBrightness` 记下的「面板想要的亮度」）恢复；否则 HA 拖到 55%，下一次策略跑完又变回 102/255 = 40%。
+③ 待机压暗中改亮度会立刻被压暗逻辑改回去，`window.__hcSetBrightness` 里先 `setBrightPct()` 再 `exitDim()`。
+实测（hc_tablet 模拟器）：HA `set_value 60` → logcat `setBrightness 0.6` → sensor / number 都 `60`；设置页拖到 62% → HA 变 `62`。
 ﻿- **设置页换成左侧分类栏 + 右侧卡片行**（0.7.61）：以前设置页是顶部一排小标签 + 一条条没有底色的行，平板上又挤又不像系统设置。现在照 iPadOS / 安卓设置的样子重做：左边一列分类（图标 + 名字，当前项高亮），右边是大标题 + 成组的圆角卡片行，每行「左边名字、右边一组分段按钮」，选项当前值用强调色实心块。连接页的 MQTT 输入行、关于页的设备信息（版本/连接/房间卡数/实体数/视口/内核）也统一成了同样的行样式。左右两栏各自滚动：右栏翻到哪，左栏分类和大标题都不动。返回用左上角那颗「‹ 返回」胶囊（和音乐页歌单返回同一套样式），不再有底部「完成」按钮，页面上也不再重复写「设置」两个字，各页里冗长的说明文字一并删掉（只留必要的状态行）。
 - **每行最多 10 列**（0.7.78）：设置 →「卡片」→「每行卡片」从 3/4/5/6 扩到 3~10。网格列数一直是内联 `grid-template-columns` 算的，这次补上 `.cols-7…10` 的列模板与更紧的内边距（7 列 10px、8 列 9px、9 列 8px、10 列 7px，半高卡与内容盒同步收窄），密排到 10 列时卡片也不会糊成一团。回归 `tools/test-ui.js`「每行卡片可选 3~10」。
 - **关灯的亮度卡读数位显示 0%**（0.7.78）：以前只有「开灯且带亮度」才写百分比，关灯时数字位是空的，看着像这个卡片没有亮度信息。现在只要有亮度能力就写数字——开灯写实际值、关灯写 `0%`（亮度条本来也停在最左）。纯 on/off 灯不写（它们确实没有数值）。

@@ -4236,11 +4236,66 @@ function bindDim() {
     box.innerHTML = diagRows();
   }
 
+  /* ---------------- 屏幕亮度 ---------------- */
+  /* 当前背光百分比：优先问原生桥（返回真实窗口亮度，熄屏兜底时是 2%），
+     桥不在就退回「唤醒亮度」偏好 —— 离线单测里走的就是这条 */
+  function currentBrightPct() {
+    var b = window.AndroidBridge;
+    if (b && b.brightnessPct) {
+      try {
+        var v = parseInt(b.brightnessPct(), 10);
+        if (isFinite(v) && v > 0) return Math.max(1, Math.min(100, v));
+      } catch (e) { }
+    }
+    return Math.max(1, Math.min(100, num(prefs().bright, 100)));
+  }
+
+  /* 立即改背光并记住：拖滑块 = 改「唤醒亮度」，熄屏/离家回来还是这个值。
+     persist=false 只给临时压暗用（不污染偏好）。 */
+  function setBrightPct(pct, persist) {
+    var v = Math.max(1, Math.min(100, Math.round(num(pct, 100))));
+    setBacklight(v >= 100 ? -1 : v / 100);
+    if (persist !== false) {
+      setPref('bright', v);
+      repaintSegRow('bright');
+    }
+    return v;
+  }
+
+  /* 设置页里的亮度滑块（进度条）：拖动即时生效 */
+  function briSliderRow() {
+    var cur = currentBrightPct();
+    return '<div class="set-row" data-row="briLive"><div class="set-k">当前亮度</div>' +
+      '<div class="set-v"><b id="briVal">' + cur + '%</b></div></div>' +
+      '<div class="bri-slider"><input class="slider" type="range" min="5" max="100" step="1" value="' + cur +
+      '" data-act="bri-live" style="--pct:' + cur + '%"></div>';
+  }
+
+  /* 滑块事件：input 拖着走、change 松手（两者都接，老 WebView 有时只给其中一个） */
+  function onBriInput(ev) {
+    var t = ev.target;
+    if (!t || !t.getAttribute || t.getAttribute('data-act') !== 'bri-live') return;
+    var v = setBrightPct(t.value, true);
+    t.style.setProperty('--pct', v + '%');
+    var lab = document.getElementById('briVal');
+    if (lab) lab.textContent = v + '%';
+  }
+
+  /* mqtt.js 的亮度命令走这里（桥 + 偏好一套逻辑，别两边各写一份）。
+     HA 拖亮度 = 想让屏幕照着这个值亮，所以顺手退出熄屏/待机：
+     否则待机里的压暗（dimCfg().brightness，默认 0.35）下一拍就把亮度改回去，
+     HA 那边看起来「拖了没反应」。 */
+  window.__hcBrightness = function () { return currentBrightPct(); };
+  window.__hcSetBrightness = function (pct) {
+    var v = setBrightPct(pct, true);
+    if (S.dimOn) exitDim();
+    return v;
+  };
+
   var SEG_LABEL = {};
   var SEG_OPTS = {};
 
-  function segRow(label, key, opts) {
-    SEG_LABEL[key] = label;
+  function segRow(label, key, opts) {    SEG_LABEL[key] = label;
     SEG_OPTS[key] = opts;
     var cur = prefs()[key], h = '';
     opts.forEach(function (o) {
@@ -4374,6 +4429,7 @@ function bindDim() {
     }
     if (tab === 'screen') {
       return '<div class="set-sec">屏幕</div>' +
+        briSliderRow() +
         segRow('空闲自动调暗', 'autoDim', [{ v: true, t: '开' }, { v: false, t: '关' }]) +
         segRow('离家熄屏 · 回家亮屏', 'awayScreen', [{ v: true, t: '开' }, { v: false, t: '关' }]) +
         segRow('没人碰多久后熄屏', 'awayOff', [{ v: 2000, t: '2 秒' }, { v: 5000, t: '5 秒' }, { v: 15000, t: '15 秒' }]) +
@@ -5392,6 +5448,11 @@ function bindDim() {
 
     el.sheet.addEventListener('click', onSheetClick);
     if (el.view) el.view.addEventListener('click', onSheetClick);
+    /* 亮度滑块：input 边拖边生效，change 松手再对齐一次（老 WebView 两个事件行为不一致） */
+    ['input', 'change'].forEach(function (ev) {
+      el.sheet.addEventListener(ev, onBriInput);
+      if (el.view) el.view.addEventListener(ev, onBriInput);
+    });
     if (el.view) el.view.addEventListener('pointerdown', function (e) {
       var t = closest(e.target, null, 'data-act');
       if (!t) return;
