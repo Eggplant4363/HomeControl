@@ -629,6 +629,42 @@ eq(colsOpts, 4, '每行卡片可选 3/4/5/6');
   if (savedEdit == null) windowStub.localStorage.removeItem('hc.edit'); else windowStub.localStorage.setItem('hc.edit', savedEdit);
 })();
 
+/* 重复卡回归（用户 m02250：点一张出现两张、删一张消失两张）：
+   「先移除、再加回来」不能再插一份 tile；历史配置里已有重复 tile 时只显示一张 */
+(function () {
+  var cfg = api.cfgRef;
+  var savedRooms = cfg.rooms;
+  var savedPrefs = windowStub.localStorage.getItem('hc.prefs');
+  var savedEdit = windowStub.localStorage.getItem('hc.edit');
+  windowStub.localStorage.setItem('hc.prefs', JSON.stringify({ cols: 4, size: 'md', allCards: false }));
+  api.setReal(false);
+
+  /* ① 移除过（tile 还在房间里 + hidden=1），再加回来：房间不新增 tile，屏上只有一张 */
+  cfg.rooms = [{ id: 'r1', name: '客厅', tiles: [
+    { type: 'light', entity: 'light.a', name: 'A 灯', dev: '吸顶灯', dev_id: 'dev1' }
+  ] }];
+  api.setAllTiles([{ type: 'light', entity: 'light.a', name: 'A 灯', dev: '吸顶灯', dev_id: 'dev1' }]);
+  api.writeEdit({ added: {}, hidden: { 'light.a': 1 }, order: [] });
+  eq(api.tileAnywhere('light.a') !== null, true, '重复卡：隐藏的卡仍算「房间里已有」');
+  eq(api.itemsFor('all').length, 0, '重复卡：移除后屏上 0 张');
+  api.setCardVisible('light.a', true);
+  eq(cfg.rooms[0].tiles.length, 1, '重复卡：加回来不新增 tile（房间仍 1 份）');
+  eq(api.itemsFor('all').length, 1, '重复卡：加回来屏上只有 1 张');
+
+  /* ② 历史配置里同一个实体在两个房间各有一份：只显示一张 */
+  cfg.rooms = [
+    { id: 'r1', name: '客厅', tiles: [{ type: 'light', entity: 'light.a', name: 'A 灯', dev: '吸顶灯', dev_id: 'dev1' }] },
+    { id: 'r2', name: '主卧', tiles: [{ type: 'light', entity: 'light.a', name: 'A 灯', dev: '吸顶灯', dev_id: 'dev1' }] }
+  ];
+  api.writeEdit({ added: { 'light.a': 1 }, hidden: {}, order: [] });
+  eq(api.itemsFor('all').length, 1, '重复卡：两个房间同一实体只显示 1 张');
+
+  cfg.rooms = savedRooms;
+  api.setAllTiles([]);
+  if (savedPrefs == null) windowStub.localStorage.removeItem('hc.prefs'); else windowStub.localStorage.setItem('hc.prefs', savedPrefs);
+  if (savedEdit == null) windowStub.localStorage.removeItem('hc.edit'); else windowStub.localStorage.setItem('hc.edit', savedEdit);
+})();
+
 /* ---- 字号角色档：同屏同角色一个字号（type scale），文字不按卡片现场算 ---- */
 (function () {
   var tok = {};

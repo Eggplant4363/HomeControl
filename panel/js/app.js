@@ -1569,6 +1569,16 @@
       if (p.offline && isNa(stateOf(t.entity))) return false;
       return true;
     });
+    /* 同一个实体只画一张：历史配置里可能残留重复 tile（同一实体在两个房间、
+       或「移除又加回」的旧版本留下的第二份），不在这里挡住就会一张操作影响两张。 */
+    var seen = {};
+    out = out.filter(function (it) {
+      var id = it.tile && it.tile.entity;
+      if (!id) return true;
+      if (seen[id]) return false;
+      seen[id] = 1;
+      return true;
+    });
     return sortCards(out);
   }
 
@@ -2118,8 +2128,10 @@
   function setCardVisible(entity, on) {
     var e = editState();
     if (on) {
-      /* 布局默认没选中的实体：先插进房间，再记住它，这样刷新设备列表也不会丢 */
-      if (!tileByEntity(entity) && S.allTiles && S.allTiles.length) {
+      /* 布局默认没选中的实体：先插进房间，再记住它，这样刷新设备列表也不会丢。
+         注意用 tileAnywhere（不看可见性）：移除过的卡 tile 还在房间里，
+         用 tileByEntity 会以为「房间里没有」而再插一份 → 点一次出现两张。 */
+      if (!tileAnywhere(entity) && S.allTiles && S.allTiles.length) {
         if (!injectTile(entity)) { toast('这个实体不在候选列表里，先刷新设备列表'); return e; }
         e.extra[entity] = 1;
       }
@@ -3952,7 +3964,7 @@ function bindDim() {
   function applyExtraTiles() {
     var ex = editState().extra || {};
     for (var id in ex) {
-      if (!ex[id] || tileByEntity(id)) continue;
+      if (!ex[id] || tileAnywhere(id)) continue;
       injectTile(id);
     }
   }
@@ -3977,13 +3989,28 @@ function bindDim() {
 
   /* 把全量候选里的某颗实体真正插进房间（它可能被布局规则默认筛掉了） */
   function injectTile(entity) {
-    if (tileByEntity(entity)) return true;
+    if (tileAnywhere(entity)) return true;      /* 房间里已经有这张卡（哪怕现在是隐藏的）就别再插一张 */
     var all = S.allTiles || [], t = null;
     for (var i = 0; i < all.length; i++) { if (all[i].entity === entity) { t = all[i]; break; } }
     if (!t) return false;
     var room = roomForTile(t);
     room.tiles.push({ type: t.type, entity: t.entity, name: t.name, dev: t.dev || '', dev_id: t.dev_id || '', unit: t.unit || '', dc: t.dc || '' });
     return true;
+  }
+
+  /** 实体在任何一个房间的 tiles 里有没有卡——**不看可见性**。
+      tileByEntity() 只认 S.items（已按「显示/隐藏」过滤过），拿它判断「需不需要插卡」
+      会把「先移除、再加回来」的实体插进第二个房间，于是同一张卡出现两次、
+      移除时又因为 shared entity 一次消失两张。 */
+  function tileAnywhere(entity) {
+    var rooms = cfg.rooms || [];
+    for (var i = 0; i < rooms.length; i++) {
+      var ts = rooms[i].tiles || [];
+      for (var j = 0; j < ts.length; j++) {
+        if (ts[j] && ts[j].entity === entity) return ts[j];
+      }
+    }
+    return null;
   }
 
   function applyAutoLayout(cb) {
@@ -5608,6 +5635,9 @@ function boot() {
     SETTINGS_TABS: SETTINGS_TABS, settingsTab: settingsTab, settingsTabsHtml: settingsTabsHtml,
     settingsSectionHtml: settingsSectionHtml, setSettingsTab: function (t) { S.settingsTab = t; },
     readEdit: readEdit, writeEdit: writeEdit, cardVisible: cardVisible, setCardVisible: setCardVisible, cardSpan: cardSpan,
+    /* 重复卡回归：test-ui 验「先移除再加回来不会插出第二张」「历史重复 tile 只显示一张」 */
+    tileAnywhere: tileAnywhere, itemsFor: itemsFor, injectTile: injectTile, applyExtraTiles: applyExtraTiles,
+    setAllTiles: function (a) { S.allTiles = a || []; },
     refreshSheet: refreshSheet, refreshAddRows: refreshAddRows, els: el,
     cellRows: cellRows, rowSpan: rowSpan, resizeCard: resizeCard, sizeSheetHtml: sizeSheetHtml, spanText: spanText,
     bulkCount: bulkCount, toggleBulk: toggleBulk, doBulk: doBulk, bulk: function () { return { on: S.bulk, sel: S.bulkSel }; },
