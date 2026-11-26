@@ -847,6 +847,62 @@ eq(bs.indexOf('台式电脑 童锁') < 0, true, '功能开关（童锁）被藏�
 eq(api.battSwitchLabel(), '未选择', '没选开关时显示「未选择」');
 api.setStates({});
 
+/* ---------------- 电池保养：兜底实体查找（_2 后缀）+ 95/15 硬护栏 ---------------- */
+console.log('电池保养：兜底实体与硬护栏');
+var PREFIX = 'sensor.homecontrol_panel_mi_pad_2_battery';
+api.setStates({});
+eq(api.selfBattEntity(), '', '没有自身上报实体时返回空');
+eq(api.battReadLevel(), -1, '读不到电量时返回 -1（不动作）');
+/* 设备上真实出现过的情况：老实体还在 HA 里但已没有数值，新注册的成了 _2 */
+var stBatt = {};
+stBatt[PREFIX] = { entity_id: PREFIX, state: 'unavailable', attributes: {}, last_updated: '2026-11-20T12:00:00Z' };
+stBatt[PREFIX + '_2'] = { entity_id: PREFIX + '_2', state: '65', attributes: {}, last_updated: '2026-11-26T12:00:00Z' };
+api.setStates(stBatt);
+eq(api.selfBattEntity(), PREFIX + '_2', '老实体 unavailable 时挑 _2 后缀实体');
+eq(api.battReadLevel(), 65, '兜底读到 _2 实体的电量');
+var stBoth = {};
+stBoth[PREFIX] = { entity_id: PREFIX, state: '70', attributes: {}, last_updated: '2026-11-26T13:00:00Z' };
+stBoth[PREFIX + '_2'] = { entity_id: PREFIX + '_2', state: '68', attributes: {}, last_updated: '2026-11-26T11:00:00Z' };
+api.setStates(stBoth);
+eq(api.selfBattEntity(), PREFIX, '两个都有数值时挑 last_updated 更新的');
+eq(api.BATT_RAIL_HIGH, 95, '硬护栏上限 95%');
+eq(api.BATT_RAIL_LOW, 15, '硬护栏下限 15%');
+eq(api.battLastLabel().indexOf('面板重启后清零') >= 0, true, '没动作过时说明重启会清零');
+
+/* 硬护栏不依赖「自动保养」开关：关着也要 >=95% 断电、<=15% 通电 */
+windowStub.localStorage.setItem('hc.prefs', JSON.stringify({ battGuard: false, battSwitch: 'switch.plug_main', battLow: 40, battHigh: 80 }));
+var stRail = {};
+stRail['switch.plug_main'] = { entity_id: 'switch.plug_main', state: 'on', attributes: { friendly_name: '插线板 开关' } };
+stRail[PREFIX + '_2'] = { entity_id: PREFIX + '_2', state: '96', attributes: {}, last_updated: '2026-11-26T12:00:00Z' };
+api.setStates(stRail);
+api.battGuard();
+eq(api.statesRef()['switch.plug_main'].state, 'off', '自动保养关着，96% 仍被硬护栏断电');
+var stRail2 = {};
+stRail2['switch.plug_main'] = { entity_id: 'switch.plug_main', state: 'off', attributes: { friendly_name: '插线板 开关' } };
+stRail2[PREFIX + '_2'] = { entity_id: PREFIX + '_2', state: '10', attributes: {}, last_updated: '2026-11-26T12:00:00Z' };
+api.setStates(stRail2);
+api.battGuard();
+eq(api.statesRef()['switch.plug_main'].state, 'on', '自动保养关着，10% 仍被硬护栏通电');
+var stMid = {};
+stMid['switch.plug_main'] = { entity_id: 'switch.plug_main', state: 'on', attributes: { friendly_name: '插线板 开关' } };
+stMid[PREFIX + '_2'] = { entity_id: PREFIX + '_2', state: '60', attributes: {}, last_updated: '2026-11-26T12:00:00Z' };
+api.setStates(stMid);
+api.battGuard();
+eq(api.statesRef()['switch.plug_main'].state, 'on', '60% 不在任何护栏里，保持原样');
+/* 自动保养开着时按用户阈值走 */
+windowStub.localStorage.setItem('hc.prefs', JSON.stringify({ battGuard: true, battSwitch: 'switch.plug_main', battLow: 40, battHigh: 80 }));
+var stGuard = {};
+stGuard['switch.plug_main'] = { entity_id: 'switch.plug_main', state: 'on', attributes: { friendly_name: '插线板 开关' } };
+stGuard[PREFIX + '_2'] = { entity_id: PREFIX + '_2', state: '82', attributes: {}, last_updated: '2026-11-26T12:00:00Z' };
+api.setStates(stGuard);
+api.battGuard();
+eq(api.statesRef()['switch.plug_main'].state, 'off', '保养开着时 82% > 80% 就断电');
+var battSec = api.settingsSectionHtml('batt');
+ok(battSec.indexOf('最近动作') >= 0, '电池设置页显示最近动作');
+ok(battSec.indexOf('95') >= 0 && battSec.indexOf('15') >= 0, '电池设置页写明 95/15 硬保护');
+api.setStates({});
+windowStub.localStorage.removeItem('hc.prefs');
+
 /* ---------------- 卡片图标自定义：覆盖 + 图标弹层 ---------------- */
 console.log('卡片图标：自定义覆盖 + 图标弹层');
 api.setStates({ 'light.living_main': { entity_id: 'light.living_main', state: 'on', attributes: {} } });

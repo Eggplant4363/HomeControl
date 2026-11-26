@@ -68,7 +68,7 @@ powershell -ExecutionPolicy Bypass -File tools\deploy.ps1 -SkipApk   # 只改了
 
 它会依次做：adb 在线检查（离线时直接告诉你「长按电源键 10 秒」而不是抛异常）→ 装 APK → 推 `panel\` 到 `/sdcard/HomeControl/panel/` → 改写 `url.txt` → force-stop + 启动 → 校验 `page finished` / 无脚本错误 / 前台是壳 App，最后打印 DEPLOY OK。
 
-版本号随构建更新：`versionName 0.7.73` / `versionCode 110`（`build.ps1` 的默认值就是当前版本。**约定：每次改动后都发一次新版本，迭代尽可能小**——versionCode +1、versionName 只进补丁位，如 `-VersionCode 107 -VersionName "0.7.70"`，并同步改这一行，不用再写一次性升版本脚本——装到已装更高 versionCode 的设备上会 `INSTALL_FAILED_VERSION_DOWNGRADE`），诊断页第一行就能看到「版本 0.7.73 · MI PAD 2」。
+版本号随构建更新：`versionName 0.7.75` / `versionCode 112`（`build.ps1` 的默认值就是当前版本。**约定：每次改动后都发一次新版本，迭代尽可能小**——versionCode +1、versionName 只进补丁位，如 `-VersionCode 107 -VersionName "0.7.70"`，并同步改这一行，不用再写一次性升版本脚本——装到已装更高 versionCode 的设备上会 `INSTALL_FAILED_VERSION_DOWNGRADE`），诊断页第一行就能看到「版本 0.7.75 · MI PAD 2」。
 
 面板把自己也注册进 Home Assistant（0.7.9）：走 `POST /api/states/<entity_id>`（实测 201，不存在就新建，不需要 MQTT），每分钟报一次 `sensor.homecontrol_panel`（在线状态、型号、App 版本、IP/SSID、皮肤、电量、充电、`last_seen`）、`binary_sensor.homecontrol_panel_connected`、`sensor.homecontrol_panel_battery`、`binary_sensor.homecontrol_panel_charging`、`switch.homecontrol_panel_dark_mode`。那个开关是双向的：面板写自己的皮肤，HA 里把开关拨了，面板跟着换皮肤（`selfWritten` 用来区分「HA 那边改了」和「我们自己写的」，不会自己跟自己打架）。注意 HA 的 REST 建的是实体，不是设备注册表里的设备，所以在 HA 界面上它们归在「未分配设备」下。
 ## 构建与部署
@@ -77,7 +77,7 @@ powershell -ExecutionPolicy Bypass -File tools\deploy.ps1 -SkipApk   # 只改了
 # 构建（路径由 tools\env.ps1 解析：SDK / build-tools / android.jar / JDK / adb，可用 HC_ANDROID_SDK 等环境变量覆盖）
 powershell -ExecutionPolicy Bypass -File .\tools\build.ps1                                  # debug 变体，含假 HA + 调试开关
 powershell -ExecutionPolicy Bypass -File .\tools\build.ps1 -Variant release -OutName homecontrol-release.apk   # 正式包：不含 MockHaServer
-powershell -ExecutionPolicy Bypass -File .\tools\build.ps1 -VersionCode 111 -VersionName "0.7.74"   # 发新包：版本号 +1（默认值就是当前版本 110 / 0.7.73）
+powershell -ExecutionPolicy Bypass -File .\tools\build.ps1 -VersionCode 112 -VersionName "0.7.75"   # 发新包：版本号 +1（默认值就是当前版本 112 / 0.7.75）
 
 # 安装
 adb install -r .\dist\homecontrol.apk
@@ -363,11 +363,12 @@ WebSocket 帧统计）。注意这是模拟器数字，Chromium 57 真机还没�
 
 挂在墙上的平板常年插着电，电池一直 100% 会鼓包、缩短寿命。这节让面板自己守电量：
 
-- **自动保养**：开 / 关。开着时面板每 30 秒看一次**自己的电量**（经 AndroidBridge 读，读不到就兜底读 HA 里自己上报的 `sensor.homecontrol_panel_<设备>_battery`）。
+- **自动保养**：开 / 关。开着时面板每 30 秒看一次**自己的电量**（经 AndroidBridge 读，读不到就兜底读 HA 里自己上报的 `sensor.homecontrol_panel_<设备>_battery*`——按前缀找**实际存在且有数值、`last_updated` 最新**的那个，因为重复注册过的实体会被 HA 加 `_2/_3` 后缀，写死 id 会读到空值）。
 - **充电开关**：选一个 HA 的 `switch.*` 实体当这台平板的充电器电源。列表只列「真能断电」的开关——把各家设备的**功能开关**（静音、指示灯、蜂鸣器、提示音、童锁、背光、勿扰、移动侦测、保温……按实体 id 关键字 + 中文友好名双重过滤）都藏掉，面板自注册的夜间模式开关也不列。
 - **开始充电 / 停止充电**：电量 ≤ 开始阈值就 `switch.turn_on`，≥ 停止阈值就 `switch.turn_off`（默认 40% / 80%）。只在跨过阈值那一侧动作，避免来回抖。
+- **硬护栏（0.7.75，不受「自动保养」开关影响）**：只要选了充电开关，电量 **≥95% 一定断电**、**≤15% 一定通电**。面板被杀过之后开关会停在最后的状态，这两条是最后的防线；设置页会显示「最近动作」，`panel.log` 里每 10 分钟有一条 `battGuard 存活：…`，翻日志就能判断守护有没有在跑。
 
-守护逻辑跑在**面板里**而不是 HA 自动化：面板是常亮墙屏、自己本来就有定时器，能读自己电量、能调 HA 开关，改起来不用再去 HA 里配一条自动化。代价是面板进程没在跑时这条守护也不在（断电关机到 0% 的极端情况兜不住），但对常年通电的墙屏够用。
+守护逻辑跑在**面板里**而不是 HA 自动化：面板是常亮墙屏、自己本来就有定时器，能读自己电量、能调 HA 开关，改起来不用再去 HA 里配一条自动化。代价是面板进程没在跑时这条守护也不在（断电关机到 0% 的极端情况兜不住），但对常年通电的墙屏够用——真出过「不是没电就是满电」：面板被 MIUI 杀掉几小时后，充电开关停在最后状态，一路充到 100% 才被手动断开。所以 0.7.75 补了 95%/15% 硬护栏，但它仍然只在面板活着时执行。
 
 磁贴拉伸的真机验收（2026-11-08，MI PAD 2 / 6 列）：编辑态从卡片右下角 `(780,720)` 拖到 `(1180,1120)` → logcat `ACT grip down …` / `ACT resize … 3x2` / `ACT grip up … 3x2`，卡片当场变成 3 列 × 2 行（截图 `docs/screens/panel-tile-resize.png`）；再反向拖回 → `ACT resize … 2x1`（`docs/screens/panel-tile-resized.png`）。
 

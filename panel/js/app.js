@@ -1157,39 +1157,78 @@
 
   /* ---------- 电池保养：电量低于低阈值就打开充电开关、高于高阈值就关掉 ----------
      这台平板常年插电，一直 100% 会让电池鼓包。这里读自己的电量（桥优先，兜底读
-     HA 里自身上报的传感器），配一个智能开关当充电器电源，每 30 秒查一次。 */
+     HA 里自身上报的传感器），配一个智能开关当充电器电源，每 30 秒查一次。
+     另外有两条硬护栏（不看「自动保养」开关，只要选了充电开关就生效）：
+     电量 ≥95% 一定断电、≤15% 一定通电。面板被杀过之后开关会停在最后的状态，
+     这两条是最后的防线。 */
+  var BATT_RAIL_HIGH = 95, BATT_RAIL_LOW = 15;
+
+  /* 自身电量实体：早期注册的实体可能被 HA 加了 _2/_3 后缀，写死 id 会读到空值 */
+  function selfBattEntity() {
+    var st = S.states || {}, best = '', bestT = -1;
+    var pre = 'sensor.homecontrol_panel_' + selfSlug() + '_battery';
+    for (var k in st) {
+      if (k !== pre && k.indexOf(pre + '_') !== 0) continue;
+      var e = st[k];
+      if (!e || e.state === 'unavailable' || e.state === 'unknown') continue;
+      if (num(e.state, -1) < 0) continue;
+      var t = new Date(e.last_updated || 0).getTime() || 0;
+      if (t >= bestT) { bestT = t; best = k; }
+    }
+    return best;
+  }
+
+  function battReadLevel() {
+    var info = selfInfo();
+    if (info.battery >= 0) return info.battery;
+    var be = S.states && S.states[selfBattEntity()];
+    return be ? num(be.state, -1) : -1;
+  }
+
+  var battAliveAt = 0;
+  /* 每次查都留个痕（最多 10 分钟一条），事后翻 panel.log 能看出守护有没有在跑 */
+  function battAlive(why) {
+    var now = Date.now();
+    if (now - battAliveAt < 600000) return;
+    battAliveAt = now;
+    actLog('battGuard 存活：' + why);
+  }
+
+  function battAct(sw, on, level, why) {
+    actLog('battGuard ' + level + '% → ' + (on ? '开始充电' : '断开充电') + '（' + why + '）' + sw);
+    patch(sw, on ? 'on' : 'off', null);
+    callService('switch', on ? 'turn_on' : 'turn_off', { entity_id: sw }).then(function () {
+      S.battLast = { at: Date.now(), act: on ? 'on' : 'off', level: level };
+      toast('电池' + (why === '护栏' ? '保护' : '保养') + '：' + (on ? '已开始充电' : '已断开充电') + '（' + level + '%）');
+    }, function () { patch(sw, on ? 'off' : 'on', null); });
+  }
+
   function battGuard() {
     var p = prefs();
-    if (!p.battGuard) return;
     var sw = p.battSwitch;
     if (!sw) return;
-    var level = -1;
-    var info = selfInfo();
-    if (info.battery >= 0) level = info.battery;
-    else {
-      var be = S.states && S.states[SELF.batt];
-      if (be) level = num(be.state, -1);
-    }
-    if (level < 0) return;                            /* 读不到电量就不动作 */
+    var level = battReadLevel();
+    if (level < 0) return battAlive('读不到电量');
     var se = S.states && S.states[sw];
-    if (!se || se.state === 'unavailable' || se.state === 'unknown') return;
+    if (!se || se.state === 'unavailable' || se.state === 'unknown') return battAlive('开关状态未知');
     var isOn = se.state === 'on';
+    /* 硬护栏：只认「选了充电开关」，不看自动保养开关 */
+    if (level >= BATT_RAIL_HIGH && isOn) return battAct(sw, false, level, '护栏');
+    if (level <= BATT_RAIL_LOW && !isOn) return battAct(sw, true, level, '护栏');
+    if (!p.battGuard) return battAlive(level + '%（自动保养关）');
     var low = num(p.battLow, 40), high = num(p.battHigh, 80);
-    if (level >= high && isOn) {
-      actLog('battGuard ' + level + '% >= ' + high + '% → 断开充电 ' + sw);
-      patch(sw, 'off', null);
-      callService('switch', 'turn_off', { entity_id: sw }).then(function () {
-        S.battLast = { at: Date.now(), act: 'off', level: level };
-        toast('电池保养：已断开充电（' + level + '%）');
-      }, function () { patch(sw, 'on', null); });
-    } else if (level <= low && !isOn) {
-      actLog('battGuard ' + level + '% <= ' + low + '% → 开始充电 ' + sw);
-      patch(sw, 'on', null);
-      callService('switch', 'turn_on', { entity_id: sw }).then(function () {
-        S.battLast = { at: Date.now(), act: 'on', level: level };
-        toast('电池保养：已开始充电（' + level + '%）');
-      }, function () { patch(sw, 'off', null); });
-    }
+    if (level >= high && isOn) return battAct(sw, false, level, '保养');
+    if (level <= low && !isOn) return battAct(sw, true, level, '保养');
+    battAlive(level + '%，开关 ' + (isOn ? '开' : '关') + '，区间 ' + low + '–' + high + '%');
+  }
+
+  /* 面板重启后 battLast 会清零，所以只能显示「本次运行」的最近动作 */
+  function battLastLabel() {
+    var b = S.battLast;
+    if (!b) return '还没动作过（面板重启后清零）';
+    var d = new Date(b.at);
+    var hh = ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2);
+    return hh + ' ' + (b.act === 'on' ? '通电' : '断电') + '（' + b.level + '%）';
   }
 
   function battSwitchLabel() {
@@ -1253,7 +1292,8 @@
   function battSwitchSheetHtml() {
     var cur = prefs().battSwitch || '';
     var html = '<div class="sheet-title">充电开关</div>' +
-      '<div class="sheet-desc">选一个智能开关当这台平板的充电器电源。电量低于「开始充电」就打开它、高于「停止充电」就关掉它。' +
+      '<div class="sheet-desc">选一个智能开关当这台平板的充电器电源。电量低于「开始充电」就打开它、高于「停止充电」就关掉它；' +
+      '不管「自动保养」开没开，电量 ≥' + BATT_RAIL_HIGH + '% 都会强制断电、≤' + BATT_RAIL_LOW + '% 都会强制通电。' +
       '这里只列出真正能断电的开关，设备的功能开关（静音/指示灯之类）已藏掉。</div>';
     var keys = S.states ? Object.keys(S.states) : [];
     var list = [];
@@ -4328,7 +4368,11 @@ function bindDim() {
         '<div class="set-row"><div class="set-k">充电开关</div><div class="set-v">' +
         '<button class="btn" data-act="batt-switch">' + esc(battSwitchLabel()) + '</button></div></div>' +
         segRow('开始充电', 'battLow', [{ v: 30, t: '30%' }, { v: 40, t: '40%' }, { v: 50, t: '50%' }]) +
-        segRow('停止充电', 'battHigh', [{ v: 70, t: '70%' }, { v: 80, t: '80%' }, { v: 90, t: '90%' }]);
+        segRow('停止充电', 'battHigh', [{ v: 70, t: '70%' }, { v: 80, t: '80%' }, { v: 90, t: '90%' }]) +
+        '<div class="set-row"><div class="set-k">最近动作</div><div class="set-v">' + esc(battLastLabel()) + '</div></div>' +
+        '<div class="sheet-desc">只要选了充电开关，这两条硬保护就一直生效、不随「自动保养」开关走：' +
+        '电量 ≥' + BATT_RAIL_HIGH + '% 一定断电（防鼓包），≤' + BATT_RAIL_LOW + '% 一定通电（防趴窝）。' +
+        '守护跑在面板里，面板没在跑的时候它管不到，所以只能当「尽量别充太满」用。</div>';
     }
     if (tab === 'cards') {
       return '<div class="set-sec">卡片</div>' +
@@ -5578,6 +5622,8 @@ function boot() {
     /* 字号角色档：test-ui 用桩节点验 --fsz-n/-v/-s 一次算出的像素 */
     setColumns: setColumns,
     battGuard: battGuard, battSwitchLabel: battSwitchLabel, battSwitchSheetHtml: battSwitchSheetHtml, battSwitchNoise: battSwitchNoise,
+    battReadLevel: battReadLevel, selfBattEntity: selfBattEntity, battLastLabel: battLastLabel,
+    BATT_RAIL_HIGH: BATT_RAIL_HIGH, BATT_RAIL_LOW: BATT_RAIL_LOW,
     setIcon: setIcon, iconsFor: iconsFor, iconSheetHtml: iconSheetHtml
   };
 
