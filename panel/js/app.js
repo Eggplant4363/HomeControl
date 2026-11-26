@@ -404,8 +404,10 @@
     }
     if (tile.type === 'light') {
       if (isNa(st)) return '离线';
-      /* 开/关不写文字：电源钮就是状态；只有亮度这种真数值才显示 */
-      return st === 'on' && hasBrightness(attrs) ? lightPct(attrs) + '<span class="u">%</span>' : '';
+      /* 开/关不写文字：电源钮就是状态；只有亮度这种真数值才显示。
+         关灯时也写 0%：亮度条本来就停在最左，数字位空着会让人以为没这个信息。 */
+      if (!hasBrightness(attrs)) return '';
+      return (st === 'on' ? lightPct(attrs) : 0) + '<span class="u">%</span>';
     }
     if (tile.type === 'switch') {
       if (isNa(st)) return '离线';
@@ -4358,7 +4360,7 @@ function bindDim() {
     if (tab === 'store') return storeSectionHtml();
     if (tab === 'ui') {
       return '<div class="set-sec">显示</div>' +
-        segRow('每行卡片', 'cols', [{ v: 3, t: '3' }, { v: 4, t: '4' }, { v: 5, t: '5' }, { v: 6, t: '6' }]) +
+        segRow('每行卡片', 'cols', [{ v: 3, t: '3' }, { v: 4, t: '4' }, { v: 5, t: '5' }, { v: 6, t: '6' }, { v: 7, t: '7' }, { v: 8, t: '8' }, { v: 9, t: '9' }, { v: 10, t: '10' }]) +
         segRow('卡片大小', 'size', [{ v: 'sm', t: '紧凑' }, { v: 'md', t: '标准' }, { v: 'lg', t: '大' }]) +
         segRow('传感器卡片', 'sensors', [{ v: true, t: '显示' }, { v: false, t: '隐藏' }]) +
         segRow('离线设备', 'offline', [{ v: true, t: '隐藏' }, { v: false, t: '保留' }]) +

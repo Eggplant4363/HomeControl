@@ -154,6 +154,8 @@ eq(api.valHtml({ type: 'light', entity: 'light.a', name: 'a' }, 'on', { supporte
   'onoff 灯（无亮度能力）：读数位留空');
 ok(/^100<span class="u">%<\/span>$/.test(api.valHtml({ type: 'light', entity: 'light.b', name: 'b' }, 'on',
   { brightness: 255, supported_color_modes: ['brightness'] })), '亮度灯：值显示百分比');
+ok(/^0<span class="u">%<\/span>$/.test(api.valHtml({ type: 'light', entity: 'light.b', name: 'b' }, 'off',
+  { brightness: 255, supported_color_modes: ['brightness'] })), '关灯的亮度卡：读数位显示 0%（不空着）');
 ok(api.hasBrightness({ supported_color_modes: ['onoff'] }) === false, '能力判定：onoff 灯没有亮度');
 ok(api.hasBrightness({ brightness: 128 }) === true, '能力判定：有 brightness 就有亮度');
 
@@ -528,7 +530,7 @@ eq(api.orderForDrop(['r1a', 'r2a', 'r1b'], 'r1a', 'r1b', true).join(','), 'r2a,r
 
 /* 每行 3~6 */
 var colsOpts = (api.panelSheetHtml().match(/data-key="cols"/g) || []).length;
-eq(colsOpts, 4, '每行卡片可选 3/4/5/6');
+eq(colsOpts, 8, '每行卡片可选 3~10');
 
 /* 添加卡片：按设备分组（dev_id 相同的实体归一台设备；无设备的归「其它设备」） */
 (function () {

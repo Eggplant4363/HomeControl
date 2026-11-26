@@ -888,13 +888,21 @@ body::before { content: none; }
 .upd-bar i { display: block; height: 100%; width: 0; border-radius: 3px; background: rgb(var(--accent)); transition: width .2s; }
 
 
-/* ---------- 每行 3~6 列 + 卡片跨列 ---------- */
+/* ---------- 每行 3~10 列 + 卡片跨列 ---------- */
 .grid.cols-6 { grid-template-columns: repeat(6, 1fr); }
+.grid.cols-7 { grid-template-columns: repeat(7, 1fr); }
+.grid.cols-8 { grid-template-columns: repeat(8, 1fr); }
+.grid.cols-9 { grid-template-columns: repeat(9, 1fr); }
+.grid.cols-10 { grid-template-columns: repeat(10, 1fr); }
 /* 列数不再改字号（单元格尺寸本来就由 --cellw/--cellh 反映出来），只调内边距。
-   6 列的卡片内边距更小，所以内容盒也要按 24 而不是 28 扣。 */
+   6 列的卡片内边距更小，所以内容盒也要按 24 而不是 28 扣；再多的列继续收紧。 */
 .grid.cols-5 .tile { padding: 14px; }
 .grid.cols-6 .tile { padding: 12px; }
 .grid.cols-6 .tile { --cw: calc(var(--cellw) - 24px); --ch: calc(var(--cellh) - 24px); }
+.grid.cols-7 .tile { padding: 10px; --cw: calc(var(--cellw) - 20px); --ch: calc(var(--cellh) - 20px); }
+.grid.cols-8 .tile { padding: 9px; --cw: calc(var(--cellw) - 18px); --ch: calc(var(--cellh) - 18px); }
+.grid.cols-9 .tile { padding: 8px; --cw: calc(var(--cellw) - 16px); --ch: calc(var(--cellh) - 16px); }
+.grid.cols-10 .tile { padding: 7px; --cw: calc(var(--cellw) - 14px); --ch: calc(var(--cellh) - 14px); }
 .tile.span-2 { grid-column: span 2; }
 .tile.span-3 { grid-column: span 3; }
 .tile.span-4 { grid-column: span 4; }
@@ -1256,6 +1264,8 @@ body::before { content: none; }
 .grid.cols-5 .tile.half { padding: 0 12px; }
 .grid.cols-6 .tile.half { padding: 0 10px; }
 .grid.cols-6 .tile.half { --cw: calc(var(--cellw) - 20px); --ch: calc(var(--unit) - 20px); }
+.grid.cols-7 .tile.half { padding: 0 9px; --cw: calc(var(--cellw) - 18px); --ch: calc(var(--unit) - 18px); }
+.grid.cols-8 .tile.half, .grid.cols-9 .tile.half, .grid.cols-10 .tile.half { padding: 0 8px; --cw: calc(var(--cellw) - 16px); --ch: calc(var(--unit) - 16px); }
 .t-grip {
   position: absolute; right: 2px; bottom: 2px; width: 64px; height: 64px; z-index: 30;
   pointer-events: auto; background: rgba(var(--accent-rgb),0.002);
