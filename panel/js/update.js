@@ -13,7 +13,14 @@
 (function () {
   'use strict';
 
-  var DEFAULT_API = 'https://api.github.com/repos/Eggplant4363/HomeControl/releases/latest';
+  var REPO = 'Eggplant4363/HomeControl';
+  var APK_NAME = 'homecontrol.apk';    /* 每次 release 都挂这个名字的附件 */
+  var DEFAULT_API = 'https://api.github.com/repos/' + REPO + '/releases/latest';
+  /* API 的备用来源：releases.atom 是 GitHub 的静态订阅页，走镜像也不会被限流。
+     拿不到 assets/sha 都不要紧——tag 就够拼出附件地址，大小和 versionCode 下载后再验。 */
+  var ATOM_URL = 'https://github.com/' + REPO + '/releases.atom';
+  /* 始终指向「最新那个 release 的附件」，给浏览器手动下载用（也方便贴给用户） */
+  var LATEST_APK = 'https://github.com/' + REPO + '/releases/latest/download/' + APK_NAME;
   var MAX_APK = 80 * 1024 * 1024;      /* 比这还大就别下了（防呆：别把 JSON 当 APK 写满磁盘） */
 
   /* 下载通道：直连 / 国内镜像（前缀转发 GitHub API+下载）/ 国内 HTTP 代理。
@@ -202,6 +209,20 @@
     return { ver: ver, url: apk.url, size: apk.size, name: apk.name, digest: apk.digest || '' };
   }
 
+  /** releases.atom 文本 → {ver, tag, url, name, size:0} / {error}
+   *  atom 的第一个 entry 就是最新 release；附件地址有固定规律，所以不需要 API 的 assets 字段。 */
+  function parseAtom(text) {
+    var s = String(text || '');
+    if (!s) return { error: 'releases 订阅是空的' };
+    var m = s.match(/<entry>[\s\S]*?<title>([^<]+)<\/title>/);
+    if (!m) return { error: 'releases 订阅里没有版本条目' };
+    var tag = String(m[1]).trim();
+    var ver = normVer(tag);
+    if (!ver) return { error: 'releases 订阅里的 tag 没有版本号' };
+    return { ver: ver, tag: tag, name: APK_NAME, size: 0,
+             url: 'https://github.com/' + REPO + '/releases/download/' + encodeURIComponent(tag) + '/' + APK_NAME };
+  }
+
   function mb(n) {
     if (!n) return '未知大小';
     if (n < 1024 * 1024) return Math.max(1, Math.round(n / 1024)) + ' KB';
@@ -224,6 +245,7 @@
     if (U.phase === 'checking' || U.phase === 'downloading') return;
     if (!hasBridge()) { setPhase('error', '浏览器预览里没有升级通道，装到平板上再试'); return; }
     U.ver = ''; U.url = ''; U.size = 0; U.path = ''; U.pct = 0; U.digest = ''; U.retryMirror = false;
+    U.atomTried = false;
     setPhase('checking', '正在检查…');
     var id = 'chk' + (++seq);
     pending[id] = 'check';
@@ -236,21 +258,54 @@
     }
   }
 
+  /** API 那条路不通（限流/超时/镜像不给 API）时，改读 releases.atom 再试一次。
+   *  走镜像时 api.github.com 的 60 次/小时是按镜像出口 IP 算的，被别人用完就是 403——
+   *  这是之前「检查更新永远看不到新版本」最常见的原因，所以必须有这条备用路。 */
+  function tryAtom(why) {
+    if (U.atomTried) return false;
+    U.atomTried = true;
+    setPhase('checking', 'GitHub API 没通（' + why + '），改读 releases 订阅…');
+    var id = 'atm' + (++seq);
+    pending[id] = 'checkAtom';
+    var cfg = readChannel();
+    try {
+      bridge().updNet(id, applyChannel(cfg, ATOM_URL), '{"Accept":"application/atom+xml"}', proxyJson(cfg));
+      return true;
+    } catch (e) {
+      delete pending[id];
+      return false;
+    }
+  }
+
+  /** 把 {ver, url, size, name, digest} 落到 U 上，并按本地版本决定是「已是最新」还是「发现新版本」 */
+  function adoptRelease(r, viaAtom) {
+    U.ver = r.ver; U.url = r.url; U.size = r.size || 0; U.file = r.name; U.digest = r.digest || '';
+    var cur = normVer(curVer());
+    if (cur && verCmp(r.ver, cur) <= 0) { setPhase('latest', '已是最新（本地 v' + cur + '，GitHub 上 v' + r.ver + '）'); return; }
+    setPhase('found', '发现新版本 v' + r.ver + '（' + (viaAtom ? '从 releases 订阅读到，大小下载后再验' : mb(r.size)) + '）');
+  }
+
   function onNet(id, out) {
-    if (pending[id] !== 'check') return;
+    var kind = pending[id];
+    if (kind !== 'check' && kind !== 'checkAtom') return;
     delete pending[id];
     var o;
     try { o = JSON.parse(out || '{}'); } catch (e) { setPhase('error', '通道返回的不是 JSON'); return; }
-    if (o.error) { setPhase('error', '连不上 GitHub（' + o.error + '）'); return; }
+    if (kind === 'checkAtom') {
+      if (o.error) { setPhase('error', '连不上 GitHub（' + o.error + '）'); return; }
+      if (o.status && (o.status < 200 || o.status >= 300)) { setPhase('error', 'releases 订阅返回 HTTP ' + o.status); return; }
+      var ra = parseAtom(o.body);
+      if (ra.error) { setPhase('error', ra.error); return; }
+      adoptRelease(ra, true);
+      return;
+    }
+    if (o.error) { if (tryAtom(o.error)) return; setPhase('error', '连不上 GitHub（' + o.error + '）'); return; }
     if (o.status === 404) { setPhase('error', '仓库还没有发布任何版本'); return; }
-    if (o.status === 403) { setPhase('error', 'GitHub 限流了，过一会儿再试'); return; }
-    if (o.status && (o.status < 200 || o.status >= 300)) { setPhase('error', 'GitHub 返回 HTTP ' + o.status); return; }
+    if (o.status === 403) { if (tryAtom('限流 403')) return; setPhase('error', 'GitHub 限流了，过一会儿再试'); return; }
+    if (o.status && (o.status < 200 || o.status >= 300)) { if (tryAtom('HTTP ' + o.status)) return; setPhase('error', 'GitHub 返回 HTTP ' + o.status); return; }
     var r = parseRelease(o.body);
-    if (r.error) { setPhase('error', r.error); return; }
-    U.ver = r.ver; U.url = r.url; U.size = r.size; U.file = r.name; U.digest = r.digest || '';
-    var cur = normVer(curVer());
-    if (cur && verCmp(r.ver, cur) <= 0) { setPhase('latest', '已是最新（本地 v' + cur + '，GitHub 上 v' + r.ver + '）'); return; }
-    setPhase('found', '发现新版本 v' + r.ver + '（' + mb(r.size) + '）');
+    if (r.error) { if (tryAtom(r.error)) return; setPhase('error', r.error); return; }
+    adoptRelease(r, false);
   }
 
   function download() {
@@ -399,6 +454,10 @@
       html += '<div class="upd-note">' + esc(U.msg) + '</div>' + barHtml();
     } else if (U.phase === 'error') {
       html += '<div class="upd-note bad">' + esc(U.msg) + '</div>';
+      if (!U.needPerm) {
+        html += '<div class="sheet-desc">检查不通多半是通道问题：换下面另一个通道再试，' +
+          '或者用平板浏览器打开上面那条地址直接下载安装包。</div>';
+      }
     } else {
       html += '<div class="upd-note' + (U.phase === 'latest' ? ' good' : '') + '">' + esc(U.msg) + '</div>';
     }
@@ -424,7 +483,10 @@
       esc(cfg.channel === 'proxy' ? String(cfg.proxyPort) : '') + '" placeholder="7890"></div>' +
       '<div class="cfg-actions">' +
       '<button class="btn' + (cfg.channel === 'proxy' ? ' primary' : '') + '" data-act="upd-ch-proxy">用国内代理</button>' +
-      '</div>';
+      '</div>' +
+      /* 兜底的手动路：通道全都不通时，让用户把这条地址复制到平板浏览器里下载安装 */
+      '<div class="upd-note">也可以用平板浏览器直接打开这个地址下载安装包（始终指向最新版本）：<br>' +
+      '<span class="upd-url">' + esc(applyChannel(cfg, LATEST_APK)) + '</span></div>';
 
     html += '<div class="cfg-actions">';
     if (U.phase === 'found') {
@@ -468,10 +530,13 @@
     hasBridge: hasBridge,
     /* 纯函数，给单测和排查用 */
     apiUrl: apiUrl,
+    atomUrl: function () { return ATOM_URL; },
+    latestApkUrl: function () { return LATEST_APK; },
     normVer: normVer,
     verCmp: verCmp,
     pickApk: pickApk,
     parseRelease: parseRelease,
+    parseAtom: parseAtom,
     mb: mb,
     /* 下载通道（update.json） */
     setChannel: setChannel,

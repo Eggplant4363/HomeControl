@@ -696,6 +696,22 @@ eq(colsOpts, 8, '每行卡片可选 3~10');
   /* 字号升序：读数 > 名字 > 辅助，同屏只有一个这套阶梯（2×2 Display 除外） */
   ok(parseInt(tok['--fsz-v'], 10) > parseInt(tok['--fsz-n'], 10) && parseInt(tok['--fsz-n'], 10) > parseInt(tok['--fsz-s'], 10),
      '角色档：数值 > 名字 > 辅助 阶梯成立');
+  /* 7 列以上：格子窄到不能再套 6 列的下限，几何跟着真实格子缩（否则内容顶出卡片） */
+  windowStub.localStorage.setItem('hc.prefs', JSON.stringify({ cols: 7, size: 'md', allCards: false }));
+  api.setColumns(node, 7);
+  eq(tok['--cellw'], '129px', '7 列：--cellw 用真实列宽 129');
+  eq(tok['--fsz'], '111px', '7 列：几何档按真实格子算（不再硬撑 174）');
+  windowStub.localStorage.setItem('hc.prefs', JSON.stringify({ cols: 10, size: 'md', allCards: false }));
+  api.setColumns(node, 10);
+  eq(tok['--cellw'], '86px', '10 列：--cellw 用真实列宽 86（不再被钳到 140）');
+  eq(tok['--fsz'], '96px', '10 列：几何档落 96 下限');
+  ok(parseInt(tok['--fsz-n'], 10) > 0 && parseInt(tok['--fsz-v'], 10) > parseInt(tok['--fsz-n'], 10),
+     '10 列：字号仍保持 数值 > 名字');
+  /* 列数取值：3~10 合法，越界回落 4 */
+  eq(api.colCount(10), 10, 'colCount：10 列合法');
+  eq(api.colCount(7), 7, 'colCount：7 列合法');
+  eq(api.colCount(11), 4, 'colCount：11 回落 4');
+  eq(api.colCount(2), 4, 'colCount：2 回落 4');
   if (savedPrefs == null) windowStub.localStorage.removeItem('hc.prefs'); else windowStub.localStorage.setItem('hc.prefs', savedPrefs);
 })();
 
@@ -998,6 +1014,18 @@ ok(!!UP.parseRelease(JSON.stringify({
 })).error, '超过 80MB 的包拒收');
 eq(UP.mb(160000), '156 KB', 'mb 显示 KB');
 eq(UP.mb(1600000), '1.5 MB', 'mb 显示 MB');
+
+/* releases.atom：API 被限流时的备用来源（只要 tag，附件地址按固定规律拼） */
+var atom = UP.parseAtom('<feed><entry><title>v0.7.79</title><id>tag:v0.7.79</id></entry>' +
+  '<entry><title>v0.7.78</title><id>tag:v0.7.78</id></entry></feed>');
+eq(atom.ver, '0.7.79', 'parseAtom 取最新一条 entry 的版本');
+eq(atom.url, 'https://github.com/Eggplant4363/HomeControl/releases/download/v0.7.79/homecontrol.apk',
+  'parseAtom 按 tag 拼出 APK 地址');
+eq(atom.name, 'homecontrol.apk', 'parseAtom 的附件名固定');
+ok(!!UP.parseAtom('').error, 'parseAtom 空文本当成错误');
+ok(!!UP.parseAtom('<feed></feed>').error, 'parseAtom 没有 entry 当成错误');
+ok(/\/releases\/latest\/download\/homecontrol\.apk$/.test(UP.latestApkUrl()),
+  '手动下载地址始终指向最新 release 的附件');
 
 ok(UP.state().phase === 'idle', '初始状态是 idle');
 UP.reset();

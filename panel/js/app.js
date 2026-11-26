@@ -1595,22 +1595,34 @@
     var w = el.grid ? el.grid.clientWidth : 0;
     if (!w) w = (window.innerWidth || 1024) - 48;
     var h = Math.floor((w - gap * (c - 1)) / c);
-    if (h < 120) h = 120;
+    /* 7 列以上格子本来就窄，正方形行高也跟着降（否则卡片会变成长条、字撑不进去） */
+    if (h < (c >= 7 ? 96 : 120)) h = c >= 7 ? 96 : 120;
     if (h > 420) h = 420;
     return h;
   }
 
+  /** 每行几张：3~10 是设置页给的范围，越界（老归档里的怪值）回落 4 */
+  function colCount(v) {
+    var c = num(v, 4);
+    if (c < 3 || c > 10) c = 4;
+    return c;
+  }
+
   function setColumns(node, cols) {
     if (!node) return;
+    var manyCols = cols >= 7;          /* 7 列以上：单元格窄到不能再用 6 列的下限，几何按真实格子算 */
     /* 网格的行单位是「半行」：1×1 卡跨 2 个单位，半高卡跨 1 个。
        这样半高卡正好是 1×1 的一半（两份半高 + 一道行距 = 一个 1×1）。 */
     var h = rowHeight(cols);
     var unit = Math.round((h - ROW_GAP) / 2);
-    if (unit < 90) unit = 90;          /* 半高卡上的文字按比例推，单位太小字就没法读 */
+    /* 半高卡上的文字按比例推，单位太小字就没法读；7 列以上格子本来就小，下限跟着降 */
+    var unitMin = manyCols ? 48 : 90;
+    if (unit < unitMin) unit = unitMin;
     var w = el.grid ? el.grid.clientWidth : 0;
     if (!w) w = (window.innerWidth || 1024) - 48;
     var cellW = Math.floor((w - ROW_GAP * (cols - 1)) / cols);
-    if (cellW < 140) cellW = 140;
+    var cellWMin = manyCols ? 48 : 140;
+    if (cellW < cellWMin) cellW = cellWMin;
     if (cellW > 460) cellW = 460;
     var size = prefs().size;
     var k = size === 'sm' ? 0.86 : size === 'lg' ? 1.14 : 1;
@@ -1621,11 +1633,15 @@
     /* 图标/旋钮/进度条是 calc(var(--fsz) * 比例)（小卡与半高卡的几何走 --fsz-t）：换设备、改列数、
        改「卡片大小」只改几何变量，图形自己跟着缩放，「占卡片 80%」的填充感靠这条保住。
        基准取「卡片内容盒的短边」，再钳到 [174,300]：下限是按平板 2 原来的写死值标定的，
-       所以字不会再比改之前小；平板 5 的卡有 ~360px，上限 300 挡住「大卡装不下」。老 WebView 没有 clamp()/max()，钳只能在这里做。 */
-    var padN = cols === 6 ? 24 : 28;
-    var fsz = Math.round(Math.min(300, Math.max(174, (h - padN) * k)));
+       所以字不会再比改之前小；平板 5 的卡有 ~360px，上限 300 挡住「大卡装不下」。老 WebView 没有 clamp()/max()，钳只能在这里做。
+       7 列以上格子比 174 还窄，硬撑 174 会让内容和图标顶出卡片，所以下限换成按真实格子算（96 起）。 */
+    var padN = manyCols ? 18 : (cols === 6 ? 24 : 28);
+    var fszFloor = manyCols ? 96 : 174;
+    var base = manyCols ? (Math.min(cellW, h) - padN) : (h - padN);
+    var fsz = Math.round(Math.min(300, Math.max(fszFloor, base * k)));
     /* 小卡与半高卡的几何走 --fsz-t：下限 90 也按原来的写死值标定（小卡数值 34px、半高卡名字 13.5px） */
-    var fszT = Math.round(Math.min(120, Math.max(90, (unit - 20) * k * 1.1)));
+    var fszTFloor = manyCols ? 56 : 90;
+    var fszT = Math.round(Math.min(120, Math.max(fszTFloor, (unit - 20) * k * 1.1)));
     /* 文字按「角色」定档（业界 type scale 的规矩：同屏同角色一个字号，卡片大小不改字）：
        --fsz-n 名字（宽卡/小卡/半高卡同一个）、--fsz-v 数值读数（全模板同一个）、
        --fsz-s 辅助行（房间/状态/单位/半高读数）。2×2 气候数值是 CSS 里唯一保留的 Display 档。
@@ -1648,8 +1664,7 @@
   function gridClassOnly() {
     if (!el.grid) return;
     var pf = prefs();
-    var cols = num(pf.cols, 4);
-    if (cols < 3 || cols > 6) cols = 4;
+    var cols = colCount(pf.cols);
     var size = (pf.size === 'sm' || pf.size === 'lg') ? pf.size : 'md';
     var items = S.items || [];
     setColumns(el.grid, cols);
@@ -1663,8 +1678,7 @@
      纯函数式的顺序推进：只读 DOM 类名（span-N / half / rows-2），不碰状态，重复调用结果一样。 */
   function placeTiles(colsArg) {
     if (!el.grid) return;
-    var cols = num(colsArg != null ? colsArg : prefs().cols, 4);
-    if (cols < 3 || cols > 6) cols = 4;
+    var cols = colCount(colsArg != null ? colsArg : prefs().cols);
     var kids = el.grid.children;
     var bands = [];
     function band(b) {
@@ -1772,8 +1786,7 @@
       /* 编辑模式：即使一张都没有，也要能进编辑去加 */
       if (S.editing) hint = '<div class="empty-main">还没有卡片</div>' +
         '<button class="btn primary empty-add" data-act="edit-add">＋ 添加卡片</button>';
-      var eCols = num(prefs().cols, 4);
-      if (eCols < 3 || eCols > 6) eCols = 4;
+      var eCols = colCount(prefs().cols);
       el.grid.className = 'grid cols-' + eCols + (S.editing ? ' editing' : '');
       setColumns(el.grid, eCols);
       el.grid.innerHTML = '<div class="empty">' + hint + '</div>';
@@ -1783,8 +1796,7 @@
     }
     /* 超过两屏（8 张）就切成可滚动网格，行高固定，往下滑还能看到剩下的 */
     var pf = prefs();
-    var cols = num(pf.cols, 4);
-    if (cols < 3 || cols > 6) cols = 4;
+    var cols = colCount(pf.cols);
     var size = (pf.size === 'sm' || pf.size === 'lg') ? pf.size : 'md';
     el.grid.className = 'grid cols-' + cols + ' size-' + size + (items.length > 8 ? ' dense' : '') + (S.editing ? ' editing' : '');
     var html = '';
@@ -5659,6 +5671,8 @@ function boot() {
     addSheetHtmlAt: function (key) { S.addDev = key || ''; return addSheetHtml(); },
     injectTile: injectTile,
     applyExtraTiles: applyExtraTiles,
+    colCount: colCount,
+    setColumns: setColumns,
     isNa: isNa, isAuto: isAuto, hasBrightness: hasBrightness, hasPosition: hasPosition,
     climateTempCaps: climateTempCaps, dualTarget: dualTarget,
     /* 动作函数也导出：tools/check-temp.js 要在真机上验「没有设定温度的空调点加减号」这条路径 */
