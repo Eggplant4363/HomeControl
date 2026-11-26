@@ -1637,19 +1637,30 @@
        所以字不会再比改之前小；平板 5 的卡有 ~360px，上限 300 挡住「大卡装不下」。老 WebView 没有 clamp()/max()，钳只能在这里做。
        7 列以上格子比 174 还窄，硬撑 174 会让内容和图标顶出卡片，所以下限换成按真实格子算（96 起）。 */
     var padN = manyCols ? 18 : (cols === 6 ? 24 : 28);
-    var fszFloor = manyCols ? 96 : 174;
+    var fszFloor = manyCols ? 120 : 174;
     var base = manyCols ? (Math.min(cellW, h) - padN) : (h - padN);
     var fsz = Math.round(Math.min(300, Math.max(fszFloor, base * k)));
     /* 小卡与半高卡的几何走 --fsz-t：下限 90 也按原来的写死值标定（小卡数值 34px、半高卡名字 13.5px） */
-    var fszTFloor = manyCols ? 56 : 90;
+    var fszTFloor = manyCols ? 72 : 90;
     var fszT = Math.round(Math.min(120, Math.max(fszTFloor, (unit - 20) * k * 1.1)));
     /* 文字按「角色」定档（业界 type scale 的规矩：同屏同角色一个字号，卡片大小不改字）：
        --fsz-n 名字（宽卡/小卡/半高卡同一个）、--fsz-v 数值读数（全模板同一个）、
        --fsz-s 辅助行（房间/状态/单位/半高读数）。2×2 气候数值是 CSS 里唯一保留的 Display 档。
        下限标定：平板 2 6 列 sm（fsz 174 / fszT 90）→ 名字 15px、数值 34px、辅助 12px，正是改之前的写死值。 */
-    node.style.setProperty('--fsz-n', Math.round(fsz * .086) + 'px');
-    node.style.setProperty('--fsz-v', Math.round(fszT * .38) + 'px');
-    node.style.setProperty('--fsz-s', Math.round(fsz * .068) + 'px');
+    var fszN = Math.round(fsz * .086);
+    var fszV = Math.round(fszT * .38);
+    var fszS = Math.round(fsz * .068);
+    if (manyCols) {
+      /* 7 列以上的格子按比例推出来只有 8~9px，读不了；三个角色档各给一个下限，
+         9/10 列最窄给 12/26/9，7/8 列还有富余就 13/28/10（和 6 列 15/34/12 同一个阶梯往下走）。 */
+      var tight = cols >= 9;
+      fszN = Math.max(fszN, tight ? 12 : 13);
+      fszV = Math.max(fszV, tight ? 26 : 28);
+      fszS = Math.max(fszS, tight ? 9 : 10);
+    }
+    node.style.setProperty('--fsz-n', fszN + 'px');
+    node.style.setProperty('--fsz-v', fszV + 'px');
+    node.style.setProperty('--fsz-s', fszS + 'px');
 
     node.style.setProperty('--cellw', cellW + 'px');
     node.style.setProperty('--cellh', h + 'px');
@@ -4829,6 +4840,15 @@ function bindDim() {
         if (pkey.indexOf('batt') === 0) battGuard();
         if (pkey === 'entRefresh') scheduleEntityRefresh();
         if (pkey === 'awayScreen' || pkey === 'awayOff') applyScreenPolicy();
+        /* 「唤醒亮度」点一下就该立刻变亮/变暗：以前只存偏好，要等下一次熄屏或回家才生效，看着像按钮坏了 */
+        if (pkey === 'bright') {
+          if (S.dimOn) exitDim();
+          else setBacklight(num(prefs().bright, 100) / 100);
+          var live = document.getElementById('briVal');
+          var sl = el.sheet ? el.sheet.querySelector('[data-act="bri-live"]') : null;
+          if (live) live.textContent = num(prefs().bright, 100) + '%';
+          if (sl) { sl.value = String(num(prefs().bright, 100)); sl.style.setProperty('--pct', num(prefs().bright, 100) + '%'); }
+        }
         return;
       }
       if (act === 'screen-auth') {
