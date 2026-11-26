@@ -1307,6 +1307,13 @@ eq(documentStub.getElementById('dimLrNow').textContent, '第三行', '行号变�
 eq(documentStub.getElementById('dimLrNext').textContent, '', '最后一行时下一行为空');
 ok(musicJs.indexOf('lyrics: function') >= 0 && musicJs.indexOf('lyricLine: function') >= 0, 'music.js 暴露只读的 lyrics/lyricLine');
 ok(idxHtml.indexOf('id="dimLyric"') >= 0 && idxHtml.indexOf('id="dimLrNow"') >= 0, 'index.html 有待机页歌词节点');
+/* 待机页歌词与底部卡片的间距：写死 31vh 会在高屏上留一大块空白，改成按卡片高度算 + 一条细缝 */
+var dimCss = fs.readFileSync(path.join(root, 'panel', 'css', 'app.css'), 'utf8');
+ok(dimCss.indexOf('--dim-now-h: 112px') >= 0 && dimCss.indexOf('--dim-lyric-gap: 10px') >= 0, 'CSS：待机页卡片高度/歌词缝隙是变量');
+ok(dimCss.indexOf('padding-bottom: calc(12vh + var(--dim-now-h) + var(--dim-lyric-gap))') >= 0, 'CSS：待机页歌词下边界按卡片高度算，不再写死 31vh');
+ok(dimCss.indexOf('padding-bottom: 31vh') < 0, 'CSS：旧的 31vh 底部留白已去掉');
+ok(dimCss.indexOf('padding-bottom: 0; text-align: center; overflow: hidden') >= 0, 'CSS：歌词块自身不再额外留 3vh');
+ok(dimCss.indexOf('margin: 10px 0; color: rgba(255,255,255,.92)') >= 0, 'CSS：当前句与下一句之间 26px → 10px');
 ok(fs.readFileSync(path.join(root, 'panel', 'css', 'app.css'), 'utf8').indexOf('.dim-lyric') >= 0, 'CSS 有待机页歌词样式');
 windowStub.MusicUI.isPlaying = function () { return false; };
 DS.paint();

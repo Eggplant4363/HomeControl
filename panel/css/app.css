@@ -518,7 +518,13 @@ body::before { content: none; }
 }
 .dim.show { display: flex; opacity: 1; }
 /* 没放歌时时间就是整屏唯一的元素，垂直居中；一旦底部有「正在播放」，把时间抬到上方让出位置 */
-.dim.with-music { justify-content: flex-start; padding-top: 9vh; padding-bottom: 31vh; }
+/* 底部「正在播放」卡片的高度与歌词缝隙：歌词块下边界按它们算，任何屏幕上都只隔一条细缝。
+ * 原来写死 31vh —— 1600 高的平板上有 496px，比卡片本身还高，歌词和卡片之间空出一大块。 */
+.dim { --dim-now-h: 112px; --dim-lyric-gap: 10px; }
+.dim.with-music {
+  justify-content: flex-start; padding-top: 9vh;
+  padding-bottom: calc(12vh + var(--dim-now-h) + var(--dim-lyric-gap));
+}
 .dim-clock { text-align: center; }
 .dim-time {
   font-size: 220px; font-weight: 700; letter-spacing: 2px; color: #fff;
@@ -541,10 +547,10 @@ body::before { content: none; }
  * （小窗口上绝对定位会和日期行/播放条撞在一起） */
 .dim-lyric {
   display: none; flex: 1 1 auto; flex-direction: column; justify-content: flex-end; align-items: center;
-  width: 76%; max-width: 1000px; padding-bottom: 3vh; text-align: center; overflow: hidden;
+  width: 76%; max-width: 1000px; padding-bottom: 0; text-align: center; overflow: hidden;
 }
 .dim-lyric.on { display: flex; }
-.dim-lr { font-size: 36px; font-weight: 600; line-height: 1.4; margin: 26px 0; color: rgba(255,255,255,.92); transition: color .3s; }
+.dim-lr { font-size: 36px; font-weight: 600; line-height: 1.4; margin: 10px 0; color: rgba(255,255,255,.92); transition: color .3s; }
 .dim-lr-soon { font-size: 20px; line-height: 1.5; color: rgba(255,255,255,.3); }
 .dim-lr-soon:empty { display: none; }
 .dim-now { display: none; position: absolute; left: 50%; bottom: 12vh; width: 62%; max-width: 900px; transform: translateX(-50%); align-items: center; }
